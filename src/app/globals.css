@@ -131,6 +131,12 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
 .btn-primary:hover:not(:disabled){opacity:.88}
 .btn-ghost:hover:not(:disabled){background:var(--hover) !important}
 .lift:hover{border-color:var(--muted-2) !important}
+/* Roster (Students list) hovers, straight from the comp's style-hover attributes. */
+.row-hover:hover{background:var(--hover)}
+.row-name:hover{color:var(--accent) !important}
+.icon-action:hover{background:var(--hover) !important;color:var(--fg) !important}
+.icon-restore:hover{background:var(--hover) !important;color:var(--green) !important}
+.icon-danger:hover{background:var(--accent-soft) !important;color:var(--accent) !important;border-color:var(--accent-soft) !important}
 
 /* Tailwind theme bridge — expose the design tokens as Tailwind colors/fonts so
    shadcn/ui primitives and utility classes resolve to the SAME palette. */

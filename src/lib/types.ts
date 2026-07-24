@@ -39,7 +39,7 @@ export interface Student {
   gradeLabel: string; // derived, e.g. "Grade 3"
   parentId: string; // -> Parent.id
   parentName: string; // derived from parent
-  phone: string; // derived from parent
+  phone: string; // independent — never copied/synced from Parent.phone; may be blank
   status: StudentStatus;
   notes: string;
   joined: string; // ISO "YYYY-MM-DD"

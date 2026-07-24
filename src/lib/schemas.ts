@@ -19,6 +19,10 @@ export const parentSchema = z.object({
 });
 export type ParentInput = z.infer<typeof parentSchema>;
 
+/* Required/optional here follows the project specification, NOT the design's `*`
+ * markers — a visual cue is not a business rule. `phone` is an independent
+ * optional field: it is never copied or synced from the linked parent, and a
+ * blank value stays blank. Read Parent.phone directly when you need it. */
 export const studentSchema = z.object({
   first: z.string().min(1, "First name is required"),
   last: z.string().min(1, "Last name is required"),
@@ -26,11 +30,18 @@ export const studentSchema = z.object({
   school: z.string().optional().default(""),
   grade: z.coerce.number().int().min(0).max(12),
   parentId: z.string().optional().default(""),
+  phone: z.string().optional().default(""),
   status: z.enum(["Active", "Trial", "Paused", "Archived"]).default("Active"),
   notes: z.string().optional().default(""),
   avatar: z.string().nullable().optional().default(null),
 });
-export type StudentInput = z.infer<typeof studentSchema>;
+/** What the form holds while editing (grade is still uncoerced, defaults unapplied). */
+export type StudentFormInput = z.input<typeof studentSchema>;
+/** What validation produces and the API accepts. */
+export type StudentInput = z.output<typeof studentSchema>;
+
+/** The profile's Notes card saves on its own, without the full form. */
+export const studentNotesSchema = z.object({ notes: z.string().default("") });
 
 const slotSchema = z.object({
   day: z.coerce.number().int().min(0).max(6),
