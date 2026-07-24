@@ -1,26 +1,152 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ============================================================================
+   English Tutor LMS — design system
+   Ported verbatim from the imported Claude Design comp (English Tutor LMS.dc.html).
+   Do NOT restyle: colors, radii, shadows, spacing tokens and animations below
+   are the visual source of truth. Theme is driven by data-* attributes on the
+   app root wrapper (see ThemeProvider): data-theme, data-accent, data-surface,
+   data-spacing.
+   ============================================================================ */
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:var(--font-geist-sans),'Geist',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;background:var(--bg);color:var(--fg)}
+a{color:var(--accent);text-decoration:none}
+a:hover{opacity:.8}
+svg{display:block}
+
+:root{
+  --bg:#f7f7f8;--card:#ffffff;--card-2:#fafafa;--sidebar:#fbfbfc;--fg:#09090b;--fg-2:#3f3f46;
+  --muted:#71717a;--muted-2:#78787f;--border:#e8e8ec;--border-2:#efeff1;--hover:#f4f4f5;
+  --primary:#d42525;--primary-fg:#ffffff;--accent:#d14242;--accent-soft:#fdecec;
+  --green:#16a34a;--green-soft:#f0fdf4;--amber:#d97706;--amber-soft:#fffbeb;--sky:#0284c7;--sky-soft:#f0f9ff;
+  --ring:rgba(212,37,37,.35);--r:14px;--sh:0 1px 2px rgba(9,9,11,.04);--gap:16px;
+
+  /* mono font token from next/font (Geist Mono) */
+  --font-mono-stack:var(--font-geist-mono),'Geist Mono',ui-monospace,monospace;
+}
+[data-theme="dark"]{
+  --bg:#09090b;--card:#131316;--card-2:#18181b;--sidebar:#0c0c0f;--fg:#fafafa;--fg-2:#d4d4d8;
+  --muted:#a1a1aa;--muted-2:#71717a;--border:#26262b;--border-2:#1e1e22;--hover:#1c1c20;
+  --primary:#e05656;--primary-fg:#ffffff;--accent:#e06a6a;--accent-soft:#3a1616;
+  --green:#4ade80;--green-soft:#0b1f14;--amber:#fbbf24;--amber-soft:#241a06;--sky:#38bdf8;--sky-soft:#062330;
+  --ring:rgba(224,106,106,.4);
+}
+/* --- Tweaks: Accent palette --- */
+[data-accent="indigo"]{--primary:#4f46e5;--accent:#4f46e5;--accent-soft:#eef2ff;--ring:rgba(79,70,229,.35)}
+[data-accent="emerald"]{--primary:#0f766e;--accent:#0f766e;--accent-soft:#ecfdf5;--ring:rgba(15,118,110,.32)}
+[data-accent="slate"]{--primary:#334155;--accent:#475569;--accent-soft:#f1f5f9;--ring:rgba(51,65,85,.3)}
+[data-theme="dark"][data-accent="indigo"]{--primary:#818cf8;--accent:#818cf8;--accent-soft:#1e1b4b;--ring:rgba(129,140,248,.4)}
+[data-theme="dark"][data-accent="emerald"]{--primary:#34d399;--accent:#34d399;--accent-soft:#062a22;--ring:rgba(52,211,153,.4)}
+[data-theme="dark"][data-accent="slate"]{--primary:#cbd5e1;--accent:#94a3b8;--accent-soft:#1e293b;--ring:rgba(148,163,184,.35);--primary-fg:#0f172a}
+/* --- Tweaks: Surface feel --- */
+[data-surface="flat"]{--r:8px;--sh:none}
+[data-surface="elevated"]{--r:20px;--sh:0 10px 30px rgba(9,9,11,.10)}
+[data-theme="dark"][data-surface="elevated"]{--sh:0 12px 34px rgba(0,0,0,.55)}
+/* --- Tweaks: Spacing --- */
+[data-spacing="airy"]{--gap:26px}
+[data-spacing="tight"]{--gap:11px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:var(--muted-2)}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes toastIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes drawerIn{from{transform:translateX(100%)}to{transform:none}}
+@keyframes overlayFade{from{opacity:0}to{opacity:1}}
+@keyframes selIn{from{opacity:0}to{opacity:1}}
+input:not([type=range]):hover:not(:focus), textarea:hover:not(:focus), select:hover:not(:focus){border-color:var(--muted-2) !important}
+[data-cs-trigger]:hover{border-color:var(--muted-2) !important;background:var(--hover) !important}
+nav button:hover{background:var(--hover) !important;color:var(--fg) !important}
+/* Consistent keyboard focus ring across all interactive elements (mouse clicks stay clean via :focus-visible) */
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [data-cs-trigger]:focus-visible, [tabindex]:focus-visible, label:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input:focus-visible, textarea:focus-visible{outline:none}
+button:disabled{opacity:.55;cursor:not-allowed}
+/* ---- RC1: standardized interaction states across every component ---- */
+/* Smooth every hover/focus/selected transition so colour + border changes never snap */
+button,a,[role="button"],[data-cs-trigger],[role="option"],[role="tab"],input:not([type=range]),textarea,select{
+  transition:background-color .15s ease,border-color .15s ease,color .15s ease,box-shadow .15s ease,opacity .15s ease,transform .09s ease}
+/* Pressed: subtle physical feedback on any actionable control (never on disabled) */
+button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,[data-cs-trigger]:active,[role="option"]:active,[role="tab"]:active{transform:translateY(1px)}
+/* Selected option check row keeps its resting position while pressed elsewhere */
+[role="option"][aria-selected="true"]:active{transform:none}
+@keyframes dialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes shimmer{100%{background-position:-200% 0}}
+/* ---- RC1: honour reduced-motion preference (accessibility) ---- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+/* ---- Responsive (Sprint 6 review fix) ---- */
+@media (max-width:1100px){
+  .ov-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+  .main-grid{grid-template-columns:minmax(0,1fr) !important}
+}
+@media (max-width:860px){
+  .app-main{padding:20px 18px 40px !important}
+  .app-sidebar{width:64px !important;min-width:64px !important}
+  .app-sidebar .sb-label{display:none !important}
+  .app-sidebar nav>div{display:none !important}
+  .app-sidebar nav button>span:not(:first-child){display:none !important}
+  .app-sidebar nav button{justify-content:center}
+}
+@media (max-width:620px){
+  .ov-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+  .kpi-grid{grid-template-columns:minmax(0,1fr) !important}
+  .app-header{gap:8px !important;padding:0 12px !important}
+  .app-header .hdr-user-meta{display:none !important}
+}
+@media print{
+  @page{margin:12mm}
+  html,body{height:auto !important;overflow:visible !important;background:#fff !important}
+  .no-print{display:none !important}
+  /* Only rewrite the page when a review is actually open, so global Ctrl+P from
+     any other screen prints that screen instead of a forced blank page. */
+  [data-theme].print-review{display:block !important;min-height:0 !important;height:auto !important;background:#fff !important}
+  [data-theme].print-review > *{display:none !important}
+  [data-theme].print-review > .review-overlay{display:block !important}
+  .review-overlay{position:static !important;inset:auto !important;height:auto !important;overflow:visible !important;background:#fff !important;animation:none !important}
+  .report-body{display:block !important;overflow:visible !important;height:auto !important}
+  .report-scroll{position:static !important;overflow:visible !important;height:auto !important;padding:0 !important;background:#fff !important;display:block !important}
+  .report-sheet{position:static !important;max-width:none !important;width:100% !important;margin:0 !important;border:none !important;box-shadow:none !important;border-radius:0 !important;overflow:visible !important}
+  /* Keep logical blocks whole across page breaks; header/footer print once each. */
+  .report-sheet .rp-block,.report-sheet .rp-head,.report-sheet .rp-foot{break-inside:avoid !important;page-break-inside:avoid !important}
+  /* Reports page: sheet is nested deep, so hide via visibility and reposition. */
+  [data-theme].print-report *{visibility:hidden !important}
+  [data-theme].print-report .report-sheet,[data-theme].print-report .report-sheet *{visibility:visible !important}
+  [data-theme].print-report .report-sheet{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;margin:0 !important;border:none !important;box-shadow:none !important;border-radius:0 !important}
 }
 
+/* ---- Interaction-state helpers ----
+   The design comp expresses focus/hover via runtime-only style-focus / style-hover
+   attributes. These classes reproduce those exact states for the React port so we
+   never restyle — only re-wire. Per-element sizing stays inline as in the design. */
+/* `ring` collides with Tailwind's own `ring` utility, which paints a 1px
+   currentColor ring at rest — that reads as a dark input border instead of the
+   comp's var(--border). Neutralise the resting state; :focus below still wins. */
+.ring{box-shadow:none}
+.ring:focus{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--ring) !important}
+.btn-primary:hover:not(:disabled){opacity:.88}
+.btn-ghost:hover:not(:disabled){background:var(--hover) !important}
+.lift:hover{border-color:var(--muted-2) !important}
+
+/* Tailwind theme bridge — expose the design tokens as Tailwind colors/fonts so
+   shadcn/ui primitives and utility classes resolve to the SAME palette. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-sidebar: var(--sidebar);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-green: var(--green);
+  --color-amber: var(--amber);
+  --color-sky: var(--sky);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

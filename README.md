@@ -1,36 +1,113 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# English Tutor LMS
 
-## Getting Started
+A calm, single-teacher Learning Management System — students, parents, classes,
+lessons, attendance, homework, monthly reviews, tuition/finance and reports —
+implemented in **Next.js 16 (App Router)** from an imported Claude Design comp,
+preserved **pixel-for-pixel**.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **Tailwind CSS v4** + **shadcn/ui** conventions; the design system is ported
+  verbatim from the design comp into `src/app/globals.css` (CSS variables driven
+  by `data-theme` / `data-accent` / `data-surface` / `data-spacing`).
+- **MongoDB Atlas** via **Mongoose** (Route Handlers under `app/api`)
+- **JWT auth** (`jose`) in an **HttpOnly cookie**; route protection in `src/proxy.ts`
+- **TanStack React Query** for client data fetching
+- **React Hook Form + Zod** for forms and validation (schemas shared client/server)
+- Deploys on **Vercel**
+
+## Getting started
+
+### 1. Install
+
+```bash
+npm install
+```
+
+### 2. Configure environment
+
+Copy `.env.example` to `.env.local` and fill in your values:
+
+```bash
+cp .env.example .env.local
+```
+
+- `MONGODB_URI` — your MongoDB Atlas connection string (Driver → Node.js)
+- `JWT_SECRET` — a long random string. Generate one:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
+  ```
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — the single admin account (defaults:
+  `teacher@tutor.app` / `demo1234`)
+
+### 3. Seed the database
+
+Loads the admin user and the full deterministic demo dataset (parents, students,
+classes, lessons, attendance, billing, homework, reviews, activity):
+
+```bash
+npm run seed
+```
+
+### 4. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 and sign in with the admin credentials.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploying to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Push this repo to GitHub and import it in Vercel (framework auto-detected).
+2. In **Project → Settings → Environment Variables**, add `MONGODB_URI`,
+   `MONGODB_DB`, `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`.
+3. In **MongoDB Atlas → Network Access**, allow Vercel (add `0.0.0.0/0` or
+   Vercel's egress ranges).
+4. Deploy. Run the seed once against your Atlas cluster (`npm run seed` locally
+   with the production `MONGODB_URI`).
 
-## Learn More
+## Project structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+design-reference/          The imported Claude Design comp (visual source of truth)
+  English Tutor LMS.dc.html
+  lib/*.js                  Original vanilla logic modules (reference)
+src/
+  app/
+    (app)/                  Authenticated shell + module pages
+    api/                    Route Handlers (auth, dashboard, meta, …)
+    login/                  Login screen
+    globals.css             Design system, ported verbatim
+  components/
+    shell/                  Sidebar, Header, AppShell
+    ui/                     Toast (shadcn-style additions land here)
+    icons.tsx               Inline SVG icons (paths from the design)
+  lib/
+    types.ts constants.ts calc.ts format.ts i18n.ts   Ported logic (TS)
+    finance.ts generate.ts dashboard.ts               Business logic
+    db.ts models.ts repo.ts                            MongoDB layer
+    auth.ts jwt.ts http.ts schemas.ts                 Auth + validation
+    settings-context.tsx                               Theme / i18n / regional
+scripts/seed.ts             Atlas seeder
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Implementation status
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Done:** project scaffold, design-system port, full domain model + Mongoose
+models, deterministic seed + derived lessons/attendance/billing, JWT auth
+(login/logout/session + route protection), Settings state (theme/accent/surface/
+density + language + regional formats), the app shell (sidebar + header), the
+Login screen, and the **Dashboard** (revenue engine, KPIs, today's classes,
+upcoming lessons, activity) — all pixel-faithful and wired to live data.
 
-## Deploy on Vercel
+**In progress (incremental):** Students, Parents, Classes, Lessons, Attendance,
+Homework, Reviews, Finance, Reports, Calendar and Settings screens — each ported
+from the design comp with its create/edit drawer, list/empty/loading/error
+states, API routes and validation.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Business rules
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Tuition/revenue and lesson-type rules live in [`CLAUDE.md`](./CLAUDE.md) and are
+implemented in `src/lib/finance.ts` and `src/lib/generate.ts`.
