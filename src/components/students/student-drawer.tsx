@@ -82,7 +82,13 @@ export function StudentDrawer({
     reader.readAsDataURL(file);
   }
 
-  const parentOptions = parents.map((p) => ({ value: p.id, label: `${p.name} · ${p.relationship}` }));
+  // A leading "— No Parent —" (value "") lets an existing assignment be cleared:
+  // PROJECT_RULES allows a Student to exist without a Parent. Selecting it saves
+  // parentId = "" (and the server derives parentName = "" from the empty id).
+  const parentOptions = [
+    { value: "", label: t("— No Parent —") },
+    ...parents.map((p) => ({ value: p.id, label: `${p.name} · ${p.relationship}` })),
+  ];
 
   return (
     <Drawer

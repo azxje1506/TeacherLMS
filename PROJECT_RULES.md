@@ -60,6 +60,37 @@ However, features that require parent communication
 (finance, reports, notifications, reviews)
 must clearly indicate when a Student has no linked Parent.
 
+## Parent
+
+Required
+
+- Full Name
+- Relationship
+- Phone Number
+
+Optional
+
+- Email
+- Notes
+
+Relationship options
+
+- Mother
+- Father
+- Guardian
+- Grandparent
+- Other
+
+Rules
+- One Parent may have multiple Students.
+- A Student may have zero or one linked Parent.
+- Parent is the source of truth.
+- New features must reference Parent by parentId instead of introducing additional duplicated fields.
+- Existing legacy fields may remain until a dedicated refactoring sprint.
+- Student references Parent by ID only.
+- Deleting a Parent must never delete Students.
+- Students become Unassigned if their linked Parent is removed.
+
 ## Lesson Types
 Three types, each supports attendance (Present / Absent / Late / Excused). Attendance always belongs to a **Lesson**, never directly to a Class.
 1. **Regular** — auto-generated from the class's recurring weekly schedule.

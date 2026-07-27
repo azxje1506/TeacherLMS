@@ -10,14 +10,30 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/* Relationship is a required Parent field with a fixed option set, both defined
+ * by PROJECT_RULES.md (Parent). Kept as the single source for the form's Select
+ * and the schema's membership check so the two never drift. */
+export const RELATIONSHIP_OPTIONS = ["Mother", "Father", "Guardian", "Grandparent", "Other"] as const;
+
+/* Required/optional follows PROJECT_RULES.md (Parent), NOT the design's `*`:
+ * Full Name, Relationship and Phone are required; Email and Notes are optional.
+ * Address is intentionally absent — it exists in neither the design nor the
+ * business rules. `relationship` stays a plain string (empty until chosen) and
+ * is constrained to RELATIONSHIP_OPTIONS by refine, so the form can hold "" for
+ * the placeholder while an unselected value still fails validation. */
 export const parentSchema = z.object({
-  name: z.string().min(2, "Name is required"),
-  relationship: z.string().min(1, "Select a relationship"),
+  name: z.string().min(2, "Full name is required"),
+  relationship: z
+    .string()
+    .refine((v) => (RELATIONSHIP_OPTIONS as readonly string[]).includes(v), "Select a relationship"),
   phone: z.string().regex(/\d{3}/, "Enter a valid phone number"),
   email: z.string().email("Enter a valid email").or(z.literal("")).optional().default(""),
   notes: z.string().optional().default(""),
 });
-export type ParentInput = z.infer<typeof parentSchema>;
+/** What the form holds while editing (email/notes defaults unapplied). */
+export type ParentFormInput = z.input<typeof parentSchema>;
+/** What validation produces and the API accepts. */
+export type ParentInput = z.output<typeof parentSchema>;
 
 /* Required/optional here follows the project specification, NOT the design's `*`
  * markers — a visual cue is not a business rule. `phone` is an independent
