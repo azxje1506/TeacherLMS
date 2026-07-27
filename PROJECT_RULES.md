@@ -91,6 +91,18 @@ Rules
 - Deleting a Parent must never delete Students.
 - Students become Unassigned if their linked Parent is removed.
 
+## Class
+
+Required
+- Name
+- Monthly Tuition Fee
+- Weekly Schedule
+
+Optional
+- Level
+- Classroom
+- Notes
+
 ## Lesson Types
 Three types, each supports attendance (Present / Absent / Late / Excused). Attendance always belongs to a **Lesson**, never directly to a Class.
 1. **Regular** — auto-generated from the class's recurring weekly schedule.

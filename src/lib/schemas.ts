@@ -75,7 +75,14 @@ export const classSchema = z.object({
   notes: z.string().optional().default(""),
   schedule: z.array(slotSchema).min(1, "Add at least one weekly time slot"),
 });
-export type ClassInput = z.infer<typeof classSchema>;
+/** What the form holds while editing (fee + slot day/duration still uncoerced,
+ * defaults unapplied). */
+export type ClassFormInput = z.input<typeof classSchema>;
+/** What validation produces and the API accepts. */
+export type ClassInput = z.output<typeof classSchema>;
+
+/** The detail's Teacher notes card saves on its own, without the full form. */
+export const classNotesSchema = z.object({ notes: z.string().default("") });
 
 export const homeworkSchema = z.object({
   title: z.string().min(1, "Title is required"),
