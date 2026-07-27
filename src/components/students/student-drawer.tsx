@@ -7,10 +7,12 @@
  * client and the Route Handler enforce exactly the same rules. */
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm, useWatch, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { studentSchema, type StudentFormInput, type StudentInput } from "@/lib/schemas";
 import { useSettings } from "@/lib/settings-context";
+import { MODULE_AVAILABLE } from "@/lib/constants";
 import { Drawer } from "@/components/ui/drawer";
 import { Select } from "@/components/ui/select";
 import { GRADE_OPTIONS, STATUS_OPTIONS } from "./student-ui";
@@ -50,6 +52,7 @@ export function StudentDrawer({
   onSave: (values: StudentInput) => void;
 }) {
   const { t, fmt } = useSettings();
+  const router = useRouter();
 
   // Three generics: what the fields hold, context, and what validation emits —
   // `grade` is coerced, so the in-form and submitted shapes genuinely differ.
@@ -134,9 +137,10 @@ export function StudentDrawer({
           {errors.birthday && <div role="alert" style={errStyle}>{t(errors.birthday.message ?? "")}</div>}
         </div>
 
-        {/* School */}
+        {/* School — optional in the schema, so no `*` (CLAUDE.md Required Fields:
+            the indicator matches validation, not the design's asterisk). */}
         <div>
-          <label style={labelStyle}>{t("School")} <span style={{ color: "var(--accent)" }}>*</span></label>
+          <label style={labelStyle}>{t("School")}</label>
           <input className="ring" placeholder={t("e.g. Riverside Elementary")} style={field(!!errors.school)} {...register("school")} />
           {errors.school && <div role="alert" style={errStyle}>{t(errors.school.message ?? "")}</div>}
         </div>
@@ -177,29 +181,64 @@ export function StudentDrawer({
           </div>
         </div>
 
-        {/* Parent / Guardian */}
+        {/* Parent / Guardian — Select when parents exist; otherwise an in-field
+            empty state that points at the Parents module (Sprint 3). Parent CRUD
+            is NOT implemented here. */}
         <div>
-          <label style={labelStyle}>{t("Parent / Guardian")} <span style={{ color: "var(--accent)" }}>*</span></label>
-          <Controller
-            control={control}
-            name="parentId"
-            render={({ fieldState, field: f }) => (
-              <Select
-                ariaLabel={t("Parent / Guardian")}
-                value={f.value ?? ""} // optional in the schema; empty shows the placeholder
-                placeholder={t("Select a parent…")}
-                options={parentOptions}
-                invalid={!!fieldState.error}
-                onChange={f.onChange}
-              />
-            )}
-          />
+          {/* No `*`: parentId is optional (PROJECT_RULES "Student & Parents"),
+              and CLAUDE.md requires the indicator to match validation. */}
+          <label style={labelStyle}>{t("Parent / Guardian")}</label>
+          {parentOptions.length > 0 ? (
+            <Controller
+              control={control}
+              name="parentId"
+              render={({ fieldState, field: f }) => (
+                <Select
+                  ariaLabel={t("Parent / Guardian")}
+                  value={f.value ?? ""} // optional in the schema; empty shows the placeholder
+                  placeholder={t("Select a parent…")}
+                  options={parentOptions}
+                  invalid={!!fieldState.error}
+                  onChange={f.onChange}
+                />
+              )}
+            />
+          ) : (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 9, background: "var(--card-2)", padding: "14px 14px 12px" }}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg-2)" }}>{t("No parents available yet.")}</div>
+              <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px", lineHeight: 1.5 }}>
+                {t("Create a parent in the Parents module before creating a student.")}
+              </p>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  disabled={!MODULE_AVAILABLE.parents}
+                  onClick={() => { onClose(); router.push("/parents"); }}
+                  className={MODULE_AVAILABLE.parents ? "btn-ghost" : undefined}
+                  style={{
+                    height: 34, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 9,
+                    background: "var(--card)", color: "var(--fg)", fontSize: 13, fontWeight: 500,
+                    fontFamily: "inherit", cursor: MODULE_AVAILABLE.parents ? "pointer" : "not-allowed",
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                  }}
+                >
+                  {t("Go to Parents")}
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+                </button>
+                {!MODULE_AVAILABLE.parents && (
+                  <span style={{ fontSize: 11.5, fontWeight: 600, padding: "3px 9px", borderRadius: 99, background: "var(--card-2)", border: "1px solid var(--border)", color: "var(--muted)", whiteSpace: "nowrap" }}>
+                    {t("Available in Sprint 3")}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {errors.parentId && <div role="alert" style={errStyle}>{t(errors.parentId.message ?? "")}</div>}
         </div>
 
-        {/* Phone */}
+        {/* Phone — optional in the schema, so no `*` (matches validation). */}
         <div>
-          <label style={labelStyle}>{t("Phone")} <span style={{ color: "var(--accent)" }}>*</span></label>
+          <label style={labelStyle}>{t("Phone")}</label>
           <input className="ring" placeholder="(555) 0142" style={field(!!errors.phone)} {...register("phone")} />
           {errors.phone && <div role="alert" style={errStyle}>{t(errors.phone.message ?? "")}</div>}
         </div>

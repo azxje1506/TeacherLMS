@@ -23,6 +23,11 @@ export const NOW_STAMP = "2026-07-10T09:41:00";
 export const CURRENT_MONTH = "2026-07";
 export const FINANCE_MONTHS = ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"];
 
+/** Which module UIs are live. Modules ship one per sprint (see PROJECT_RULES);
+ * routes for not-yet-built modules render a placeholder. Flip a flag to true
+ * when that module's sprint lands. Parents is Sprint 3. */
+export const MODULE_AVAILABLE = { parents: false } as const;
+
 // Behavioural tuning values.
 export const TOAST_MS = 2600;
 export const LOGIN_DELAY_MS = 700;

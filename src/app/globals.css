@@ -61,7 +61,7 @@ input:not([type=range]):hover:not(:focus), textarea:hover:not(:focus), select:ho
 nav button:hover{background:var(--hover) !important;color:var(--fg) !important}
 /* Consistent keyboard focus ring across all interactive elements (mouse clicks stay clean via :focus-visible) */
 button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [data-cs-trigger]:focus-visible, [tabindex]:focus-visible, label:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-input:focus-visible, textarea:focus-visible{outline:none}
+input:focus-visible, textarea:focus-visible, .ring:focus-visible{outline:none}
 button:disabled{opacity:.55;cursor:not-allowed}
 /* ---- RC1: standardized interaction states across every component ---- */
 /* Smooth every hover/focus/selected transition so colour + border changes never snap */

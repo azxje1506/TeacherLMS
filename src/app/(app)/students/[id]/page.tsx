@@ -244,7 +244,18 @@ export default function StudentProfilePage() {
                 </div>
               </>
             ) : (
-              <p style={{ color: "var(--muted)", fontSize: 13, margin: 0 }}>{t("No parent linked. Edit this student to assign one.")}</p>
+              /* Unassigned state — mirrors the parent-present layout (avatar +
+                 name + subtitle) with a neutral placeholder, so a student with
+                 no linked parent reads clearly. */
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ minWidth: 42, width: 42, height: 42, borderRadius: "50%", background: "var(--card-2)", border: "1px solid var(--border)", color: "var(--muted-2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="7" r="4" /><path d="M5.5 21a6.5 6.5 0 0 1 13 0" /></svg>
+                </span>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>{t("Unassigned")}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--muted-2)" }}>{t("No parent linked. Edit this student to assign one.")}</div>
+                </div>
+              </div>
             )}
           </div>
         </div>

@@ -220,7 +220,11 @@ export default function StudentsPage() {
                       </div>
                     </td>
                     <td style={{ padding: "11px 14px", fontSize: 13, color: "var(--fg-2)" }}>{t(r.gradeLabel)}</td>
-                    <td style={{ padding: "11px 14px", fontSize: 13, color: "var(--fg-2)" }}>{r.parentName}</td>
+                    <td style={{ padding: "11px 14px", fontSize: 13 }}>
+                      {r.parentName
+                        ? <span style={{ color: "var(--fg-2)" }}>{r.parentName}</span>
+                        : <span style={{ color: "var(--muted-2)", fontStyle: "italic" }}>{t("Unassigned")}</span>}
+                    </td>
                     <td style={{ padding: "11px 14px", fontSize: 12.5, color: "var(--muted)", fontFamily: "var(--font-mono-stack)" }}>{r.phone}</td>
                     <td style={{ padding: "11px 14px" }}>
                       <span style={statusBadgeStyle(r.status)}><span style={statusDotStyle(r.status)} />{t(r.status)}</span>

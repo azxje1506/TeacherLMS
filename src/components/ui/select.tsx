@@ -58,6 +58,9 @@ export function Select({
     <div ref={wrapRef} style={{ position: "relative" }}>
       <button
         type="button"
+        // `ring` gives the trigger the exact focus treatment text inputs use
+        // (see globals.css .ring:focus): accent border + 3px ring, no outline.
+        className="ring"
         data-cs-trigger="1"
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -68,7 +71,7 @@ export function Select({
           width: "100%", height, padding: "0 11px",
           border: `1px solid ${invalid ? "var(--accent)" : "var(--border)"}`, borderRadius: 9,
           background: "var(--card)", color: current ? "var(--fg)" : "var(--muted-2)",
-          fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+          fontSize: 13, fontFamily: "inherit", cursor: "pointer", outline: "none",
           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left",
         }}
       >
