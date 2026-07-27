@@ -51,6 +51,15 @@ Today (app clock) = **2026-07-10**. Currency = **VND**, formatted `1,500,000đ`.
 - Per-lesson value = monthly fee ÷ number of **regular** lessons scheduled that month (fixed baseline that does NOT shrink when lessons are cancelled). Attendance reduces the amount (Absent students don't count); Extra lessons add on top of the monthly fee.
 - Revenue Dashboard should show: Revenue by Class, by Student, by Month, by Lesson Type.
 
+## Student & Parents
+A Student may temporarily have no Parent assigned.
+
+Parent assignment is optional during Student creation.
+
+However, features that require parent communication
+(finance, reports, notifications, reviews)
+must clearly indicate when a Student has no linked Parent.
+
 ## Lesson Types
 Three types, each supports attendance (Present / Absent / Late / Excused). Attendance always belongs to a **Lesson**, never directly to a Class.
 1. **Regular** — auto-generated from the class's recurring weekly schedule.
