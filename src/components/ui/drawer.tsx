@@ -6,7 +6,9 @@
  * Body content is supplied per module (see CLAUDE.md: one drawer, many forms). */
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/lib/settings-context";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 export function Drawer({
   open, title, subtitle, saveLabel, saving = false, onClose, onSave, children,
@@ -33,17 +35,18 @@ export function Drawer({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Lock body scroll while the drawer owns the screen.
-  useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [open]);
+  // Lock body scroll while the drawer owns the screen (scrollbar-compensated,
+  // so the layout behind it does not shift).
+  useScrollLock(open);
 
   if (!open) return null;
 
-  return (
+  /* Portal to <body>. Each page root runs `animation: fadeUp … both`, and a
+   * filling animation leaves a computed transform of matrix(1,0,0,1,0,0) rather
+   * than none — which makes that element the containing block for fixed-position
+   * descendants. Rendered in place, the scrim and panel would anchor to the page
+   * content box instead of the viewport. */
+  return createPortal(
     <>
       <div
         onClick={onClose}
@@ -90,6 +93,7 @@ export function Drawer({
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

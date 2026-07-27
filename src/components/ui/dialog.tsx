@@ -6,7 +6,9 @@
  * centre-stage sibling. Destructive confirms tint the action with --accent. */
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "@/lib/settings-context";
+import { useScrollLock } from "@/lib/use-scroll-lock";
 
 export function ConfirmDialog({
   open, title, message, confirmLabel, destructive = false, busy = false, onCancel, onConfirm,
@@ -23,6 +25,10 @@ export function ConfirmDialog({
   const t = useT();
   const confirmRef = useRef<HTMLButtonElement>(null);
 
+  // Same compensated lock as the drawer: a modal should not let the page scroll
+  // behind it, and compensating keeps that from moving the layout.
+  useScrollLock(open);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
@@ -33,18 +39,27 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
+  // Portalled for the same reason as the drawer: the page root's filling
+  // `fadeUp` animation would otherwise act as the fixed-position containing
+  // block and confine the scrim and dialog to the page content box.
+  return createPortal(
     <>
       <div
         onClick={onCancel}
         style={{ position: "fixed", inset: 0, zIndex: 90, background: "rgba(9,9,11,.42)", animation: "overlayFade .2s ease both" }}
       />
+      {/* Centred with flexbox, not translate(-50%,-50%): `dialogIn` ends on
+          `transform: none` and, with fill-mode `both`, keeps applying it — which
+          would cancel a centring transform and leave the dialog offset by half
+          its own size. The wrapper ignores pointer events so the scrim below
+          still handles click-outside. */}
+      <div style={{ position: "fixed", inset: 0, zIndex: 91, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 91,
+          pointerEvents: "auto",
           width: "min(420px,92vw)", background: "var(--card)", border: "1px solid var(--border)",
           borderRadius: "var(--r)", boxShadow: "0 20px 50px rgba(9,9,11,.22)",
           padding: 22, animation: "dialogIn .2s ease both",
@@ -87,6 +102,8 @@ export function ConfirmDialog({
           </button>
         </div>
       </div>
-    </>
+      </div>
+    </>,
+    document.body
   );
 }
