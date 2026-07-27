@@ -92,6 +92,11 @@ export default function StudentsPage() {
     ? t("Loading…")
     : `${total} ${total === 1 ? t("student") : t("students")}`;
 
+  // Parent is the single source of truth: resolve the display name live from
+  // parentId against the current parents list, never from the legacy stored
+  // student.parentName (which is not synchronised on parent edits).
+  const parentNameById = new Map((data?.parents ?? []).map((p) => [p.id, p.name]));
+
   return (
     <div data-screen-label="Students" style={{ animation: "fadeUp .3s ease both" }}>
       {/* Heading */}
@@ -204,7 +209,9 @@ export default function StudentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows.map((r) => {
+                  const parentName = r.parentId ? parentNameById.get(r.parentId) : undefined;
+                  return (
                   <tr key={r.id} className="row-hover" style={{ borderTop: "1px solid var(--border-2)" }}>
                     <td style={{ padding: "11px 18px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -221,8 +228,8 @@ export default function StudentsPage() {
                     </td>
                     <td style={{ padding: "11px 14px", fontSize: 13, color: "var(--fg-2)" }}>{t(r.gradeLabel)}</td>
                     <td style={{ padding: "11px 14px", fontSize: 13 }}>
-                      {r.parentName
-                        ? <span style={{ color: "var(--fg-2)" }}>{r.parentName}</span>
+                      {parentName
+                        ? <span style={{ color: "var(--fg-2)" }}>{parentName}</span>
                         : <span style={{ color: "var(--muted-2)", fontStyle: "italic" }}>{t("Unassigned")}</span>}
                     </td>
                     <td style={{ padding: "11px 14px", fontSize: 12.5, color: "var(--muted)", fontFamily: "var(--font-mono-stack)" }}>{r.phone}</td>
@@ -252,7 +259,8 @@ export default function StudentsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

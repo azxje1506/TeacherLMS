@@ -1,9 +1,14 @@
 /* Students — server-side data access and derivation.
  *
  * The Student record stored in Mongo carries derived display fields (name,
- * initials, age, gradeLabel, parentName, avatarColor) exactly as the imported
- * design's seed does, so every screen can render a row without joining. This
- * module is the single place those fields are computed on write.
+ * initials, age, gradeLabel, avatarColor) exactly as the imported design's seed
+ * does. This module is the single place those fields are computed on write.
+ *
+ * `parentName` is a LEGACY backward-compatibility snapshot only: Parent is the
+ * single source of truth (PROJECT_RULES), so parent names are resolved live from
+ * parentId for rendering, searching and sorting. The legacy field never
+ * participates in query behaviour; it is written solely on student create/edit
+ * (a compatibility snapshot) and cleared to "" when a linked parent is deleted.
  *
  * Querying (search / filter / sort / paginate) happens here too so the Route
  * Handler stays thin. Sort and pagination are API-level capabilities: the
@@ -131,11 +136,17 @@ export async function listStudents(query: StudentQuery = {}): Promise<StudentLis
     ParentModel.find().select(clean).lean<Parent[]>(),
   ]);
 
+  // Parent is the single source of truth: resolve names live from parentId, so
+  // search and sort never depend on the legacy student.parentName snapshot
+  // (which is not synchronised on parent edits).
+  const parentNameById = new Map(parents.map((p) => [p.id, p.name]));
+  const resolveParentName = (s: Student) => (s.parentId ? parentNameById.get(s.parentId) ?? "" : "");
+
   // ---- search: name, school, parent (matches the design's placeholder) ----
   const q = (query.q ?? "").trim().toLowerCase();
   let rows = q
     ? all.filter((s) =>
-        [s.name, s.school, s.parentName].some((f) => String(f ?? "").toLowerCase().includes(q))
+        [s.name, s.school, resolveParentName(s)].some((f) => String(f ?? "").toLowerCase().includes(q))
       )
     : all.slice();
 
@@ -158,6 +169,9 @@ export async function listStudents(query: StudentQuery = {}): Promise<StudentLis
   rows.sort((a, b) => {
     let r: number;
     if (sort === "grade") r = Number(a.grade) - Number(b.grade);
+    // The "parentName" sort key stays in the API contract, but resolves from
+    // parentId against the Parent collection — never the legacy stored field.
+    else if (sort === "parentName") r = cmp.compare(resolveParentName(a), resolveParentName(b));
     else r = cmp.compare(String(a[sort] ?? ""), String(b[sort] ?? ""));
     // Stable, predictable tiebreak so paging never repeats or drops a row.
     return (r || cmp.compare(a.name, b.name) || cmp.compare(a.id, b.id)) * dir;
