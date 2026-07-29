@@ -57,6 +57,29 @@ export interface ScheduleSlot {
   duration: number; // minutes
 }
 
+/** A free window the scheduler offers for a slot, as From / To wall-clock times. */
+export interface TimeSuggestion {
+  start: string; // 24h "HH:MM"
+  end: string; // 24h "HH:MM"
+}
+
+/** An Active class already teaching at a proposed weekday + time range. Read-only
+ * preview of the overlap rule the API enforces on save (see lib/classes). */
+export interface ScheduleConflict {
+  classId: string;
+  name: string;
+  level: string;
+  day: number; // 0 (Sun) .. 6 (Sat)
+  start: string; // 24h "HH:MM"
+  end: string; // 24h "HH:MM"
+}
+
+/** Answer to "when is the teacher free?" for a proposed set of weekdays. */
+export interface ScheduleAvailability {
+  conflicts: ScheduleConflict[];
+  suggestions: TimeSuggestion[];
+}
+
 /** A class (group or one-on-one). `fee` is the integer VND monthly fee. */
 export interface Klass {
   id: string;

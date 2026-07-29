@@ -7,7 +7,7 @@
  *        Students, Lessons, Attendance and Finance are never touched.
  */
 
-import { getClass, updateClass, updateClassNotes, deleteClass } from "@/lib/classes";
+import { getClass, updateClass, updateClassNotes, deleteClass, ScheduleConflictError } from "@/lib/classes";
 import { classSchema, classNotesSchema } from "@/lib/schemas";
 import { json, error, handle, requireSession } from "@/lib/http";
 
@@ -42,9 +42,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     const parsed = classSchema.safeParse(body);
     if (!parsed.success) return error(parsed.error.issues[0]?.message ?? "Invalid input", 422);
-    const updated = await updateClass(id, parsed.data);
-    if (!updated) return error("Class not found", 404);
-    return json(updated);
+    try {
+      const updated = await updateClass(id, parsed.data);
+      if (!updated) return error("Class not found", 404);
+      return json(updated);
+    } catch (e) {
+      // 409 carries the clash as data too, so the client can localize it.
+      if (e instanceof ScheduleConflictError) {
+        return json({ error: e.message, code: "schedule_conflict", conflict: e.conflict }, 409);
+      }
+      throw e;
+    }
   });
 }
 

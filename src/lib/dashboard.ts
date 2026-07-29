@@ -11,7 +11,9 @@ import type { RevenueResult } from "./types";
 
 export interface DashClassRow { name: string; color: string; amount: number; meta: { students: number; lessons: number } }
 export interface DashTodayClass { lessonId: string; classId: string; name: string; start: string; status: string; color: string; meta: string }
-export interface DashUpcoming { lessonId: string; name: string; date: string; start: string }
+/** `duration` is carried so the card can show the lesson's full time range; the
+ * end time is derived for display, never stored. */
+export interface DashUpcoming { lessonId: string; name: string; date: string; start: string; duration: number }
 export interface DashActivity { id: string; type: string; pre: string; strong: string; post: string; ago: string }
 
 export interface DashboardPayload {
@@ -64,7 +66,7 @@ export function buildDashboard(data: AllData): DashboardPayload {
     .filter((l) => l.date >= TODAY_ISO && l.status === "Upcoming")
     .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start))
     .slice(0, 5)
-    .map((l) => ({ lessonId: l.id, name: classById.get(l.classId)?.name || l.classId, date: l.date, start: l.start }));
+    .map((l) => ({ lessonId: l.id, name: classById.get(l.classId)?.name || l.classId, date: l.date, start: l.start, duration: l.duration }));
 
   const reviewsThisMonth = new Set(reviews.filter((r) => r.month === CURRENT_MONTH).map((r) => r.studentId));
 

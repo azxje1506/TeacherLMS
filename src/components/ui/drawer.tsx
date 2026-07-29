@@ -76,7 +76,10 @@ export function Drawer({
           </button>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 22 }}>{children}</div>
+        {/* data-drawer-body marks the scroll container: a form section whose
+          * height changes can find it and hold the scroll position steady, so
+          * the fields above it never jump. */}
+        <div data-drawer-body="1" style={{ flex: 1, overflowY: "auto", padding: 22 }}>{children}</div>
 
         <div style={{ display: "flex", gap: 10, padding: "16px 22px", borderTop: "1px solid var(--border)" }}>
           <button

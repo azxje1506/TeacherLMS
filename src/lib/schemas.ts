@@ -2,6 +2,7 @@
  * (client validation) so the two never drift. */
 
 import { z } from "zod";
+import { minutesBetween, overlappingSlotIndexes } from "./calc";
 
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -59,11 +60,39 @@ export type StudentInput = z.output<typeof studentSchema>;
 /** The profile's Notes card saves on its own, without the full form. */
 export const studentNotesSchema = z.object({ notes: z.string().default("") });
 
+/** Bounds a weekly slot's length must satisfy. One source for the stored shape
+ * below and the drawer's From / To form schema. */
+export const SLOT_MIN_MINUTES = 15;
+export const SLOT_MAX_MINUTES = 240;
+
 const slotSchema = z.object({
   day: z.coerce.number().int().min(0).max(6),
   start: z.string().min(1, "Every slot needs a start time"),
-  duration: z.coerce.number().int().min(15).max(240),
+  duration: z.coerce.number().int().min(SLOT_MIN_MINUTES).max(SLOT_MAX_MINUTES),
 });
+
+/* A class may teach several lessons on one weekday, but never two at once. The
+ * rule is written once and applied to both schedule arrays below — the stored
+ * shape (start + duration) and the drawer's (From / To) — so the drawer warns
+ * inline and the API stays the final authority. Reuses `overlaps` via
+ * overlappingSlotIndexes, so back-to-back slots remain valid and exact
+ * duplicates do not. */
+const SAME_DAY_OVERLAP = "This lesson time overlaps another lesson on the same day.";
+
+/** Minimal shape of the ctx zod hands a superRefine — kept structural so this
+ * helper does not depend on a zod-internal type name. */
+type IssueSink = { addIssue: (issue: { code: "custom"; message: string; path: (string | number)[] }) => void };
+
+function flagSameDayOverlaps<T>(
+  slots: T[],
+  toSlot: (slot: T) => { day: number; start: string; duration: number },
+  ctx: IssueSink
+): void {
+  for (const i of overlappingSlotIndexes(slots.map(toSlot))) {
+    ctx.addIssue({ code: "custom", message: SAME_DAY_OVERLAP, path: [i, "start"] });
+  }
+}
+
 export const classSchema = z.object({
   name: z.string().min(2, "Class name is required"),
   type: z.enum(["group", "one-on-one"]).default("group"),
@@ -73,13 +102,62 @@ export const classSchema = z.object({
   status: z.enum(["Active", "Archived"]).default("Active"),
   studentIds: z.array(z.string()).default([]),
   notes: z.string().optional().default(""),
-  schedule: z.array(slotSchema).min(1, "Add at least one weekly time slot"),
+  schedule: z
+    .array(slotSchema)
+    .min(1, "Add at least one weekly time slot")
+    .superRefine((slots, ctx) => flagSameDayOverlaps(slots, (s) => s, ctx)),
 });
 /** What the form holds while editing (fee + slot day/duration still uncoerced,
  * defaults unapplied). */
 export type ClassFormInput = z.input<typeof classSchema>;
 /** What validation produces and the API accepts. */
 export type ClassInput = z.output<typeof classSchema>;
+
+/* The create/edit drawer schedules with From / To rather than a duration:
+ * teachers think in end times. The stored model is unchanged — `start` plus a
+ * `duration` in minutes — so the conversion lives here as a schema transform and
+ * the payload the API receives is exactly the ClassInput it has always been. */
+const formSlotSchema = z
+  .object({
+    day: z.coerce.number().int().min(0).max(6),
+    start: z.string().min(1, "Every slot needs a start time"),
+    end: z.string().min(1, "Every slot needs an end time"),
+  })
+  .superRefine((s, ctx) => {
+    const mins = minutesBetween(s.start, s.end);
+    if (!Number.isFinite(mins)) return; // an empty time is already reported above
+    const reject = (message: string) => ctx.addIssue({ code: "custom", message, path: ["end"] });
+    if (mins <= 0) reject("End time must be after start time.");
+    else if (mins < SLOT_MIN_MINUTES) reject("A lesson must be at least 15 minutes.");
+    else if (mins > SLOT_MAX_MINUTES) reject("A lesson can't be longer than 4 hours.");
+  });
+
+/** What the create/edit drawer validates against. Same fields as `classSchema`,
+ * except each slot carries From / To; the transform emits a plain `ClassInput`. */
+export const classFormSchema = classSchema
+  .omit({ schedule: true })
+  .extend({
+    schedule: z
+      .array(formSlotSchema)
+      .min(1, "Add at least one weekly time slot")
+      .superRefine((slots, ctx) =>
+        flagSameDayOverlaps(
+          slots,
+          (s) => ({ day: s.day, start: s.start, duration: minutesBetween(s.start, s.end) }),
+          ctx
+        )
+      ),
+  })
+  .transform(({ schedule, ...rest }): ClassInput => ({
+    ...rest,
+    schedule: schedule.map((s) => ({
+      day: s.day,
+      start: s.start,
+      duration: minutesBetween(s.start, s.end),
+    })),
+  }));
+/** What the drawer's fields hold while editing. */
+export type ClassFormValues = z.input<typeof classFormSchema>;
 
 /** The detail's Teacher notes card saves on its own, without the full form. */
 export const classNotesSchema = z.object({ notes: z.string().default("") });
@@ -112,3 +190,60 @@ export const paymentSchema = z.object({
   notes: z.string().optional().default(""),
 });
 export type PaymentInput = z.infer<typeof paymentSchema>;
+
+/* ------------------------------------------------------------------ Lessons */
+
+/* Regular lessons are generated from a class schedule and are never created,
+ * generically posted or hard-deleted through the API. The only creation paths
+ * are the two ad-hoc types below; every other change is a single-responsibility
+ * action endpoint. Required/optional follows PROJECT_RULES.md (Lesson Types). */
+
+/** PATCH /api/lessons/:id — editable lesson fields only. Never used to drive a
+ * business operation (cancel/reschedule/makeup have their own endpoints). Both
+ * fields are optional so a partial patch only touches what it sends. */
+export const lessonUpdateSchema = z.object({
+  notes: z.string().optional(),
+  classroom: z.string().optional(),
+});
+export type LessonUpdateInput = z.infer<typeof lessonUpdateSchema>;
+
+/** POST /api/lessons/:id/reschedule — move a lesson to a new date (and optionally
+ * a new time/duration). Drag-and-drop on the calendar sends just the date. */
+export const lessonRescheduleSchema = z.object({
+  date: z.string().min(1, "Pick a date"),
+  start: z.string().optional(),
+  duration: z.coerce.number().int().min(15).max(240).optional(),
+});
+export type LessonRescheduleInput = z.infer<typeof lessonRescheduleSchema>;
+
+/** POST /api/lessons/:id/cancel — cancel a lesson, optionally still chargeable
+ * (see the tuition rules: a cancelled lesson is excluded from revenue unless
+ * marked chargeable). */
+export const lessonCancelSchema = z.object({
+  chargeable: z.boolean().optional().default(false),
+});
+export type LessonCancelInput = z.infer<typeof lessonCancelSchema>;
+
+/** POST /api/lessons/extra — an Extra session on a one-on-one class (enforced in
+ * the service against the class type). */
+export const extraLessonSchema = z.object({
+  classId: z.string().min(1, "Select a class"),
+  date: z.string().min(1, "Pick a date"),
+  start: z.string().min(1, "Pick a start time"),
+  duration: z.coerce.number().int().min(15).max(240),
+  classroom: z.string().optional().default(""),
+  notes: z.string().optional().default(""),
+});
+export type ExtraLessonInput = z.infer<typeof extraLessonSchema>;
+
+/** POST /api/lessons/:id/makeup — a Makeup that replaces a cancelled Regular
+ * lesson on a group class (both constraints enforced in the service). Time and
+ * duration default to the original lesson's when omitted. */
+export const makeupLessonSchema = z.object({
+  date: z.string().min(1, "Pick a date"),
+  start: z.string().optional(),
+  duration: z.coerce.number().int().min(15).max(240).optional(),
+  classroom: z.string().optional(),
+  notes: z.string().optional().default(""),
+});
+export type MakeupLessonInput = z.infer<typeof makeupLessonSchema>;

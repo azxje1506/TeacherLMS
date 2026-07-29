@@ -20,10 +20,14 @@
 import "server-only";
 import { dbConnect } from "./db";
 import { ClassModel, mongoose } from "./models";
-import { CLASS_PALETTE } from "./constants";
-import { hash } from "./calc";
-import type { Klass } from "./types";
-import type { ClassInput } from "./schemas";
+import {
+  CLASS_PALETTE, DOW_FULL, SUGGESTION_MAX, SUGGESTION_STEP_MINUTES,
+  TEACHING_DAY_END, TEACHING_DAY_START,
+} from "./constants";
+import { fromMinutes, hash, overlaps, toMinutes } from "./calc";
+import { createFormat } from "./format";
+import type { Klass, ScheduleAvailability, ScheduleConflict } from "./types";
+import { SLOT_MAX_MINUTES, SLOT_MIN_MINUTES, type ClassInput } from "./schemas";
 
 const clean = "-_id -__v";
 
@@ -141,10 +145,184 @@ export async function getClass(id: string): Promise<Klass | null> {
   return (await ClassModel.findOne({ id }).select(clean).lean<Klass>()) ?? null;
 }
 
+/* --------------------------------------------------- schedule conflicts */
+
+/** Thrown when a class's Active schedule overlaps another Active class's. The
+ * Route Handlers map this to HTTP 409.
+ *
+ * `conflict` carries the clash as data (which class, which weekday, which times)
+ * so the client can render the message in the user's language through the i18n
+ * dictionary. `message` stays a readable English sentence for API consumers and
+ * logs — it is a fallback, never what the UI shows. */
+export class ScheduleConflictError extends Error {
+  readonly conflict: ScheduleConflict;
+
+  constructor(message: string, conflict: ScheduleConflict) {
+    super(message);
+    this.name = "ScheduleConflictError";
+    this.conflict = conflict;
+  }
+}
+
+/** Single-teacher rule: no two **Active** classes may share an overlapping
+ * weekly slot (same weekday + overlapping time range). Rejects the create/update
+ * when the incoming schedule clashes with any OTHER Active class.
+ *
+ * - Only Active classes participate — archiving a class never conflicts, and
+ *   archived classes are ignored as candidates.
+ * - The class being updated is excluded by id.
+ * - Overlap reuses calc.overlaps (the interval test `startA < endB && endA >
+ *   startB`), so back-to-back slots (end === next start) do NOT conflict.
+ * - O(other Active classes × slots); per-class slot counts are tiny. */
+async function assertNoScheduleConflict(id: string | null, input: ClassInput): Promise<void> {
+  if (input.status !== "Active") return; // an archived class can't conflict
+  await dbConnect();
+  const others = await ClassModel.find({
+    status: "Active",
+    ...(id ? { id: { $ne: id } } : {}),
+  })
+    .select("id name level schedule -_id")
+    .lean<Array<Pick<Klass, "id" | "name" | "level" | "schedule">>>();
+
+  const fmt = createFormat();
+  for (const other of others) {
+    for (const a of input.schedule) {
+      for (const b of other.schedule ?? []) {
+        if (a.day === b.day && overlaps(a.start, a.duration, b.start, b.duration)) {
+          const end = fromMinutes(toMinutes(b.start) + b.duration);
+          // The English sentence is the API/log fallback; the UI re-renders this
+          // from `conflict` in the user's language (see class-ui.conflictMessage).
+          throw new ScheduleConflictError(
+            `Schedule conflicts with class '${other.name}' (${DOW_FULL[b.day]} ${fmt.time12(b.start)} – ${fmt.time12(end)}).`,
+            {
+              classId: other.id,
+              name: other.name,
+              level: other.level ?? "",
+              day: b.day,
+              start: b.start,
+              end,
+            }
+          );
+        }
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------ schedule availability */
+
+/** Query behind the drawer's "Suggested available times". Everything arrives as
+ * a raw query string and is sanitised here, so the Route Handler stays thin. */
+export interface AvailabilityQuery {
+  /** Weekdays to check, comma separated, e.g. "1,3,5". */
+  days?: string;
+  /** The proposed start ("HH:MM"). Omit to skip the conflict check. */
+  start?: string;
+  /** The proposed length in minutes (To − From). */
+  duration?: string;
+  /** The class being edited — excluded from its own conflict check. */
+  excludeId?: string;
+}
+
+/** Read-only scheduling aid for the create/edit drawer. Answers two questions
+ * for a proposed set of weekdays at one time range:
+ *
+ * - `conflicts` — which OTHER Active classes already occupy that range. This is
+ *   a preview of assertNoScheduleConflict (same `overlaps` test, same Active-only
+ *   rule), never a replacement: the API still rejects a clashing save with 409.
+ * - `suggestions` — free windows of the same length, shared by EVERY requested
+ *   weekday, inside the teaching-day window. Candidates are the earliest and the
+ *   latest start of each free run, ranked by nearness to what the teacher typed. */
+export async function scheduleAvailability(q: AvailabilityQuery = {}): Promise<ScheduleAvailability> {
+  const empty: ScheduleAvailability = { conflicts: [], suggestions: [] };
+
+  const days = [...new Set(
+    String(q.days ?? "")
+      .split(",")
+      .map((d) => d.trim())
+      .filter((d) => d !== "") // an empty param means "no weekdays", not Sunday
+      .map(Number)
+      .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  )];
+  const duration = Number(q.duration);
+  if (days.length === 0) return empty;
+  if (!Number.isFinite(duration) || duration < SLOT_MIN_MINUTES || duration > SLOT_MAX_MINUTES) return empty;
+
+  await dbConnect();
+  const others = await ClassModel.find({
+    status: "Active",
+    ...(q.excludeId ? { id: { $ne: q.excludeId } } : {}),
+  })
+    .select("id name level schedule -_id")
+    .lean<Array<Pick<Klass, "id" | "name" | "level" | "schedule">>>();
+
+  // ---- what is already taught on each requested weekday ----
+  const start = String(q.start ?? "");
+  const busy = new Map<number, Array<[number, number]>>(days.map((d) => [d, []]));
+  const conflicts: ScheduleConflict[] = [];
+  for (const other of others) {
+    for (const s of other.schedule ?? []) {
+      const day = busy.get(s.day);
+      if (!day) continue;
+      const from = toMinutes(s.start);
+      day.push([from, from + s.duration]);
+      if (start && overlaps(start, duration, s.start, s.duration)) {
+        conflicts.push({
+          classId: other.id,
+          name: other.name,
+          level: other.level ?? "",
+          day: s.day,
+          start: s.start,
+          end: fromMinutes(from + s.duration),
+        });
+      }
+    }
+  }
+  conflicts.sort((a, b) => a.day - b.day || a.start.localeCompare(b.start));
+
+  // ---- free runs shared by every requested weekday ----
+  const open = toMinutes(TEACHING_DAY_START);
+  const close = toMinutes(TEACHING_DAY_END);
+  const step = SUGGESTION_STEP_MINUTES;
+  const taken = (at: number) =>
+    days.some((d) => (busy.get(d) ?? []).some(([s, e]) => at < e && s < at + duration));
+
+  const candidates: number[] = [];
+  let runFirst: number | null = null;
+  let runLast: number | null = null;
+  const closeRun = () => {
+    if (runFirst !== null) candidates.push(runFirst);
+    if (runLast !== null && runLast !== runFirst) candidates.push(runLast);
+    runFirst = null;
+    runLast = null;
+  };
+  for (let at = Math.ceil(open / step) * step; at + duration <= close; at += step) {
+    if (taken(at)) { closeRun(); continue; }
+    if (runFirst === null) runFirst = at;
+    runLast = at;
+  }
+  closeRun();
+
+  const proposed = start ? toMinutes(start) : NaN;
+  const ranked = [...new Set(candidates)]
+    .filter((at) => at !== proposed)
+    .sort((a, b) =>
+      Number.isFinite(proposed) ? Math.abs(a - proposed) - Math.abs(b - proposed) || a - b : a - b
+    )
+    .slice(0, SUGGESTION_MAX)
+    .sort((a, b) => a - b);
+
+  return {
+    conflicts,
+    suggestions: ranked.map((at) => ({ start: fromMinutes(at), end: fromMinutes(at + duration) })),
+  };
+}
+
 /* ---------------------------------------------------------------------- CRUD */
 
 export async function createClass(input: ClassInput): Promise<Klass> {
   await dbConnect();
+  await assertNoScheduleConflict(null, input);
   // Identity is a MongoDB ObjectId; the string `id` mirrors it (id =
   // _id.toString()), exactly as Parents do. Never sequential.
   const _id = new mongoose.Types.ObjectId();
@@ -160,6 +338,7 @@ export async function updateClass(id: string, input: ClassInput): Promise<Klass 
   await dbConnect();
   const existing = await ClassModel.findOne({ id }).select(clean).lean<Klass>();
   if (!existing) return null;
+  await assertNoScheduleConflict(id, input);
   const doc = applyInput(input, id, existing.color, existing);
   await ClassModel.updateOne({ id }, { $set: doc });
   return doc;

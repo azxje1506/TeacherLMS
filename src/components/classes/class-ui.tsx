@@ -6,7 +6,7 @@
  * screens can never drift.
  */
 
-import type { ClassType, Klass, ScheduleSlot } from "@/lib/types";
+import type { ClassType, Klass, ScheduleConflict, ScheduleSlot } from "@/lib/types";
 import type { Formatter } from "@/lib/format";
 import type { Lang } from "@/lib/types";
 import { translate } from "@/lib/i18n";
@@ -60,11 +60,38 @@ export const TYPE_OPTIONS: { value: ClassType; label: string }[] = [
 /** Weekday options for a schedule slot's day select (0=Sun .. 6=Sat). */
 export const DAY_OPTIONS = DOW_FULL.map((label, value) => ({ value: String(value), label }));
 
+/* Stored weekdays are 0=Sun..6=Sat, but a timetable reads Monday first, so the
+ * schedule editor lists and orders days by WEEK_ORDER. Presentation only —
+ * ScheduleSlot.day is untouched.
+ *
+ * TODO(week-order): the Calendar month/week grid still starts on Sunday
+ * (src/app/(app)/calendar/page.tsx `startOfWeek`), so the two surfaces read the
+ * week differently. Unify the whole app on one weekday order in a dedicated
+ * sprint — it touches the calendar grid, its headers and any day pickers, and is
+ * deliberately out of scope here. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
+
+/** Position of a stored weekday within WEEK_ORDER (Monday = 0 … Sunday = 6). */
+export function weekIndex(day: number): number {
+  const at = WEEK_ORDER.indexOf(day);
+  return at === -1 ? WEEK_ORDER.length : at;
+}
+
+/** Canonical schedule order: Monday-first weekday, then chronological. The
+ * editor keeps its field array in this order so a row's position always matches
+ * its index — no display-only sorting. */
+export function compareSlots(
+  a: { day: number; start: string },
+  b: { day: number; start: string }
+): number {
+  return weekIndex(a.day) - weekIndex(b.day) || a.start.localeCompare(b.start);
+}
+
 /** Duration options for a schedule slot, in minutes. */
 export const DURATION_OPTIONS = [30, 45, 60, 90, 120].map((m) => ({ value: String(m), label: `${m} min` }));
 
 /** Localized short weekday, e.g. day 1 -> "Mon" / "T2". */
-function dowShort(day: number, lang: Lang): string {
+export function dowShort(day: number, lang: Lang): string {
   return translate(DOW_SHORT[day] ?? "", lang);
 }
 
@@ -73,7 +100,13 @@ export function dowFull(day: number, lang: Lang): string {
   return translate(DOW_FULL[day] ?? "", lang);
 }
 
-/** One-line recurring-schedule label: "Mon 09:00 · Wed 14:30", or "No schedule". */
+/** The compact one-line schedule summary for a class card: "Mon 09:00 AM · Wed
+ * 06:00 PM", or "No schedule".
+ *
+ * Start times only — deliberately. This is a summary line on a card, and full
+ * ranges make it wrap and swamp the card's hierarchy. Screens that present the
+ * schedule itself (Class Detail, the Lesson drawer) use <RecurringSchedule />,
+ * which shows every slot as a full range. */
 export function scheduleLabel(schedule: ScheduleSlot[] | undefined, fmt: Formatter, lang: Lang): string {
   if (!schedule || schedule.length === 0) return translate("No schedule", lang);
   return schedule
@@ -81,6 +114,71 @@ export function scheduleLabel(schedule: ScheduleSlot[] | undefined, fmt: Formatt
     .sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))
     .map((s) => `${dowShort(s.day, lang)} ${fmt.time12(s.start)}`)
     .join(" · ");
+}
+
+/** The save-time schedule clash, in the teacher's language: "Schedule conflicts
+ * with Grammar Stars · B1 (Monday 06:00 PM–07:00 PM)". Composed from dictionary
+ * fragments plus the shared formatter, so nothing English reaches the UI — the
+ * class name and level are user content and stay verbatim. */
+export function conflictMessage(
+  conflict: ScheduleConflict,
+  lang: Lang,
+  fmt: Formatter
+): string {
+  const who = `${conflict.name}${conflict.level ? ` · ${conflict.level}` : ""}`;
+  const when = `${dowFull(conflict.day, lang)} ${timeRangeLabel(conflict.start, conflict.end, fmt)}`;
+  return `${translate("Schedule conflicts with", lang)} ${who} (${when})`;
+}
+
+/** A stored slot's time as a range, e.g. "06:00 PM – 07:30 PM". */
+export function slotRangeLabel(slot: ScheduleSlot, fmt: Formatter): string {
+  return timeRangeLabel(slot.start, fmt.addMinutes(slot.start, slot.duration), fmt);
+}
+
+/** The recurring weekly schedule as a list of weekday rows — the Class Detail
+ * card's presentation, extracted so the Lesson drawer (Lessons list and
+ * Calendar alike) renders it identically instead of keeping a second layout.
+ *
+ * One row per weekday: the day is named once and all of its slots stack on the
+ * right, so a weekday teaching twice stays grouped under a single heading. */
+export function RecurringSchedule({
+  schedule, fmt, lang,
+}: {
+  schedule: ScheduleSlot[] | undefined;
+  fmt: Formatter;
+  lang: Lang;
+}) {
+  const slots = (schedule ?? []).slice().sort((a, b) => a.day - b.day || a.start.localeCompare(b.start));
+  if (slots.length === 0) {
+    return <div style={{ fontSize: 13, color: "var(--muted)" }}>{translate("No schedule", lang)}</div>;
+  }
+
+  const days: { day: number; slots: ScheduleSlot[] }[] = [];
+  for (const s of slots) {
+    const group = days[days.length - 1];
+    if (group && group.day === s.day) group.slots.push(s);
+    else days.push({ day: s.day, slots: [s] });
+  }
+
+  return (
+    <>
+      {days.map((group) => (
+        <div
+          key={group.day}
+          style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "9px 0", borderTop: "1px solid var(--border-2)" }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{dowFull(group.day, lang)}</div>
+          <div style={{ textAlign: "right" }}>
+            {group.slots.map((s, i) => (
+              <div key={i} style={{ fontSize: 12.5, color: "var(--fg-2)", fontFamily: "'Geist Mono',monospace", marginTop: i === 0 ? 0 : 3 }}>
+                {slotRangeLabel(s, fmt)}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
 }
 
 /** "4 students" / "1 student" from the class-owned enrolled count. */
@@ -91,6 +189,13 @@ export function studentText(count: number, lang: Lang): string {
 /** Monthly tuition label, e.g. "800,000đ/mo". */
 export function feeLabel(fee: number, fmt: Formatter): string {
   return `${fmt.vnd(fee)}/mo`;
+}
+
+/** A From / To pair in the teacher's time format, e.g. "06:00 PM – 07:30 PM".
+ * The one place a time range is composed — spaces around an en dash, everywhere
+ * a schedule or lesson time is shown. */
+export function timeRangeLabel(start: string, end: string, fmt: Formatter): string {
+  return `${fmt.time12(start)} – ${fmt.time12(end)}`;
 }
 
 /** Human duration, e.g. 60 -> "60 min". */

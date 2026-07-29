@@ -23,6 +23,20 @@ export const NOW_STAMP = "2026-07-10T09:41:00";
 export const CURRENT_MONTH = "2026-07";
 export const FINANCE_MONTHS = ["2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"];
 
+/** Rolling window the runtime Lessons "ensure" service reconciles Regular lessons
+ * across, expressed as a span of whole months around CURRENT_MONTH. Configurable
+ * so the service never hardcodes month values (see src/lib/lessons.ts). */
+export const LESSON_WINDOW_PREVIOUS_MONTHS = 1;
+export const LESSON_WINDOW_NEXT_MONTHS = 2;
+
+/** Window the class drawer's "Suggested available times" searches for free time,
+ * plus the grid candidate starts snap to and how many are offered. Suggestions
+ * are a scheduling aid only — they never relax the overlap rule the API enforces. */
+export const TEACHING_DAY_START = "07:00";
+export const TEACHING_DAY_END = "21:30";
+export const SUGGESTION_STEP_MINUTES = 15;
+export const SUGGESTION_MAX = 4;
+
 /** Which module UIs are live. Modules ship one per sprint (see PROJECT_RULES);
  * routes for not-yet-built modules render a placeholder. Flip a flag to true
  * when that module's sprint lands. Parents is Sprint 3. */

@@ -13,6 +13,7 @@ import {
   IconRevenue, IconClock, IconStudents, IconAttendance, IconTrendUp, IconCheck,
   IconHomework, IconReviews, IconClasses, IconLessons, IconCalendar,
 } from "@/components/icons";
+import { timeRangeLabel } from "@/components/classes/class-ui";
 
 const card: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", boxShadow: "var(--sh)" };
 
@@ -203,7 +204,7 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{fmt.dateLabel(u.date)} · {fmt.time12(u.start)}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{fmt.dateLabel(u.date)} · {timeRangeLabel(u.start, fmt.addMinutes(u.start, u.duration), fmt)}</div>
                   </div>
                 </div>
               );

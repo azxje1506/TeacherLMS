@@ -4,13 +4,18 @@
  * to the Settings context and are safe to call during SSR. */
 
 import type { Lang, RegionalConfig } from "./types";
+import { fromMinutes, toMinutes } from "./calc";
 import { months as i18nMonths } from "./i18n";
 import { RATE_VND_PER_USD } from "./i18n";
 
 const EM = "—"; // em dash — the shared "no value" placeholder
 
+/* timeFormat is 12h so every rendered time reads the way the browser's native
+ * <input type="time"> does for these teachers (06:00 PM) — that control follows
+ * the OS locale and cannot be forced to a format, so the app matches it rather
+ * than the other way round. */
 export const DEFAULT_REGIONAL: RegionalConfig = {
-  dateFormat: "DD/MM/YYYY", timeFormat: "24h", currency: "VND", numberFormat: "comma",
+  dateFormat: "DD/MM/YYYY", timeFormat: "12h", currency: "VND", numberFormat: "comma",
 };
 
 /** Group an integer/decimal string per the chosen number format. */
@@ -59,16 +64,15 @@ export function createFormat(regional: RegionalConfig = DEFAULT_REGIONAL, lang: 
       const ap = h < 12 ? "AM" : "PM";
       let hh = h % 12;
       if (hh === 0) hh = 12;
-      return hh + ":" + String(m).padStart(2, "0") + " " + ap;
+      // Zero-padded so a rendered time lines up with what the browser's native
+      // <input type="time"> shows in a 12h locale ("05:00 PM", not "5:00 PM").
+      return String(hh).padStart(2, "0") + ":" + String(m).padStart(2, "0") + " " + ap;
     },
 
     addMinutes(hhmm: string, min: number): string {
-      const p = String(hhmm).split(":").map(Number);
-      if (!isFinite(p[0]) || !isFinite(p[1])) return hhmm;
-      let tot = p[0] * 60 + p[1] + Number(min || 0);
-      tot = ((tot % 1440) + 1440) % 1440;
-      const H = Math.floor(tot / 60), M = tot % 60;
-      return String(H).padStart(2, "0") + ":" + String(M).padStart(2, "0");
+      const base = toMinutes(hhmm);
+      if (!isFinite(base)) return hhmm;
+      return fromMinutes(base + Number(min || 0));
     },
 
     /** Local "YYYY-MM-DD" (avoids the UTC shift of toISOString). */

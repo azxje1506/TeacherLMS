@@ -6,7 +6,7 @@
  * POST /api/classes  -> the created Class
  */
 
-import { listClasses, createClass } from "@/lib/classes";
+import { listClasses, createClass, ScheduleConflictError } from "@/lib/classes";
 import { classSchema } from "@/lib/schemas";
 import { json, error, handle, requireSession } from "@/lib/http";
 
@@ -35,6 +35,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const parsed = classSchema.safeParse(body);
     if (!parsed.success) return error(parsed.error.issues[0]?.message ?? "Invalid input", 422);
-    return json(await createClass(parsed.data), 201);
+    try {
+      return json(await createClass(parsed.data), 201);
+    } catch (e) {
+      // 409 carries the clash as data too, so the client can localize it.
+      if (e instanceof ScheduleConflictError) {
+        return json({ error: e.message, code: "schedule_conflict", conflict: e.conflict }, 409);
+      }
+      throw e;
+    }
   });
 }

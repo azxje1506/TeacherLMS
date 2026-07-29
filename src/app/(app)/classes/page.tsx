@@ -18,11 +18,13 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { ClassDrawer } from "@/components/classes/class-drawer";
 import {
   cardStyle, chipStyle, classBadgeStyle, typeLabel, scheduleLabel, studentText, feeLabel,
+  conflictMessage,
 } from "@/components/classes/class-ui";
 import {
-  createClass, deleteClass, fetchClasses, classKeys, updateClass,
+  createClass, deleteClass, fetchClasses, classKeys, updateClass, ClassConflictError,
   type ListParams, type ClassRow,
 } from "@/components/classes/api";
+import { lessonKeys } from "@/components/lessons/api";
 import type { ClassInput } from "@/lib/schemas";
 
 const STATUS_CHIPS = ["All", "Active", "Archived"];
@@ -48,6 +50,9 @@ export default function ClassesPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: classKeys.all });
     qc.invalidateQueries({ queryKey: ["meta", "counts"] }); // sidebar badge
+    // Lessons present class-owned fields (classroom, name, colour), so every
+    // lesson view has to re-read after a class changes.
+    qc.invalidateQueries({ queryKey: lessonKeys.all });
   };
 
   const saveMutation = useMutation({
@@ -58,8 +63,14 @@ export default function ClassesPage() {
       setDrawerFor(undefined);
       toast(t(vars.id ? "Class updated" : "Class created"));
     },
-    onError: (e: Error) => toast(t(e.message), "error"),
+    onError: (e: Error) => toast(saveErrorText(e), "error"),
   });
+
+  /** A schedule clash is rendered from its data so it localizes; anything else
+   * is a dictionary key already. */
+  function saveErrorText(e: Error): string {
+    return e instanceof ClassConflictError ? conflictMessage(e.conflict, lang, fmt) : t(e.message);
+  }
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteClass(id),

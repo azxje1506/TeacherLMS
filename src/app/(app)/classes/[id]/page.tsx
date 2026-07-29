@@ -19,10 +19,11 @@ import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { ClassDrawer } from "@/components/classes/class-drawer";
 import {
-  cardStyle, classBadgeStyle, typeLabel, feeLabel, dowFull,
+  cardStyle, classBadgeStyle, typeLabel, feeLabel, conflictMessage, RecurringSchedule,
 } from "@/components/classes/class-ui";
+import { lessonKeys } from "@/components/lessons/api";
 import {
-  deleteClass, fetchClass, saveClassNotes, classKeys, updateClass,
+  deleteClass, fetchClass, saveClassNotes, classKeys, updateClass, ClassConflictError,
 } from "@/components/classes/api";
 import { CURRENT_MONTH } from "@/lib/constants";
 import type { ClassInput } from "@/lib/schemas";
@@ -51,12 +52,20 @@ export default function ClassDetailPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: classKeys.all });
     qc.invalidateQueries({ queryKey: ["meta", "counts"] }); // sidebar badge
+    // Lessons present class-owned fields (classroom, name, colour), so every
+    // lesson view has to re-read after a class changes.
+    qc.invalidateQueries({ queryKey: lessonKeys.all });
   };
 
   const saveMutation = useMutation({
     mutationFn: (values: ClassInput) => updateClass(id, values),
     onSuccess: () => { invalidate(); setEditing(false); toast(t("Class updated")); },
-    onError: (e: Error) => toast(t(e.message), "error"),
+    onError: (e: Error) => toast(
+      // A schedule clash is rendered from its data so it localizes; anything
+      // else is a dictionary key already.
+      e instanceof ClassConflictError ? conflictMessage(e.conflict, lang, fmt) : t(e.message),
+      "error"
+    ),
   });
 
   const notesMutation = useMutation({
@@ -104,7 +113,6 @@ export default function ClassDetailPage() {
   const isArchived = klass.status === "Archived";
   const infoLine = [t(typeLabel(klass.type)), klass.level, feeLabel(klass.fee, fmt), klass.classroom]
     .filter(Boolean).join(" · ");
-  const scheduleRows = klass.schedule.slice().sort((a, b) => a.day - b.day || a.start.localeCompare(b.start));
 
   return (
     <div data-screen-label="Class detail" style={{ animation: "fadeUp .3s ease both" }}>
@@ -196,15 +204,8 @@ export default function ClassDetailPage() {
           {/* Weekly schedule — Class-owned, real. */}
           <div style={{ ...cardStyle, padding: "16px 18px" }}>
             <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 12 }}>{t("Weekly schedule")}</div>
-            {scheduleRows.map((r, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 0", borderTop: "1px solid var(--border-2)" }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{dowFull(r.day, lang)}</div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 12.5, color: "var(--fg-2)", fontFamily: "'Geist Mono',monospace" }}>{fmt.time12(r.start)}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted-2)" }}>{r.duration} {t("min")}</div>
-                </div>
-              </div>
-            ))}
+            {/* Shared with the Lesson drawer so both read identically. */}
+            <RecurringSchedule schedule={klass.schedule} fmt={fmt} lang={lang} />
           </div>
 
           {/* Teacher notes — Class-owned, real, saves on its own. Keyed on the

@@ -1,10 +1,14 @@
 "use client";
 
-/* Class create/edit form — ported verbatim from the design comp's drawer
- * "CLASS FORM" block (drawerIsClass): Class name, a Type / Level pair, a Monthly
- * tuition fee / Classroom pair, the repeatable Weekly schedule (day / time /
- * duration rows) and Teacher notes. Validation is React Hook Form + the shared
- * Zod schema, so the client and the Route Handler enforce exactly the same rules.
+/* Class create/edit form — ported from the design comp's drawer "CLASS FORM"
+ * block (drawerIsClass): Class name, a Type / Level pair, a Monthly tuition fee /
+ * Classroom pair, the Meeting Schedule section and Teacher notes. Validation is
+ * React Hook Form + the shared Zod schema, so the client and the Route Handler
+ * enforce exactly the same rules.
+ *
+ * Scheduling lives in ScheduleEditor and is expressed as From / To (Sprint 5.1);
+ * `classFormSchema` converts each row back to the stored `start` + `duration`,
+ * so what this drawer POSTs is the same ClassInput it always was.
  *
  * Required markers follow PROJECT_RULES.md (Name, Monthly Tuition Fee, Weekly
  * Schedule), which here matches the design's `*`. Type, Level, Classroom and
@@ -16,13 +20,15 @@
  * Archive / Restore lives on the detail header instead. */
 
 import { useEffect } from "react";
-import { useForm, useFieldArray, Controller } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { classSchema, type ClassFormInput, type ClassInput } from "@/lib/schemas";
+import { classFormSchema, type ClassFormValues, type ClassInput } from "@/lib/schemas";
+import { fromMinutes, toMinutes } from "@/lib/calc";
 import { useSettings } from "@/lib/settings-context";
 import { Drawer } from "@/components/ui/drawer";
 import { Select } from "@/components/ui/select";
-import { TYPE_OPTIONS, DAY_OPTIONS, DURATION_OPTIONS } from "./class-ui";
+import { TYPE_OPTIONS, compareSlots } from "./class-ui";
+import { ScheduleEditor } from "./schedule-editor";
 import type { Klass } from "@/lib/types";
 
 const field = (invalid: boolean): React.CSSProperties => ({
@@ -34,19 +40,37 @@ const field = (invalid: boolean): React.CSSProperties => ({
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6 };
 const errStyle: React.CSSProperties = { fontSize: 11.5, color: "var(--accent)", marginTop: 5 };
 
-function emptyValues(): ClassFormInput {
+/** The required marker. The non-breaking space keeps it welded to the last word
+ * of the label, so a label that wraps in a narrow column (Monthly tuition fee
+ * (VND/month)) can never leave a lone `*` on the next line. */
+function Required() {
+  return <span style={{ color: "var(--accent)", whiteSpace: "nowrap" }}>&nbsp;*</span>;
+}
+
+function emptyValues(): ClassFormValues {
   return {
     name: "", type: "group", level: "", fee: "", classroom: "", status: "Active", notes: "",
-    schedule: [{ day: 1, start: "09:00", duration: 60 }],
+    schedule: [{ day: 1, start: "09:00", end: "10:00" }],
   };
 }
 
-function valuesFrom(c: Klass): ClassFormInput {
+function valuesFrom(c: Klass): ClassFormValues {
   return {
     name: c.name, type: c.type, level: c.level ?? "", fee: c.fee, classroom: c.classroom ?? "",
     status: c.status, notes: c.notes ?? "",
-    schedule: c.schedule.map((s) => ({ day: s.day, start: s.start, duration: s.duration })),
+    // Seeded in the editor's canonical order (Monday first, then chronological)
+    // so a row's position always equals its field-array index. Reordering the
+    // array changes nothing about the schedule itself.
+    schedule: c.schedule.slice().sort(compareSlots).map((s) => ({
+      day: s.day, start: s.start, end: fromMinutes(toMinutes(s.start) + s.duration),
+    })),
   };
+}
+
+/** Do all slots run at the same time? That is what same-time mode means, so a
+ * class opens in the mode that actually describes its schedule. */
+function isUniform(schedule: Klass["schedule"]): boolean {
+  return schedule.every((s) => s.start === schedule[0].start && s.duration === schedule[0].duration);
 }
 
 export function ClassDrawer({
@@ -59,17 +83,16 @@ export function ClassDrawer({
   onClose: () => void;
   onSave: (values: ClassInput) => void;
 }) {
-  const { t } = useSettings();
+  const { t, fmt } = useSettings();
 
   // Three generics: what the fields hold, context, and what validation emits —
-  // fee and each slot's day/duration are coerced, so the shapes genuinely differ.
-  const { register, handleSubmit, control, reset, formState: { errors } } =
-    useForm<ClassFormInput, unknown, ClassInput>({
-      resolver: zodResolver(classSchema),
-      defaultValues: klass ? valuesFrom(klass) : emptyValues(),
-    });
-
-  const { fields, append, remove } = useFieldArray({ control, name: "schedule" });
+  // fee and each slot's day are coerced and From / To becomes a duration, so the
+  // shapes genuinely differ.
+  const form = useForm<ClassFormValues, unknown, ClassInput>({
+    resolver: zodResolver(classFormSchema),
+    defaultValues: klass ? valuesFrom(klass) : emptyValues(),
+  });
+  const { register, handleSubmit, control, reset, formState: { errors } } = form;
 
   // Re-seed whenever the drawer opens for a different record.
   useEffect(() => {
@@ -77,9 +100,6 @@ export function ClassDrawer({
   }, [open, klass, reset]);
 
   const typeOptions = TYPE_OPTIONS.map((o) => ({ ...o, label: t(o.label) }));
-  const dayOptions = DAY_OPTIONS.map((o) => ({ ...o, label: t(o.label) }));
-  // The array-level "add at least one slot" message; per-slot messages render inline.
-  const scheduleError = errors.schedule?.message ?? errors.schedule?.root?.message;
 
   return (
     <Drawer
@@ -97,7 +117,7 @@ export function ClassDrawer({
 
         {/* Class name */}
         <div>
-          <label style={labelStyle}>{t("Class name")} <span style={{ color: "var(--accent)" }}>*</span></label>
+          <label style={labelStyle}>{t("Class name")}<Required /></label>
           <input className="ring" placeholder={t("e.g. Grammar Stars · B1")} style={field(!!errors.name)} {...register("name")} />
           {errors.name && <div role="alert" style={errStyle}>{t(errors.name.message ?? "")}</div>}
         </div>
@@ -128,8 +148,32 @@ export function ClassDrawer({
         {/* Monthly tuition fee / Classroom */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
-            <label style={labelStyle}>{t("Monthly tuition fee (VND/month)")} <span style={{ color: "var(--accent)" }}>*</span></label>
-            <input className="ring" type="number" placeholder="750000" style={field(!!errors.fee)} {...register("fee")} />
+            <label style={labelStyle}>{t("Monthly tuition fee (VND/month)")}<Required /></label>
+            {/* Grouped while typing (1500000 -> 1,500,000) through the shared
+              * formatter, so it follows the number-format preference. The field
+              * itself holds digits only, which is what the schema coerces and
+              * what the payload carries — the separators never leave the input. */}
+            <Controller
+              control={control}
+              name="fee"
+              render={({ field: f }) => {
+                const digits = String(f.value ?? "").replace(/\D/g, "");
+                return (
+                  <input
+                    className="ring"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    placeholder={fmt.number(750000)}
+                    aria-label={t("Monthly tuition fee (VND/month)")}
+                    style={field(!!errors.fee)}
+                    value={digits === "" ? "" : fmt.number(Number(digits))}
+                    onChange={(e) => f.onChange(e.target.value.replace(/\D/g, ""))}
+                    onBlur={f.onBlur}
+                  />
+                );
+              }}
+            />
             {errors.fee && <div role="alert" style={errStyle}>{t(errors.fee.message ?? "")}</div>}
           </div>
           <div>
@@ -138,69 +182,14 @@ export function ClassDrawer({
           </div>
         </div>
 
-        {/* Weekly schedule — repeatable day / time / duration rows */}
-        <div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-            <label style={{ fontSize: 12.5, fontWeight: 500 }}>{t("Weekly schedule")} <span style={{ color: "var(--accent)" }}>*</span></label>
-            <button
-              type="button"
-              onClick={() => append({ day: 1, start: "09:00", duration: 60 })}
-              className="btn-ghost"
-              style={{ height: 28, padding: "0 10px", border: "1px solid var(--border)", borderRadius: 7, background: "var(--card)", color: "var(--fg)", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-              {t("Add slot")}
-            </button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-            {fields.map((f, i) => (
-              <div key={f.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr auto", gap: 7, alignItems: "center" }}>
-                <Controller
-                  control={control}
-                  name={`schedule.${i}.day`}
-                  render={({ field: sf }) => (
-                    <Select
-                      ariaLabel={t("Day")}
-                      value={String(sf.value ?? "")}
-                      options={dayOptions}
-                      onChange={(v) => sf.onChange(Number(v))}
-                    />
-                  )}
-                />
-                <input
-                  className="ring"
-                  type="time"
-                  aria-label={t("Start time")}
-                  style={{ height: 38, padding: "0 8px", border: `1px solid ${errors.schedule?.[i]?.start ? "var(--accent)" : "var(--border)"}`, borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 13, fontFamily: "inherit", outline: "none" }}
-                  {...register(`schedule.${i}.start`)}
-                />
-                <Controller
-                  control={control}
-                  name={`schedule.${i}.duration`}
-                  render={({ field: sf }) => (
-                    <Select
-                      ariaLabel={t("Duration")}
-                      value={String(sf.value ?? "")}
-                      options={DURATION_OPTIONS}
-                      onChange={(v) => sf.onChange(Number(v))}
-                    />
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={() => remove(i)}
-                  title={t("Remove slot")}
-                  aria-label={t("Remove slot")}
-                  className="icon-danger"
-                  style={{ minWidth: 34, width: 34, height: 38, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14" /></svg>
-                </button>
-              </div>
-            ))}
-          </div>
-          {scheduleError && <div role="alert" style={{ ...errStyle, marginTop: 6 }}>{t(String(scheduleError))}</div>}
-        </div>
+        {/* Meeting Schedule — weekdays + From / To, with availability help.
+          * The section only exists while the drawer is open, so its mode state
+          * is seeded fresh from the record on every open. */}
+        <ScheduleEditor
+          form={form}
+          initialSameTime={klass ? isUniform(klass.schedule) : true}
+          excludeId={klass?.id ?? null}
+        />
 
         {/* Teacher notes */}
         <div>
