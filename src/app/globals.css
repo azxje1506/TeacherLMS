@@ -73,6 +73,11 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
 [role="option"][aria-selected="true"]:active{transform:none}
 @keyframes dialogIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:none}}
 @keyframes popIn{from{opacity:0;transform:translateY(-4px) scale(.98)}to{opacity:1;transform:none}}
+/* Tooltip only — a softer sibling of popIn with no travel, so a label that can
+   appear under the pointer at any moment fades up in place instead of darting.
+   Paired with --radix-tooltip-content-transform-origin so it grows out of the
+   trigger. Additive: nothing in the imported design uses it. */
+@keyframes tooltipIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
 @keyframes shimmer{100%{background-position:-200% 0}}
 /* ---- RC1: honour reduced-motion preference (accessibility) ---- */
 @media (prefers-reduced-motion:reduce){

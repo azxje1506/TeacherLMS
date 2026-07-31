@@ -19,14 +19,14 @@
 
 import "server-only";
 import { dbConnect } from "./db";
-import { ClassModel, mongoose } from "./models";
+import { ClassModel, StudentModel, mongoose } from "./models";
 import {
   CLASS_PALETTE, DOW_FULL, SUGGESTION_MAX, SUGGESTION_STEP_MINUTES,
   TEACHING_DAY_END, TEACHING_DAY_START,
 } from "./constants";
 import { fromMinutes, hash, overlaps, toMinutes } from "./calc";
 import { createFormat } from "./format";
-import type { Klass, ScheduleAvailability, ScheduleConflict } from "./types";
+import type { Klass, ScheduleAvailability, ScheduleConflict, Student } from "./types";
 import { SLOT_MAX_MINUTES, SLOT_MIN_MINUTES, type ClassInput } from "./schemas";
 
 const clean = "-_id -__v";
@@ -45,6 +45,25 @@ function colorFor(id: string): string {
   return CLASS_PALETTE[hash(id) % CLASS_PALETTE.length];
 }
 
+/** Canonical form of a free-text classroom name, applied on every write so
+ * " room a ", "ROOM A" and "Room  A" cannot become three different rooms:
+ *
+ *  - trim, then collapse runs of whitespace to a single space;
+ *  - title-case each purely alphabetic word (so "ROOM"/"room" → "Room").
+ *
+ * Words that are not purely letters are left exactly as typed — "1B", "A2" and
+ * "B1" are identifiers, and lower-casing their tail would corrupt them. There is
+ * deliberately no Room entity: a classroom is a Class-owned string, and the
+ * drawer's suggestions are derived from the classes that already use one. */
+export function normalizeClassroom(value: string | undefined): string {
+  return (value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w !== "")
+    .map((w) => (/^\p{L}+$/u.test(w) ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(" ");
+}
+
 /** Fold a validated form payload into a full Class record.
  *
  * `studentIds` is enrolment data owned by a later sprint: on create it starts
@@ -57,7 +76,7 @@ function applyInput(input: ClassInput, id: string, color: string, base: Partial<
     type: input.type,
     level: (input.level ?? "").trim(),
     fee: input.fee,
-    classroom: (input.classroom ?? "").trim(),
+    classroom: normalizeClassroom(input.classroom),
     status: input.status,
     studentIds: base.studentIds ?? [],
     notes: (input.notes ?? "").trim(),
@@ -99,13 +118,25 @@ export async function listClasses(query: ClassQuery = {}): Promise<ClassListResu
   await dbConnect();
   const all = await ClassModel.find().select(clean).lean<Klass[]>();
 
-  // ---- search: name, level, classroom (matches the design's placeholder) ----
+  // ---- search: class name, level, classroom and enrolled student names ----
+  // Student is the owner of its own name (PROJECT_RULES: data ownership), so a
+  // student match is resolved by reading Students and intersecting the class's
+  // `studentIds` — never by copying names onto the Class record.
   const q = (query.q ?? "").trim().toLowerCase();
-  let rows = q
-    ? all.filter((c) =>
-        [c.name, c.level, c.classroom].some((f) => String(f ?? "").toLowerCase().includes(q))
-      )
-    : all.slice();
+  let rows = all.slice();
+  if (q) {
+    const matchedStudents = new Set(
+      (await StudentModel.find().select("id name first last -_id")
+        .lean<Array<Pick<Student, "id" | "name" | "first" | "last">>>())
+        .filter((s) => [s.name, s.first, s.last].some((f) => String(f ?? "").toLowerCase().includes(q)))
+        .map((s) => s.id)
+    );
+    rows = all.filter(
+      (c) =>
+        [c.name, c.level, c.classroom].some((f) => String(f ?? "").toLowerCase().includes(q)) ||
+        (c.studentIds ?? []).some((id) => matchedStudents.has(id))
+    );
+  }
 
   // ---- filter: status chip (All / Active / Archived) ----
   const status = query.status ?? "";
@@ -138,6 +169,22 @@ export async function listClasses(query: ClassQuery = {}): Promise<ClassListResu
     page,
     pageSize,
   };
+}
+
+/** Every classroom already in use, normalized and de-duplicated — the source
+ * behind the drawer's classroom suggestions. Derived from the Class records
+ * themselves, so no Room entity exists and nothing has to be maintained: a name
+ * appears as soon as one class uses it and disappears when the last one stops. */
+export async function listClassrooms(): Promise<string[]> {
+  await dbConnect();
+  const rows = await ClassModel.find().select("classroom -_id").lean<Array<{ classroom?: string }>>();
+  const byKey = new Map<string, string>();
+  for (const r of rows) {
+    const name = normalizeClassroom(r.classroom);
+    if (name) byKey.set(name.toLowerCase(), name);
+  }
+  const cmp = collator();
+  return [...byKey.values()].sort((a, b) => cmp.compare(a, b));
 }
 
 export async function getClass(id: string): Promise<Klass | null> {

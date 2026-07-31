@@ -29,12 +29,21 @@ export function ConfirmDialog({
   // behind it, and compensating keeps that from moving the layout.
   useScrollLock(open);
 
+  /* Escape closes the dialog and nothing else. Listening in the capture phase
+   * and stopping propagation there keeps the key from also reaching a surface
+   * underneath — a confirm raised from inside the drawer (Archive / Restore)
+   * would otherwise dismiss the drawer and the teacher's unsaved edits with it.
+   * The dialog is modal and always the topmost layer, so it owns the key. */
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCancel(); };
-    document.addEventListener("keydown", onKey);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      onCancel();
+    };
+    document.addEventListener("keydown", onKey, true);
     confirmRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [open, onCancel]);
 
   if (!open) return null;

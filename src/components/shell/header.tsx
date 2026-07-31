@@ -6,6 +6,7 @@
  * are visual triggers to be deepened by their modules. */
 
 import { useSettings } from "@/lib/settings-context";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { IconSidebar, IconSearch, IconPlus, IconSun, IconMoon, IconBell } from "@/components/icons";
 
 const iconBtn: React.CSSProperties = {
@@ -30,9 +31,14 @@ export function Header({ onToggleSidebar, user }: { onToggleSidebar: () => void;
         position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", gap: 14, padding: "0 22px",
       }}
     >
-      <button onClick={onToggleSidebar} title={t("Toggle sidebar")} className="btn-ghost" style={{ ...iconBtn, minWidth: 34, width: 34, height: 34 }}>
-        <IconSidebar size={17} />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button onClick={onToggleSidebar} aria-label={t("Toggle sidebar")} className="btn-ghost" style={{ ...iconBtn, minWidth: 34, width: 34, height: 34 }}>
+            <IconSidebar size={17} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t("Toggle sidebar")}</TooltipContent>
+      </Tooltip>
 
       <div style={{ position: "relative", flex: 1, minWidth: 170, maxWidth: 420 }}>
         <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted-2)", display: "flex" }}><IconSearch size={16} /></span>
@@ -52,14 +58,24 @@ export function Header({ onToggleSidebar, user }: { onToggleSidebar: () => void;
         <IconPlus size={16} />{t("Quick add")}
       </button>
 
-      <button onClick={() => setAppearance({ theme: isDark ? "light" : "dark" })} title={t("Toggle theme")} className="btn-ghost" style={iconBtn}>
-        {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button onClick={() => setAppearance({ theme: isDark ? "light" : "dark" })} aria-label={t("Toggle theme")} className="btn-ghost" style={iconBtn}>
+            {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t("Toggle theme")}</TooltipContent>
+      </Tooltip>
 
       <div style={{ position: "relative" }}>
-        <button title={t("Notifications")} className="btn-ghost" style={{ ...iconBtn, position: "relative" }}>
-          <IconBell size={17} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button aria-label={t("Notifications")} className="btn-ghost" style={{ ...iconBtn, position: "relative" }}>
+              <IconBell size={17} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t("Notifications")}</TooltipContent>
+        </Tooltip>
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 9, paddingLeft: 12, borderLeft: "1px solid var(--border)", marginLeft: 2 }}>

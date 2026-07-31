@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
 import { useScrollLock } from "@/lib/use-scroll-lock";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RecurringSchedule, timeRangeLabel } from "@/components/classes/class-ui";
 import { Avatar } from "@/components/students/student-ui";
 import {
@@ -77,12 +78,17 @@ export function LessonDrawer({ lessonId, onClose }: { lessonId: string | null; o
               {ld && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{t(lessonTypeLabel(ld.type))}</div>}
             </div>
           </div>
-          <button
-            type="button" onClick={onClose} aria-label={t("Close")} title={t("Close")} className="btn-ghost"
-            style={{ minWidth: 32, width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button" onClick={onClose} aria-label={t("Close")} className="btn-ghost"
+                style={{ minWidth: 32, width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t("Close")}</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Body */}

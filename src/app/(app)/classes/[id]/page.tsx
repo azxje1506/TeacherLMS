@@ -17,13 +17,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ClassDrawer } from "@/components/classes/class-drawer";
 import {
   cardStyle, classBadgeStyle, typeLabel, feeLabel, conflictMessage, RecurringSchedule,
 } from "@/components/classes/class-ui";
 import { lessonKeys } from "@/components/lessons/api";
 import {
-  deleteClass, fetchClass, saveClassNotes, classKeys, updateClass, ClassConflictError,
+  deleteClass, fetchClass, saveClassNotes, classKeys, updateClass, setClassStatus,
+  ClassConflictError,
 } from "@/components/classes/api";
 import { CURRENT_MONTH } from "@/lib/constants";
 import type { ClassInput } from "@/lib/schemas";
@@ -68,6 +70,22 @@ export default function ClassDetailPage() {
     ),
   });
 
+  /** Archive / restore — a status change through the same update path, from the
+   * header or from the edit drawer's footer. It rebuilds the validated payload
+   * from the stored record and swaps only `status`. */
+  const statusMutation = useMutation({
+    mutationFn: (vars: { status: "Active" | "Archived" }) => setClassStatus(klass!, vars.status),
+    onSuccess: (_res, vars) => {
+      invalidate();
+      setEditing(false);
+      toast(t(vars.status === "Archived" ? "Class archived" : "Class restored"));
+    },
+    onError: (e: Error) => toast(
+      e instanceof ClassConflictError ? conflictMessage(e.conflict, lang, fmt) : t(e.message),
+      "error"
+    ),
+  });
+
   const notesMutation = useMutation({
     mutationFn: (notes: string) => saveClassNotes(id, notes),
     onSuccess: () => { invalidate(); toast(t("Notes saved")); },
@@ -80,15 +98,8 @@ export default function ClassDetailPage() {
     onError: (e: Error) => { setConfirm(false); toast(t(e.message), "error"); },
   });
 
-  /** Archive / restore is a status change through the same update path. It
-   * rebuilds the full validated payload from the current record. */
   function setStatus(next: "Active" | "Archived") {
-    if (!klass) return;
-    saveMutation.mutate({
-      name: klass.name, type: klass.type, level: klass.level, fee: klass.fee,
-      classroom: klass.classroom, status: next, studentIds: klass.studentIds ?? [],
-      notes: klass.notes ?? "", schedule: klass.schedule,
-    });
+    if (klass) statusMutation.mutate({ status: next });
   }
 
   if (isLoading) {
@@ -133,13 +144,24 @@ export default function ClassDetailPage() {
             {/* Extra lesson belongs to the Lessons/Attendance sprint — shown for
                 one-on-one classes per the design, inert until then. */}
             {isOneOnOne && (
-              <button
-                type="button" disabled title={t("Available in a later sprint")}
-                style={{ height: 36, padding: "0 13px", border: "1px solid #7c3aed", borderRadius: 9, background: "color-mix(in srgb, #7c3aed 13%, var(--card))", color: "#7c3aed", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", display: "flex", alignItems: "center", gap: 6 }}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                {t("Extra lesson")}
-              </button>
+              <Tooltip>
+                {/* A disabled <button> dispatches no pointer events, so Radix
+                    can never see the hover on the button itself. The documented
+                    workaround: make a wrapper the trigger, and let the button go
+                    pointer-events:none (it stays disabled and inert either way). */}
+                <TooltipTrigger asChild>
+                  <span style={{ display: "inline-flex", cursor: "not-allowed" }}>
+                    <button
+                      type="button" disabled
+                      style={{ height: 36, padding: "0 13px", border: "1px solid #7c3aed", borderRadius: 9, background: "color-mix(in srgb, #7c3aed 13%, var(--card))", color: "#7c3aed", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                      {t("Extra lesson")}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{t("Available in a later sprint")}</TooltipContent>
+              </Tooltip>
             )}
             <button type="button" onClick={() => setEditing(true)} className="btn-ghost" style={headBtn}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -150,9 +172,14 @@ export default function ClassDetailPage() {
             ) : (
               <button type="button" onClick={() => setStatus("Active")} className="btn-ghost" style={{ ...headBtn, gap: 0 }}>{t("Restore")}</button>
             )}
-            <button type="button" onClick={() => setConfirm(true)} title={t("Delete")} aria-label={t("Delete")} className="icon-danger" style={{ minWidth: 36, width: 36, height: 36, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" onClick={() => setConfirm(true)} aria-label={t("Delete")} className="icon-danger" style={{ minWidth: 36, width: 36, height: 36, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("Delete")}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -164,10 +191,18 @@ export default function ClassDetailPage() {
           <div style={cardStyle}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px 12px" }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>{t("Enrolled students")}</div>
-              <button type="button" disabled title={t("Available in a later sprint")} style={{ height: 32, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted-2)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", display: "flex", alignItems: "center", gap: 6 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                {t("Assign students")}
-              </button>
+              <Tooltip>
+                {/* Disabled trigger — see the Extra lesson button above. */}
+                <TooltipTrigger asChild>
+                  <span style={{ display: "inline-flex", cursor: "not-allowed" }}>
+                    <button type="button" disabled style={{ height: 32, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted-2)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                      {t("Assign students")}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{t("Available in a later sprint")}</TooltipContent>
+              </Tooltip>
             </div>
             <div style={{ padding: "20px 18px 26px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
               {t("Enrolment arrives in a later sprint.")}
@@ -226,6 +261,8 @@ export default function ClassDetailPage() {
         saving={saveMutation.isPending}
         onClose={() => setEditing(false)}
         onSave={(values) => saveMutation.mutate(values)}
+        onSetStatus={setStatus}
+        statusSaving={statusMutation.isPending}
       />
 
       <ConfirmDialog

@@ -17,6 +17,7 @@ import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { Select } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { StudentDrawer } from "@/components/students/student-drawer";
 import {
   Avatar, GRADE_OPTIONS, cardStyle, chipStyle, rowIconBtn, statusBadgeStyle, statusDotStyle,
@@ -148,15 +149,19 @@ export default function StudentsPage() {
           />
         </div>
 
-        <button
-          onClick={() => refetch()}
-          title={t("Refresh")}
-          aria-label={t("Refresh")}
-          className="btn-ghost"
-          style={{ minWidth: 38, width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={isFetching ? { animation: "spin .7s linear infinite" } : undefined}><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => refetch()}
+              aria-label={t("Refresh")}
+              className="btn-ghost"
+              style={{ minWidth: 38, width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={isFetching ? { animation: "spin .7s linear infinite" } : undefined}><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t("Refresh")}</TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Table card */}
@@ -238,24 +243,49 @@ export default function StudentsPage() {
                     </td>
                     <td style={{ padding: "11px 18px" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-                        <button onClick={() => router.push(`/students/${r.id}`)} title={t("View profile")} aria-label={t("View profile")} className="icon-action" style={rowIconBtn}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
-                        </button>
-                        <button onClick={() => setDrawerFor(r)} title={t("Edit")} aria-label={t("Edit")} className="icon-action" style={rowIconBtn}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button onClick={() => router.push(`/students/${r.id}`)} aria-label={t("View profile")} className="icon-action" style={rowIconBtn}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("View profile")}</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button onClick={() => setDrawerFor(r)} aria-label={t("Edit")} className="icon-action" style={rowIconBtn}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("Edit")}</TooltipContent>
+                        </Tooltip>
                         {r.status !== "Archived" ? (
-                          <button onClick={() => setStatusFor(r, "Archived")} title={t("Archive")} aria-label={t("Archive")} className="icon-action" style={rowIconBtn}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" /></svg>
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button onClick={() => setStatusFor(r, "Archived")} aria-label={t("Archive")} className="icon-action" style={rowIconBtn}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="4" rx="1" /><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8" /><path d="M10 12h4" /></svg>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("Archive")}</TooltipContent>
+                          </Tooltip>
                         ) : (
-                          <button onClick={() => setStatusFor(r, "Active")} title={t("Restore")} aria-label={t("Restore")} className="icon-restore" style={rowIconBtn}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button onClick={() => setStatusFor(r, "Active")} aria-label={t("Restore")} className="icon-restore" style={rowIconBtn}>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("Restore")}</TooltipContent>
+                          </Tooltip>
                         )}
-                        <button onClick={() => setConfirm(r)} title={t("Delete")} aria-label={t("Delete")} className="icon-danger" style={rowIconBtn}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
-                        </button>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button onClick={() => setConfirm(r)} aria-label={t("Delete")} className="icon-danger" style={rowIconBtn}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t("Delete")}</TooltipContent>
+                        </Tooltip>
                       </div>
                     </td>
                   </tr>

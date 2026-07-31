@@ -4,8 +4,8 @@
  * styles at runtime (that logic isn't in the exported markup), so they're
  * reproduced here once in the comp's own pill language — mirroring how
  * class-ui.tsx does it for Classes — and consumed by the list, the calendar and
- * the drawer. Generic helpers (cardStyle, chipStyle, scheduleLabel, durationLabel)
- * are reused from class-ui rather than duplicated. */
+ * the drawer. Generic helpers (cardStyle, chipStyle, timeRangeLabel,
+ * RecurringSchedule) are reused from class-ui rather than duplicated. */
 
 import type { LessonStatus, LessonType, Lang } from "@/lib/types";
 import { translate, dow as dowNames, months as monthNames } from "@/lib/i18n";
@@ -84,12 +84,14 @@ export function calMonthChipStyle(classColor: string): React.CSSProperties {
   };
 }
 
-/** Week-column event card — a fuller button tinted by the class colour. */
+/** Week-column event card — a fuller button tinted by the class colour. The
+ * padding gives the card's three stacked lines (name / time / classroom) a
+ * little more room than the two-line version it replaced. */
 export function calWeekEventStyle(classColor: string): React.CSSProperties {
   return {
     display: "block", width: "100%", textAlign: "left",
     border: "1px solid var(--border)", borderLeft: `3px solid ${classColor}`,
-    borderRadius: 9, padding: "8px 10px", background: "var(--card)",
+    borderRadius: 9, padding: "9px 11px", background: "var(--card)",
     cursor: "pointer", fontFamily: "inherit",
   };
 }

@@ -38,6 +38,7 @@ export const classKeys = {
   list: (p: ListParams) => ["classes", "list", p] as const,
   detail: (id: string) => ["classes", "detail", id] as const,
   availability: (p: AvailabilityParams) => ["classes", "availability", p] as const,
+  classrooms: ["classes", "classrooms"] as const,
 };
 
 /** A save rejected by the single-teacher overlap rule (HTTP 409). Carries the
@@ -92,6 +93,14 @@ export async function fetchAvailability(p: AvailabilityParams): Promise<Schedule
   return res.json();
 }
 
+/** Classrooms already in use, for the drawer's classroom autocomplete. */
+export async function fetchClassrooms(): Promise<string[]> {
+  const res = await fetch("/api/classes/classrooms");
+  if (!res.ok) await readError(res, "Couldn't load classrooms");
+  const data = (await res.json()) as { classrooms?: string[] };
+  return data.classrooms ?? [];
+}
+
 export async function createClass(input: ClassInput): Promise<Klass> {
   const res = await fetch("/api/classes", {
     method: "POST",
@@ -110,6 +119,25 @@ export async function updateClass(id: string, input: ClassInput): Promise<Klass>
   });
   if (!res.ok) await readError(res, "Couldn't save class");
   return res.json();
+}
+
+/** Archive / restore. A status change is an ordinary update: the class's own
+ * stored values are re-sent with `status` swapped, so the business rules behind
+ * it are untouched (an Archived class still can't clash, and restoring one is
+ * re-checked against the single-teacher overlap rule by the API). Shared by the
+ * list card, the detail header and the edit drawer so the three can't drift. */
+export async function setClassStatus(klass: Klass, status: Klass["status"]): Promise<Klass> {
+  return updateClass(klass.id, {
+    name: klass.name,
+    type: klass.type,
+    level: klass.level,
+    fee: klass.fee,
+    classroom: klass.classroom,
+    status,
+    studentIds: klass.studentIds ?? [],
+    notes: klass.notes ?? "",
+    schedule: klass.schedule,
+  });
 }
 
 export async function saveClassNotes(id: string, notes: string): Promise<Klass> {

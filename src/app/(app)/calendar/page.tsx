@@ -15,6 +15,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { dow as dowNames } from "@/lib/i18n";
 import { cardStyle, timeRangeLabel } from "@/components/classes/class-ui";
 import { LessonDrawer } from "@/components/lessons/lesson-drawer";
@@ -128,13 +129,23 @@ export default function CalendarPage() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-.01em", minWidth: 150, textAlign: "right" }}>{title}</div>
           <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => go(-1)} title={t("Previous")} aria-label={t("Previous")} className="btn-ghost" style={navBtn}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={() => go(-1)} aria-label={t("Previous")} className="btn-ghost" style={navBtn}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("Previous")}</TooltipContent>
+            </Tooltip>
             <button onClick={goToday} className="btn-ghost" style={{ height: 34, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{t("Today")}</button>
-            <button onClick={() => go(1)} title={t("Next")} aria-label={t("Next")} className="btn-ghost" style={navBtn}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={() => go(1)} aria-label={t("Next")} className="btn-ghost" style={navBtn}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t("Next")}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </div>
@@ -173,29 +184,53 @@ export default function CalendarPage() {
                   onDrop={(e) => { e.preventDefault(); dropOn(dISO); }}
                   style={{ minWidth: 0, overflow: "hidden", borderRight: "1px solid var(--border-2)", borderBottom: "1px solid var(--border-2)", padding: "6px 6px 8px", background: inMonth ? "var(--card)" : "var(--card-2)", opacity: inMonth ? 1 : 0.6 }}
                 >
-                  <div
-                    onClick={() => goDay(d)}
-                    title={t("Open day")}
-                    style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 22, height: 22, borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", background: isToday ? "var(--primary)" : "transparent", color: isToday ? "var(--primary-fg)" : "var(--fg-2)" }}
-                  >{d.getDate()}</div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div
+                        onClick={() => goDay(d)}
+                        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 22, height: 22, borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", background: isToday ? "var(--primary)" : "transparent", color: isToday ? "var(--primary-fg)" : "var(--fg-2)" }}
+                      >{d.getDate()}</div>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("Open day")}</TooltipContent>
+                  </Tooltip>
                   {events.slice(0, MONTH_MAX_CHIPS).map((e) => (
-                    <button
-                      key={e.id}
-                      onClick={() => setOpenId(e.id)}
-                      draggable
-                      onDragStart={() => setDraggingId(e.id)}
-                      onDragEnd={() => setDraggingId(null)}
-                      title={`${fmt.time12(e.start)} ${e.className}`}
-                      style={calMonthChipStyle(e.classColor)}
-                    >
-                      {e.type !== "regular" && <span style={{ ...lessonTypeBadgeStyle(e.type), padding: "1px 4px", marginRight: 3, fontSize: 8, flex: "none" }}>{t(lessonTypeLabel(e.type))}</span>}
-                      {/* The label truncates inside the chip; without its own
-                        * min-width:0 a long class name would push the chip — and
-                        * with it the column — wider than its track. */}
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {fmt.time12(e.start)} {e.className}
-                      </span>
-                    </button>
+                    <Tooltip key={e.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => setOpenId(e.id)}
+                          draggable
+                          onDragStart={() => setDraggingId(e.id)}
+                          onDragEnd={() => setDraggingId(null)}
+                          style={calMonthChipStyle(e.classColor)}
+                        >
+                          {/* Makeup / Extra keep their marker here: this is the
+                            * only place on the calendar that an ad-hoc lesson is
+                            * distinguishable at a glance, and a Regular lesson —
+                            * which is nearly all of them — shows nothing. */}
+                          {e.type !== "regular" && <span style={{ ...lessonTypeBadgeStyle(e.type), padding: "1px 4px", marginRight: 3, fontSize: 8, flex: "none" }}>{t(lessonTypeLabel(e.type))}</span>}
+                          {/* The label truncates inside the chip; without its own
+                            * min-width:0 a long class name would push the chip —
+                            * and with it the column — wider than its track. */}
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {fmt.time12(e.start)} {e.className}
+                          </span>
+                        </button>
+                      </TooltipTrigger>
+                      {/* The chip shows a truncated start time + name and has no
+                          room for anything else, so its tooltip carries the full
+                          event: name, where, when — the same three facts, in the
+                          same order, as the week view's card. */}
+                      <TooltipContent>
+                        <div style={tipName}>{e.className}</div>
+                        {e.classroom && (
+                          <div style={tipMeta}>{pinIcon}<span>{e.classroom}</span></div>
+                        )}
+                        <div style={tipMeta}>
+                          {clockIcon}
+                          <span>{timeRangeLabel(e.start, fmt.addMinutes(e.start, e.duration), fmt)}</span>
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
                   ))}
                   {events.length > MONTH_MAX_CHIPS && (
                     <button onClick={() => goDay(d)} style={{ fontSize: 10, color: "var(--accent)", padding: "1px 5px", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left", display: "block" }}>+{events.length - MONTH_MAX_CHIPS} {t("more")}</button>
@@ -226,6 +261,14 @@ export default function CalendarPage() {
                   <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
                     {events.length === 0 && <div style={{ fontSize: 11.5, color: "var(--muted-2)", textAlign: "center", padding: "16px 0" }}>{t("Drop here")}</div>}
                     {events.map((e) => (
+                      /* Event card: class name, then where, then when. No
+                       * lesson-type badge — on a calendar all but a handful of
+                       * lessons are Regular, so the pill was noise competing
+                       * with the name for the top of the card. The lesson's
+                       * type, status and notes are in the drawer one click away.
+                       *
+                       * Each line keeps the typography its role was given in
+                       * 5.4; only the order of the two subordinate lines moved. */
                       <button
                         key={e.id}
                         onClick={() => setOpenId(e.id)}
@@ -234,11 +277,10 @@ export default function CalendarPage() {
                         onDragEnd={() => setDraggingId(null)}
                         style={calWeekEventStyle(e.classColor)}
                       >
-                        <div style={{ fontSize: 11.5, fontWeight: 600, fontFamily: "'Geist Mono',monospace", color: "var(--fg)" }}>{timeRangeLabel(e.start, fmt.addMinutes(e.start, e.duration), fmt)}</div>
-                        <div style={{ fontSize: 12, fontWeight: 600, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.className}</div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
-                          <span style={lessonTypeBadgeStyle(e.type)}>{t(lessonTypeLabel(e.type))}</span>
-                          {e.classroom && <span style={{ fontSize: 11, color: "var(--muted)" }}>{e.classroom}</span>}
+                        <div style={eventName}>{e.className}</div>
+                        {e.classroom && <div style={eventRoom}>{e.classroom}</div>}
+                        <div style={eventTime}>
+                          {timeRangeLabel(e.start, fmt.addMinutes(e.start, e.duration), fmt)}
                         </div>
                       </button>
                     ))}
@@ -254,6 +296,57 @@ export default function CalendarPage() {
     </div>
   );
 }
+
+/* Week-view event card typography — three genuinely descending steps in size,
+ * weight and colour, matching the order the lines are read in: name, then where,
+ * then when. The time is the quietest of the three; it used to be set larger and
+ * darker than the classroom above it, which fought the order.
+ *
+ * Each line clips to one line (a card must not grow with the length of a name)
+ * and the line-heights are explicit rather than inherited, which is what keeps
+ * the three evenly spaced instead of drifting with the font size. */
+const eventLine: React.CSSProperties = {
+  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+};
+const eventName: React.CSSProperties = {
+  ...eventLine,
+  fontSize: 13, fontWeight: 600, lineHeight: 1.3, letterSpacing: "-.01em", color: "var(--fg)",
+};
+const eventRoom: React.CSSProperties = {
+  ...eventLine,
+  fontSize: 11.5, fontWeight: 500, lineHeight: 1.35, marginTop: 3,
+  color: "var(--fg-2)",
+};
+const eventTime: React.CSSProperties = {
+  ...eventLine,
+  fontSize: 11, fontWeight: 500, lineHeight: 1.35, marginTop: 2,
+  color: "var(--muted-2)", fontFamily: "var(--font-mono-stack)",
+};
+
+/* Month-chip tooltip — the bubble is already small, inverted text, so the two
+ * subordinate lines separate from the name by weight and a little transparency
+ * rather than by another colour token (which would be reading against --bg).
+ * Each is prefixed by its own glyph — the same pin and clock the class card uses
+ * for the same two facts — so where and when are told apart at a glance without
+ * a label. The title needs no icon: it is the subject of the bubble. */
+const tipName: React.CSSProperties = { fontWeight: 600 };
+const tipMeta: React.CSSProperties = {
+  display: "flex", alignItems: "flex-start", gap: 5,
+  fontWeight: 500, opacity: 0.75, marginTop: 2,
+};
+/** Icons sit on the first line of a value that wraps, hence the nudge. */
+const tipIcon: React.CSSProperties = { flex: "none", marginTop: 1.5 };
+
+const pinIcon = (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={tipIcon}>
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" />
+  </svg>
+);
+const clockIcon = (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={tipIcon}>
+    <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+  </svg>
+);
 
 const navBtn: React.CSSProperties = {
   minWidth: 34, width: 34, height: 34, border: "1px solid var(--border)", borderRadius: 8,

@@ -100,20 +100,23 @@ export function dowFull(day: number, lang: Lang): string {
   return translate(DOW_FULL[day] ?? "", lang);
 }
 
-/** The compact one-line schedule summary for a class card: "Mon 09:00 AM · Wed
- * 06:00 PM", or "No schedule".
+/** The class card's schedule summary — the weekdays a class runs, and nothing
+ * more: "Mon • Wed • Fri", or "No schedule".
  *
- * Start times only — deliberately. This is a summary line on a card, and full
- * ranges make it wrap and swamp the card's hierarchy. Screens that present the
- * schedule itself (Class Detail, the Lesson drawer) use <RecurringSchedule />,
- * which shows every slot as a full range. */
-export function scheduleLabel(schedule: ScheduleSlot[] | undefined, fmt: Formatter, lang: Lang): string {
-  if (!schedule || schedule.length === 0) return translate("No schedule", lang);
-  return schedule
-    .slice()
-    .sort((a, b) => a.day - b.day || a.start.localeCompare(b.start))
-    .map((s) => `${dowShort(s.day, lang)} ${fmt.time12(s.start)}`)
-    .join(" · ");
+ * A card is a summary, and times are what made it grow: one line per slot (or
+ * even a weekday-grouped block) pushed the card taller the more a class taught,
+ * so a grid of cards never settled at one height. The weekday set answers the
+ * question a card is actually for — "when does this run?" — in a single line
+ * that cannot wrap. The full recurring schedule, with every slot as a From – To
+ * range, belongs to the screens that present the schedule itself: Class Detail
+ * and the Lesson drawer (<RecurringSchedule />) and the Edit Class drawer.
+ *
+ * Weekdays read Monday-first, matching the schedule editor's own order. A
+ * weekday teaching twice is named once — that is the point of a summary. */
+export function scheduleDaysLabel(schedule: ScheduleSlot[] | undefined, lang: Lang): string {
+  const days = new Set((schedule ?? []).map((s) => s.day));
+  if (days.size === 0) return translate("No schedule", lang);
+  return WEEK_ORDER.filter((d) => days.has(d)).map((d) => dowShort(d, lang)).join(" • ");
 }
 
 /** The save-time schedule clash, in the teacher's language: "Schedule conflicts

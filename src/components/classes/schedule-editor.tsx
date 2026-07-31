@@ -32,6 +32,7 @@ import { fromMinutes, minutesBetween, toMinutes } from "@/lib/calc";
 import { SLOT_MAX_MINUTES, SLOT_MIN_MINUTES, type ClassFormValues, type ClassInput } from "@/lib/schemas";
 import { useSettings } from "@/lib/settings-context";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { classKeys, fetchAvailability, type AvailabilityParams } from "./api";
 import { WEEK_ORDER, chipStyle, compareSlots, dowFull, dowShort, timeRangeLabel } from "./class-ui";
 
@@ -245,30 +246,38 @@ export function ScheduleEditor({
                     trailing={
                       <>
                         {onDay.length > 1 ? (
-                          <button
-                            type="button"
-                            onClick={() => remove(i)}
-                            title={t("Remove lesson time")}
-                            aria-label={t("Remove lesson time")}
-                            className="icon-danger"
-                            style={rowButton}
-                          >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14" /></svg>
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => remove(i)}
+                                aria-label={t("Remove lesson time")}
+                                className="icon-danger"
+                                style={rowButton}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14" /></svg>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("Remove lesson time")}</TooltipContent>
+                          </Tooltip>
                         ) : (
                           <span style={{ width: 34 }} />
                         )}
                         {lastOfDay ? (
-                          <button
-                            type="button"
-                            onClick={() => addTimeOn(slot.day)}
-                            title={t("Add a second time on this day")}
-                            aria-label={t("Add a second time on this day")}
-                            className="btn-ghost"
-                            style={rowButton}
-                          >
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-                          </button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => addTimeOn(slot.day)}
+                                aria-label={t("Add a second time on this day")}
+                                className="btn-ghost"
+                                style={rowButton}
+                              >
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t("Add a second time on this day")}</TooltipContent>
+                          </Tooltip>
                         ) : (
                           <span style={{ width: 34 }} />
                         )}
@@ -418,16 +427,26 @@ function SlotAdvice({
             {t("Suggested Available Times")}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+            {/* Each chip is a complete From – To window that is free on every
+              * selected weekday; the tick states that outright rather than
+              * leaving "suggested" to be read as "maybe". */}
             {suggestions.map((s) => (
-              <button
-                key={`${s.start}-${s.end}`}
-                type="button"
-                onClick={() => onPick(s.start, s.end)}
-                className="btn-ghost"
-                style={{ ...chipStyle(false), height: 30, fontSize: 12 }}
-              >
-                {timeRangeLabel(s.start, s.end, fmt)}
-              </button>
+              <Tooltip key={`${s.start}-${s.end}`}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => onPick(s.start, s.end)}
+                    className="btn-ghost"
+                    style={{ ...chipStyle(false), height: 30, fontSize: 12, gap: 6, color: "var(--fg-2)" }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", color: "var(--green)" }}>
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                    {timeRangeLabel(s.start, s.end, fmt)}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{t("Free on every selected day")}</TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </div>

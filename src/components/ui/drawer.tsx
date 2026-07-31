@@ -9,6 +9,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/settings-context";
 import { useScrollLock } from "@/lib/use-scroll-lock";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function Drawer({
   open, title, subtitle, saveLabel, saving = false, onClose, onSave, children,
@@ -25,15 +26,24 @@ export function Drawer({
   const panelRef = useRef<HTMLDivElement>(null);
   const t = useT();
 
-  // Escape closes; focus moves into the panel so the form is immediately usable.
+  // Escape closes.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
-    const first = panelRef.current?.querySelector<HTMLElement>("input,select,textarea,button");
-    first?.focus();
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  /* Focus moves into the panel so the form is immediately usable — but ONLY when
+   * the drawer opens. This deliberately does not depend on `onClose`: callers
+   * pass an inline arrow, so its identity changes on every render of the form
+   * above, and any re-render (a field subscribing to RHF's `isDirty`, a query
+   * resolving) would re-run this and rip focus out of whatever the teacher was
+   * typing in. `open` is the only thing that should move focus. */
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.querySelector<HTMLElement>("input,select,textarea,button")?.focus();
+  }, [open]);
 
   // Lock body scroll while the drawer owns the screen (scrollbar-compensated,
   // so the layout behind it does not shift).
@@ -68,12 +78,17 @@ export function Drawer({
             <div style={{ fontSize: 16, fontWeight: 600, letterSpacing: "-.01em" }}>{title}</div>
             {subtitle && <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>{subtitle}</div>}
           </div>
-          <button
-            type="button" onClick={onClose} aria-label={t("Close")} title={t("Close")} className="btn-ghost"
-            style={{ minWidth: 32, width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button" onClick={onClose} aria-label={t("Close")} className="btn-ghost"
+                style={{ minWidth: 32, width: 32, height: 32, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t("Close")}</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* data-drawer-body marks the scroll container: a form section whose

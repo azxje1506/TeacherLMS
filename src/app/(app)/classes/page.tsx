@@ -9,20 +9,21 @@
  * comp's list has no pager and no sortable headers, so this screen renders one
  * page at the default sort and adds no chrome the design does not define. */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { ClassDrawer } from "@/components/classes/class-drawer";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  cardStyle, chipStyle, classBadgeStyle, typeLabel, scheduleLabel, studentText, feeLabel,
+  cardStyle, chipStyle, classBadgeStyle, typeLabel, scheduleDaysLabel, studentText, feeLabel,
   conflictMessage,
 } from "@/components/classes/class-ui";
 import {
-  createClass, deleteClass, fetchClasses, classKeys, updateClass, ClassConflictError,
-  type ListParams, type ClassRow,
+  createClass, deleteClass, fetchClasses, classKeys, updateClass, setClassStatus,
+  ClassConflictError, type ListParams, type ClassRow,
 } from "@/components/classes/api";
 import { lessonKeys } from "@/components/lessons/api";
 import type { ClassInput } from "@/lib/schemas";
@@ -36,7 +37,11 @@ export default function ClassesPage() {
   const qc = useQueryClient();
 
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("All");
+  // Teachers work in the classes they are actually teaching, so the page opens
+  // filtered to Active; All and Archived are one chip away. The chip stays plain
+  // component state — the screen had no cross-visit memory of it before and
+  // nothing here adds one.
+  const [status, setStatus] = useState("Active");
   const params: ListParams = { q, status };
 
   const [drawerFor, setDrawerFor] = useState<ClassRow | null | undefined>(undefined); // undefined = closed
@@ -71,6 +76,20 @@ export default function ClassesPage() {
   function saveErrorText(e: Error): string {
     return e instanceof ClassConflictError ? conflictMessage(e.conflict, lang, fmt) : t(e.message);
   }
+
+  /** Archive / restore, from the card's quick action or the drawer's footer.
+   * Same update path the class detail header has always used — only `status`
+   * changes, the rest of the record is re-sent as stored. */
+  const statusMutation = useMutation({
+    mutationFn: (vars: { klass: ClassRow; status: ClassRow["status"] }) =>
+      setClassStatus(vars.klass, vars.status),
+    onSuccess: (_res, vars) => {
+      invalidate();
+      setDrawerFor(undefined);
+      toast(t(vars.status === "Archived" ? "Class archived" : "Class restored"));
+    },
+    onError: (e: Error) => toast(saveErrorText(e), "error"),
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteClass(id),
@@ -126,15 +145,19 @@ export default function ClassesPage() {
           ))}
         </div>
 
-        <button
-          onClick={() => refetch()}
-          title={t("Refresh")}
-          aria-label={t("Refresh")}
-          className="btn-ghost"
-          style={{ minWidth: 38, width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={isFetching ? { animation: "spin .7s linear infinite" } : undefined}><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => refetch()}
+              aria-label={t("Refresh")}
+              className="btn-ghost"
+              style={{ minWidth: 38, width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg-2)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={isFetching ? { animation: "spin .7s linear infinite" } : undefined}><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></svg>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t("Refresh")}</TooltipContent>
+        </Tooltip>
       </div>
 
       {isLoading && <SkeletonGrid />}
@@ -184,28 +207,73 @@ export default function ClassesPage() {
                   </div>
                   <span style={classBadgeStyle(c.status)}>{t(c.status)}</span>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 9, margin: "15px 0 16px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--fg-2)" }}>
-                    <span style={{ display: "flex", color: "var(--muted-2)" }}>
+                {/* Three single-line meta rows, ordered where → when → who &
+                    how much: the classroom leads (it is the thing a teacher
+                    scans a card for), the weekday summary follows, and the
+                    roster + fee close. One line each, so every card in the grid
+                    is the same height however many lesson slots its class holds. */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "14px 0 16px" }}>
+                  {/* Rendered on every card, so the row is a constant: a class
+                      with no classroom set says so rather than dropping the line
+                      and making its card shorter than its neighbours. */}
+                  <div style={metaRow}>
+                    <span style={metaIcon}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" /></svg>
+                    </span>
+                    <Classroom value={c.classroom} empty={t("No classroom")} />
+                  </div>
+                  <div style={metaRow}>
+                    <span style={metaIcon}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
                     </span>
-                    {scheduleLabel(c.schedule, fmt, lang)}
+                    <span style={truncate}>{scheduleDaysLabel(c.schedule, lang)}</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--fg-2)" }}>
-                    <span style={{ display: "flex", color: "var(--muted-2)" }}>
+                  <div style={metaRow}>
+                    <span style={metaIcon}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /></svg>
                     </span>
-                    {studentText(c.studentCount, lang)} · <span style={{ fontWeight: 600, color: "var(--fg)" }}>{feeLabel(c.fee, fmt)}</span>
+                    <span style={truncate}>
+                      {studentText(c.studentCount, lang)} · <span style={{ fontWeight: 600, color: "var(--fg)" }}>{feeLabel(c.fee, fmt)}</span>
+                    </span>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 7, marginTop: "auto" }}>
                   <button onClick={() => router.push(`/classes/${c.id}`)} className="btn-ghost" style={{ flex: 1, height: 34, border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}>{t("View class")}</button>
-                  <button onClick={() => setDrawerFor(c)} title={t("Edit")} aria-label={t("Edit")} className="icon-action" style={iconBtn}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-                  </button>
-                  <button onClick={() => setConfirm(c)} title={t("Delete")} aria-label={t("Delete")} className="icon-danger" style={iconBtn}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
-                  </button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button onClick={() => setDrawerFor(c)} aria-label={t("Edit")} className="icon-action" style={iconBtn}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("Edit")}</TooltipContent>
+                  </Tooltip>
+                  {/* Archived only: bring the class back without opening it
+                      first. Same icon and treatment the roster's archived rows
+                      already use (icon-restore in globals.css). */}
+                  {c.status === "Archived" && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => statusMutation.mutate({ klass: c, status: "Active" })}
+                          disabled={statusMutation.isPending}
+                          aria-label={t("Restore")}
+                          className="icon-restore"
+                          style={iconBtn}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("Restore")}</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button onClick={() => setConfirm(c)} aria-label={t("Delete")} className="icon-danger" style={iconBtn}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1L5 6" /></svg>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>{t("Delete")}</TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
             </div>
@@ -219,6 +287,8 @@ export default function ClassesPage() {
         saving={saveMutation.isPending}
         onClose={() => setDrawerFor(undefined)}
         onSave={(values) => saveMutation.mutate({ id: drawerFor?.id ?? null, values })}
+        onSetStatus={(next) => drawerFor && statusMutation.mutate({ klass: drawerFor, status: next })}
+        statusSaving={statusMutation.isPending}
       />
 
       <ConfirmDialog
@@ -234,6 +304,56 @@ export default function ClassesPage() {
     </div>
   );
 }
+
+/** The card's classroom value: always one line, ellipsised when it does not fit,
+ * and tooltipped with the full name ONLY when it is actually cut off — a name
+ * that fits needs no bubble repeating it back.
+ *
+ * Overflow is read from the element itself (scrollWidth vs clientWidth) through
+ * a ResizeObserver, because whether a name fits depends on the card's width, and
+ * the grid reflows the cards at every breakpoint. Observing is also what keeps
+ * the state update out of the effect body — it arrives from an external system,
+ * including the initial callback ResizeObserver fires on observe(). */
+function Classroom({ value, empty }: { value: string; empty: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [clipped, setClipped] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 1px of tolerance: sub-pixel layout can leave scrollWidth a hair over
+    // clientWidth on text that is in fact fully visible.
+    const ro = new ResizeObserver(() => setClipped(el.scrollWidth > el.clientWidth + 1));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [value]);
+
+  const text = (
+    <span ref={ref} style={value ? truncate : { ...truncate, color: "var(--muted-2)" }}>
+      {value || empty}
+    </span>
+  );
+
+  // `asChild` keeps the very same span — no extra element, so wrapping can never
+  // change the measurement that decided to wrap it.
+  if (!clipped || !value) return text;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{text}</TooltipTrigger>
+      <TooltipContent>{value}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/* Card meta rows — one line each, icon left, value truncated rather than wrapped
+ * so a long classroom name can never change a card's height. */
+const metaRow: React.CSSProperties = {
+  display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, color: "var(--fg-2)", minWidth: 0,
+};
+const metaIcon: React.CSSProperties = { display: "flex", color: "var(--muted-2)", flex: "none" };
+const truncate: React.CSSProperties = {
+  minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+};
 
 const iconBtn: React.CSSProperties = {
   minWidth: 34, width: 34, height: 34, border: "1px solid var(--border)", borderRadius: 8,

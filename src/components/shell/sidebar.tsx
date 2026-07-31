@@ -7,6 +7,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSettings } from "@/lib/settings-context";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   IconDashboard, IconStudents, IconParents, IconClasses, IconLessons, IconAttendance,
   IconHomework, IconReviews, IconFinance, IconReports, IconCalendar, IconSettings, IconLogout,
@@ -56,26 +57,33 @@ export function Sidebar({
   const renderItem = ({ href, label, Icon, badge }: NavItem) => {
     const active = pathname === href || pathname.startsWith(href + "/");
     return (
-      <Link
-        key={href}
-        href={href}
-        title={label}
-        style={{
-          display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px",
-          border: "none", borderRadius: 9, fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", marginBottom: 2,
-          textDecoration: "none", justifyContent: collapsed ? "center" : "flex-start",
-          background: active ? "var(--accent-soft)" : "transparent",
-          color: active ? "var(--accent)" : "var(--muted)",
-          fontWeight: active ? 600 : 500,
-        }}
-        className="nav-item"
-      >
-        <span style={{ minWidth: 18, display: "flex" }}><Icon size={18} /></span>
-        <span style={{ ...hideCollapsed, flex: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{t(label)}</span>
-        {badge != null && (
-          <span style={{ ...hideCollapsed, fontSize: 11, fontWeight: 600, background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 7px", borderRadius: 99 }}>{badge}</span>
-        )}
-      </Link>
+      // `asChild` puts the trigger's behaviour on the Link itself, so the row
+      // keeps its own full-width layout — no wrapper element in between. The
+      // label is translated here: the native `title` this replaced was showing
+      // the raw English key while the row itself read Vietnamese.
+      <Tooltip key={href}>
+        <TooltipTrigger asChild>
+          <Link
+            href={href}
+            style={{
+              display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px",
+              border: "none", borderRadius: 9, fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", marginBottom: 2,
+              textDecoration: "none", justifyContent: collapsed ? "center" : "flex-start",
+              background: active ? "var(--accent-soft)" : "transparent",
+              color: active ? "var(--accent)" : "var(--muted)",
+              fontWeight: active ? 600 : 500,
+            }}
+            className="nav-item"
+          >
+            <span style={{ minWidth: 18, display: "flex" }}><Icon size={18} /></span>
+            <span style={{ ...hideCollapsed, flex: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{t(label)}</span>
+            {badge != null && (
+              <span style={{ ...hideCollapsed, fontSize: 11, fontWeight: 600, background: "var(--accent-soft)", color: "var(--accent)", padding: "1px 7px", borderRadius: 99 }}>{badge}</span>
+            )}
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="right">{t(label)}</TooltipContent>
+      </Tooltip>
     );
   };
 
