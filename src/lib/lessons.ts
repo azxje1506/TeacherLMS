@@ -150,10 +150,15 @@ export interface LessonQuery {
   pageSize?: string;
 }
 
-/** A lesson row with the lightweight Class fields the list/calendar render. */
+/** A lesson row with the lightweight Class fields the list/calendar render.
+ * `classLevel` joins them so the calendar's drag-time conflict preview can name
+ * the clashing lesson the way every other conflict message does ("Grammar Stars
+ * · B1") without a second request. Read-time enrichment only — nothing is stored
+ * on the Lesson. */
 export interface LessonRow extends Lesson {
   className: string;
   classColor: string;
+  classLevel: string;
 }
 
 export interface LessonListResult {
@@ -179,6 +184,7 @@ export interface LessonStudent {
 export interface LessonDetail extends Lesson {
   className: string;
   classColor: string;
+  classLevel: string;
   recurringSchedule: ScheduleSlot[];
   studentCount: number;
   students: LessonStudent[];
@@ -203,6 +209,7 @@ function enrichRow(l: Lesson, classMap: Map<string, Klass>): LessonRow {
     classroom: classroomFor(l, c),
     className: c?.name ?? "—",
     classColor: c?.color ?? "var(--muted)",
+    classLevel: c?.level ?? "",
   };
 }
 
@@ -279,6 +286,7 @@ export async function getLessonDetail(id: string): Promise<LessonDetail | null> 
     classroom: classroomFor(l, c ?? undefined),
     className: c?.name ?? "—",
     classColor: c?.color ?? "var(--muted)",
+    classLevel: c?.level ?? "",
     recurringSchedule: c?.schedule ?? [],
     studentCount: students.length,
     students,
@@ -359,15 +367,68 @@ export async function createMakeupLesson(fromId: string, input: MakeupLessonInpu
   return { ok: true, lesson: (await getLessonDetail(id))! };
 }
 
-/** Move a lesson to a new date (and optionally a new time / duration). */
+/** Move a lesson to a new date (and optionally a new time / duration).
+ *
+ * The move also records WHERE THE LESSON CAME FROM, so a rescheduled lesson can
+ * be told apart from an ordinary recurring one without consulting the class:
+ *
+ *  - the origin is stamped ONCE, on the first move, and carried unchanged by
+ *    every later move — a lesson dragged Sat → Fri → Thu still reports Saturday,
+ *    which is the slot its schedule actually generates;
+ *  - moving a lesson back onto its origin clears the stamp, because a lesson
+ *    sitting in its generated slot is not rescheduled, whatever its history;
+ *  - the fields live on the Lesson, which owns its own schedule data. Nothing is
+ *    copied from the Class and no existing field changes meaning.
+ *
+ * `rescheduledAt` is the one value here that records an ACTION rather than a
+ * slot, so unlike the origin it is rewritten by every move: it answers "when was
+ * this last changed?", which only the newest move can answer. It uses the real
+ * wall clock, not the app clock (TODAY_ISO) — the app clock dates the teaching
+ * timetable, and dating an edit with it would claim the edit happened in the
+ * demo's past. No actor is recorded (see Lesson.rescheduledAt).
+ *
+ * Status, attendance and billing are untouched: rescheduling moves a lesson, it
+ * does not re-classify it. */
 export async function rescheduleLesson(id: string, input: LessonRescheduleInput): Promise<LessonOpResult> {
   await dbConnect();
-  const existing = await LessonModel.findOne({ id }).select("id").lean();
+  const existing = await LessonModel.findOne({ id }).select(clean).lean<Lesson>();
   if (!existing) return { ok: false, reason: "not_found" };
-  const set: Record<string, unknown> = { date: input.date };
-  if (input.start) set.start = input.start;
-  if (input.duration) set.duration = input.duration;
-  await LessonModel.updateOne({ id }, { $set: set });
+
+  const next = {
+    date: input.date,
+    start: input.start || existing.start,
+    duration: input.duration || existing.duration,
+  };
+  const origin = existing.originalDate
+    ? {
+        date: existing.originalDate,
+        start: existing.originalStart ?? existing.start,
+        duration: existing.originalDuration ?? existing.duration,
+      }
+    : { date: existing.date, start: existing.start, duration: existing.duration };
+
+  const backHome =
+    origin.date === next.date && origin.start === next.start && origin.duration === next.duration;
+
+  await LessonModel.updateOne(
+    { id },
+    backHome
+      ? {
+          $set: next,
+          $unset: {
+            originalDate: "", originalStart: "", originalDuration: "", rescheduledAt: "",
+          },
+        }
+      : {
+          $set: {
+            ...next,
+            originalDate: origin.date,
+            originalStart: origin.start,
+            originalDuration: origin.duration,
+            rescheduledAt: new Date().toISOString(),
+          },
+        }
+  );
   return { ok: true, lesson: (await getLessonDetail(id))! };
 }
 

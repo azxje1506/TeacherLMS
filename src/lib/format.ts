@@ -36,6 +36,26 @@ export function createFormat(regional: RegionalConfig = DEFAULT_REGIONAL, lang: 
   const monthsShort = () => i18nMonths(lang, "short");
   const monthsFull = () => i18nMonths(lang, "full");
 
+  /** Format a 24h "HH:MM" per the time-format preference.
+   *
+   * Declared here rather than only on the returned object so `clockParts` below
+   * can reuse it: a second copy of this logic is exactly what this sprint is
+   * removing. Exposed unchanged as `fmt.time12`. */
+  function time12(hhmm: string): string {
+    if (!hhmm) return EM;
+    const p = String(hhmm).split(":").map(Number), h = p[0], m = p[1];
+    if (!isFinite(h) || !isFinite(m)) return EM;
+    if (regional.timeFormat === "24h") {
+      return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
+    }
+    const ap = h < 12 ? "AM" : "PM";
+    let hh = h % 12;
+    if (hh === 0) hh = 12;
+    // Zero-padded so a rendered time lines up with what the browser's native
+    // <input type="time"> shows in a 12h locale ("05:00 PM", not "5:00 PM").
+    return String(hh).padStart(2, "0") + ":" + String(m).padStart(2, "0") + " " + ap;
+  }
+
   return {
     /** Format a VND amount honouring currency + number format. VND -> "1,500,000đ"; USD -> "$60.00". */
     vnd(n: number): string {
@@ -53,20 +73,36 @@ export function createFormat(regional: RegionalConfig = DEFAULT_REGIONAL, lang: 
       return groupNumber(v, regional.numberFormat);
     },
 
-    /** Format a 24h "HH:MM" per the time-format preference. */
-    time12(hhmm: string): string {
-      if (!hhmm) return EM;
-      const p = String(hhmm).split(":").map(Number), h = p[0], m = p[1];
-      if (!isFinite(h) || !isFinite(m)) return EM;
-      if (regional.timeFormat === "24h") {
-        return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0");
-      }
-      const ap = h < 12 ? "AM" : "PM";
-      let hh = h % 12;
-      if (hh === 0) hh = 12;
-      // Zero-padded so a rendered time lines up with what the browser's native
-      // <input type="time"> shows in a 12h locale ("05:00 PM", not "5:00 PM").
-      return String(hh).padStart(2, "0") + ":" + String(m).padStart(2, "0") + " " + ap;
+    time12,
+
+    /** One formatted time, split into the two pieces the Dashboard's stacked
+     * "Today's classes" tile renders on separate lines: the clock face, and its
+     * meridiem beneath it.
+     *
+     * It exists so that tile stops deriving those pieces itself — it used to
+     * strip the meridiem with a regex and then recompute it from
+     * `start.split(":")`, which is a second, independent implementation of
+     * `time12`. That copy was also wrong under the 24h preference: `time12`
+     * returns "17:00" with no meridiem, while the hand-rolled half still
+     * printed "PM" under it. Here `meridiem` is simply empty in 24h mode and
+     * the tile renders nothing in its place. */
+    clockParts(hhmm: string): { clock: string; meridiem: string } {
+      const s = time12(hhmm);
+      const m = / (AM|PM)$/.exec(s);
+      return m ? { clock: s.slice(0, -3), meridiem: m[1] } : { clock: s, meridiem: "" };
+    },
+
+    /** THE composition of a time range: "06:00 PM – 07:30 PM".
+     *
+     * The one place the en dash and its spacing are written. It lives on the
+     * formatter rather than in a component module so the server can reach it
+     * too — `lib/classes.ts` used to hand-build the same string for its schedule
+     * conflict sentence, which was a second copy nothing would have kept in step.
+     *
+     * Either end may be "" (or otherwise unreadable); `time12` renders that as
+     * the shared em-dash placeholder, so a half-known range says so. */
+    range(start: string, end: string): string {
+      return `${time12(start)} – ${time12(end)}`;
     },
 
     addMinutes(hhmm: string, min: number): string {

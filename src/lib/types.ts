@@ -95,7 +95,13 @@ export interface Klass {
   color: string; // hex tint
 }
 
-/** A single lesson instance. Regular lessons are generated from a class's schedule. */
+/** A single lesson instance. Regular lessons are generated from a class's schedule.
+ *
+ * `originalDate` / `originalStart` / `originalDuration` record where the lesson
+ * was BEFORE it was first moved — the slot its class schedule generated it into.
+ * They are stamped once, on the first reschedule, and cleared again if the lesson
+ * is moved back, so "is this rescheduled?" is answered by the lesson's own data
+ * and never derived from the Class. Absent on a lesson that has never moved. */
 export interface Lesson {
   id: string;
   classId: string; // -> Klass.id
@@ -108,6 +114,15 @@ export interface Lesson {
   chargeable?: boolean; // cancelled-but-billed override
   fromId?: string | null; // makeup: the cancelled lesson replaced
   notes?: string;
+  originalDate?: string | null; // ISO "YYYY-MM-DD" — set once, on first reschedule
+  originalStart?: string | null; // 24h "HH:MM"
+  originalDuration?: number | null; // minutes
+  /** When the lesson was LAST moved — a full ISO 8601 instant (UTC), not a
+   * calendar date, because this records an action rather than a slot. Rewritten
+   * by every move and cleared alongside the origin fields when a lesson is moved
+   * back. Deliberately records no actor: who did it is a later concern, and a
+   * half-filled audit trail is worse than an honest timestamp. */
+  rescheduledAt?: string | null;
 }
 
 export interface AttendanceEntry {

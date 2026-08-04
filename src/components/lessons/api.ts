@@ -6,10 +6,13 @@
 
 import type { Lesson, LessonType, ScheduleSlot } from "@/lib/types";
 
-/** A lesson row plus the lightweight class fields the list/calendar render. */
+/** A lesson row plus the lightweight class fields the list/calendar render.
+ * `classLevel` lets the calendar name a drag-time conflict the way every other
+ * conflict message does ("Grammar Stars · B1"). */
 export interface LessonRow extends Lesson {
   className: string;
   classColor: string;
+  classLevel: string;
 }
 
 /** A lightweight, read-only enrolled-student view for the drawer's roster. */
@@ -26,6 +29,7 @@ export interface LessonStudent {
 export interface LessonDetail extends Lesson {
   className: string;
   classColor: string;
+  classLevel: string;
   recurringSchedule: ScheduleSlot[];
   studentCount: number;
   students: LessonStudent[];
@@ -46,6 +50,10 @@ export interface ListParams {
   from?: string;
   to?: string;
   pageSize?: number;
+  /** 1-based. Omit for the first page. The server clamps it to the page count
+   * and echoes back the page it actually served, so a stale value can never
+   * produce an empty screen. */
+  page?: number;
 }
 
 /** Query keys — mutations invalidate `["lessons"]` to refresh every view. */
@@ -69,6 +77,7 @@ function qs(p: ListParams): string {
   if (p.from) s.set("from", p.from);
   if (p.to) s.set("to", p.to);
   if (p.pageSize) s.set("pageSize", String(p.pageSize));
+  if (p.page && p.page > 1) s.set("page", String(p.page));
   return s.toString();
 }
 

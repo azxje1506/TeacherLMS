@@ -657,5 +657,21 @@
   "more": "thêm",
   "generated from class schedules": "được tạo từ lịch học của lớp",
   "Couldn't load lessons": "Không thể tải buổi học",
-  "No lessons scheduled in this period. Lessons are generated for roughly a two-month window around today.": "Không có buổi học nào trong khoảng thời gian này. Buổi học được tạo trong khoảng hai tháng quanh hôm nay."
+  "No lessons scheduled in this period. Lessons are generated for roughly a two-month window around today.": "Không có buổi học nào trong khoảng thời gian này. Buổi học được tạo trong khoảng hai tháng quanh hôm nay.",
+  "Rescheduled": "Đã đổi lịch",
+  "Rescheduled from": "Đã đổi lịch từ",
+  "Current lesson": "Buổi học hiện tại",
+  "Original schedule": "Lịch ban đầu",
+  "History": "Lịch sử",
+  "Makeup lesson": "Buổi học bù",
+  "Showing": "Đang hiển thị",
+  "of": "trên",
+  "Page": "Trang",
+  "First page": "Trang đầu",
+  "Last page": "Trang cuối",
+  "Conflicts with": "Trùng lịch với",
+  "Conflict": "Trùng lịch",
+  "Search lessons…": "Tìm buổi học…",
+  "All classrooms": "Tất cả phòng học",
+  "No lessons match these filters.": "Không có buổi học nào khớp với bộ lọc."
 }

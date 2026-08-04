@@ -129,13 +129,28 @@ export function conflictMessage(
   fmt: Formatter
 ): string {
   const who = `${conflict.name}${conflict.level ? ` · ${conflict.level}` : ""}`;
-  const when = `${dowFull(conflict.day, lang)} ${timeRangeLabel(conflict.start, conflict.end, fmt)}`;
+  const when = `${dowFull(conflict.day, lang)} ${fmt.range(conflict.start, conflict.end)}`;
   return `${translate("Schedule conflicts with", lang)} ${who} (${when})`;
 }
 
-/** A stored slot's time as a range, e.g. "06:00 PM – 07:30 PM". */
-export function slotRangeLabel(slot: ScheduleSlot, fmt: Formatter): string {
-  return timeRangeLabel(slot.start, fmt.addMinutes(slot.start, slot.duration), fmt);
+/** THE formatter for anything that is "a start plus a length": a Lesson, the
+ * origin a rescheduled lesson was moved from, a recurring ScheduleSlot.
+ *
+ * Every screen that shows a lesson's time calls this and nothing else. It
+ * replaces six separate copies of `fmt.addMinutes(x.start, x.duration)` — the
+ * concatenation was already shared, but each caller derived the END TIME
+ * itself, and that is where two surfaces could drift apart. `fmt.addMinutes`
+ * now has exactly one caller in the app: this line.
+ *
+ * A length that is not a positive finite number renders its end as the shared
+ * "no value" dash instead of as `start + 0`. That is deliberate: falling back
+ * to zero produces "10:00 AM – 10:00 AM", which looks like a real time and
+ * hides a broken record. A dash says the length is missing. */
+export function timeRange(span: { start: string; duration: number }, fmt: Formatter): string {
+  const usable = Number.isFinite(span.duration) && span.duration > 0;
+  // "" is what fmt.time12 renders as the em-dash placeholder, so the missing
+  // half is spelled the same way every other absent value in the app is.
+  return fmt.range(span.start, usable ? fmt.addMinutes(span.start, span.duration) : "");
 }
 
 /** The recurring weekly schedule as a list of weekday rows — the Class Detail
@@ -174,7 +189,7 @@ export function RecurringSchedule({
           <div style={{ textAlign: "right" }}>
             {group.slots.map((s, i) => (
               <div key={i} style={{ fontSize: 12.5, color: "var(--fg-2)", fontFamily: "'Geist Mono',monospace", marginTop: i === 0 ? 0 : 3 }}>
-                {slotRangeLabel(s, fmt)}
+                {timeRange(s, fmt)}
               </div>
             ))}
           </div>
@@ -194,14 +209,12 @@ export function feeLabel(fee: number, fmt: Formatter): string {
   return `${fmt.vnd(fee)}/mo`;
 }
 
-/** A From / To pair in the teacher's time format, e.g. "06:00 PM – 07:30 PM".
- * The one place a time range is composed — spaces around an en dash, everywhere
- * a schedule or lesson time is shown. */
-export function timeRangeLabel(start: string, end: string, fmt: Formatter): string {
-  return `${fmt.time12(start)} – ${fmt.time12(end)}`;
-}
-
-/** Human duration, e.g. 60 -> "60 min". */
-export function durationLabel(minutes: number, lang: Lang): string {
-  return `${minutes} ${translate("min", lang)}`;
-}
+/* A From / To pair is composed by `fmt.range(start, end)` — see lib/format.ts.
+ * `timeRangeLabel(start, end, fmt)` used to live here and did exactly that;
+ * it has been removed so the composition exists once, in a module the server
+ * can import too. Call `fmt.range` when both ends are genuinely known
+ * independently (a schedule conflict, an availability suggestion), and
+ * `timeRange` above whenever you have a start and a length.
+ *
+ * `durationLabel`, an unused twin of lesson-ui's `lessonDurationLabel`, also
+ * used to sit here. Removed: one helper per job. */

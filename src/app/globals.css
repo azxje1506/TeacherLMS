@@ -79,6 +79,36 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
    trigger. Additive: nothing in the imported design uses it. */
 @keyframes tooltipIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
 @keyframes shimmer{100%{background-position:-200% 0}}
+/* ---- Sprint 5.5: Calendar interaction ----
+   Additive only — no existing keyframe, token or transition is redefined here.
+   Every animation below belongs to a state the calendar did not have before
+   (a drop preview, a landing event, the day marked today). */
+/* The gap that opens in the cell under the pointer while a lesson is dragged. */
+@keyframes placeholderIn{from{opacity:0;transform:scaleY(.6)}to{opacity:1;transform:none}}
+/* An event settling into the day it was just dropped on, so the move reads as
+   an arrival rather than as a list that silently re-rendered. */
+@keyframes eventLand{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+/* Today's date marker: one soft pulse of the focus ring on arrival, so the eye
+   finds today when a month opens without anything continuing to move. */
+@keyframes todayPulse{from{box-shadow:0 0 0 0 var(--ring)}to{box-shadow:0 0 0 7px transparent}}
+.cal-today{animation:todayPulse 1.1s ease-out both}
+/* A day cell reacts to a drag crossing it; the tint itself is set inline per
+   state, this only keeps the change from snapping. */
+.cal-cell{transition:background-color .14s ease,border-color .14s ease,box-shadow .14s ease}
+/* Calendar events lift a little under the pointer. */
+.cal-event{transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease,opacity .15s ease,transform .12s ease;cursor:pointer}
+.cal-event:hover{border-color:var(--muted-2);box-shadow:0 2px 8px rgba(9,9,11,.10)}
+/* Grab affordances only where dragging is actually offered — the same test the
+   drag hook makes (see dragAvailable in use-calendar-drag.ts). On a touch device
+   an event is a plain tap target and must not advertise a gesture it will not
+   accept, so it keeps the ordinary pointer cursor and the ordinary press nudge. */
+@media (hover:hover) and (pointer:fine){
+  .cal-event{cursor:grab}
+  /* Held, an event is a drag handle rather than a push-button, so it keeps its
+     place (overrides the global 1px press nudge — same specificity, declared
+     later, and inside a media query that does not change specificity). */
+  button.cal-event:active{cursor:grabbing;transform:none}
+}
 /* ---- RC1: honour reduced-motion preference (accessibility) ---- */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}

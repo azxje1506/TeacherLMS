@@ -240,7 +240,7 @@ async function assertNoScheduleConflict(id: string | null, input: ClassInput): P
           // The English sentence is the API/log fallback; the UI re-renders this
           // from `conflict` in the user's language (see class-ui.conflictMessage).
           throw new ScheduleConflictError(
-            `Schedule conflicts with class '${other.name}' (${DOW_FULL[b.day]} ${fmt.time12(b.start)} – ${fmt.time12(end)}).`,
+            `Schedule conflicts with class '${other.name}' (${DOW_FULL[b.day]} ${fmt.range(b.start, end)}).`,
             {
               classId: other.id,
               name: other.name,

@@ -34,7 +34,7 @@ import { useSettings } from "@/lib/settings-context";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { classKeys, fetchAvailability, type AvailabilityParams } from "./api";
-import { WEEK_ORDER, chipStyle, compareSlots, dowFull, dowShort, timeRangeLabel } from "./class-ui";
+import { WEEK_ORDER, chipStyle, compareSlots, dowFull, dowShort } from "./class-ui";
 
 type ClassForm = UseFormReturn<ClassFormValues, unknown, ClassInput>;
 type FormSlot = ClassFormValues["schedule"][number];
@@ -405,7 +405,7 @@ function SlotAdvice({
           {conflicts.map((c) => (
             <div key={`${c.classId}-${c.day}-${c.start}`} style={{ marginTop: 8, fontSize: 12.5, color: "var(--fg-2)" }}>
               <div style={{ fontWeight: 600, color: "var(--fg)" }}>{c.name}{c.level ? ` · ${c.level}` : ""}</div>
-              <div style={{ marginTop: 2 }}>{dowFull(c.day, lang)} · {timeRangeLabel(c.start, c.end, fmt)}</div>
+              <div style={{ marginTop: 2 }}>{dowFull(c.day, lang)} · {fmt.range(c.start, c.end)}</div>
             </div>
           ))}
           {first && (
@@ -442,7 +442,7 @@ function SlotAdvice({
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", color: "var(--green)" }}>
                       <path d="M20 6 9 17l-5-5" />
                     </svg>
-                    {timeRangeLabel(s.start, s.end, fmt)}
+                    {fmt.range(s.start, s.end)}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>{t("Free on every selected day")}</TooltipContent>

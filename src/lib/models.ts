@@ -69,6 +69,15 @@ const LessonSchema = new Schema<Lesson>(
     type: String, date: { type: String, index: true }, start: String, duration: Number,
     classroom: String, status: String, chargeable: Boolean,
     fromId: { type: String, default: null }, notes: String,
+    // Where the lesson sat before it was first moved. Absent (not null) while the
+    // lesson still occupies its generated slot — see Lesson in types.ts.
+    originalDate: { type: String, default: undefined },
+    originalStart: { type: String, default: undefined },
+    originalDuration: { type: Number, default: undefined },
+    // Stored as an ISO 8601 string like every other date on this schema, rather
+    // than as a Date, so the whole Lesson document stays JSON-serialisable and
+    // reaches the client through `.lean()` unchanged.
+    rescheduledAt: { type: String, default: undefined },
   },
   opts
 );

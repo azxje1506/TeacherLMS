@@ -14,15 +14,18 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
+import type { Formatter } from "@/lib/format";
+import type { Lang } from "@/lib/types";
 import { useSettings } from "@/lib/settings-context";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { RecurringSchedule, timeRangeLabel } from "@/components/classes/class-ui";
+import { dowFull, RecurringSchedule, timeRange } from "@/components/classes/class-ui";
 import { Avatar } from "@/components/students/student-ui";
 import {
-  lessonStatusBadgeStyle, lessonTypeBadgeStyle, lessonTypeLabel, lessonDurationLabel,
+  isRescheduled, isoWeekday, lessonHistory, lessonKindColor,
+  lessonStatusBadgeStyle, lessonTypeBadgeStyle, lessonTypeLabel, lessonDurationLabel, KindGlyph,
 } from "./lesson-ui";
-import { fetchLesson, lessonKeys } from "./api";
+import { fetchLesson, lessonKeys, type LessonDetail } from "./api";
 
 const sectionLabel: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: "var(--muted-2)", textTransform: "uppercase",
@@ -30,6 +33,135 @@ const sectionLabel: React.CSSProperties = {
 };
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, color: "var(--muted)" };
 const fieldValue: React.CSSProperties = { fontSize: 13, fontWeight: 500, marginTop: 2 };
+const timeValue: React.CSSProperties = { ...fieldValue, fontFamily: "'Geist Mono',monospace" };
+/** A timeline step's recorded date / time — mono, so the stamps under a column
+ * of steps line up digit for digit. */
+const stampLine: React.CSSProperties = {
+  fontSize: 11.5, color: "var(--muted)", marginTop: 2, fontFamily: "'Geist Mono',monospace",
+};
+
+/** One weekday + time-range block: the schedule a lesson used to sit in, or the
+ * one it sits in now. Same two lines in both, so the pair reads as a comparison. */
+function SlotBlock({
+  label, date, start, duration, fmt, lang,
+}: {
+  label: string;
+  date: string;
+  start: string;
+  duration: number;
+  fmt: Formatter;
+  lang: Lang;
+}) {
+  return (
+    <div>
+      <div style={fieldLabel}>{label}</div>
+      <div style={fieldValue}>{dowFull(isoWeekday(date), lang)}</div>
+      <div style={timeValue}>{timeRange({ start, duration }, fmt)}</div>
+    </div>
+  );
+}
+
+/** The two halves of a moved lesson — where it recurs, where it is being taught
+ * — plus the one-line statement of the move. Everything comes from the lesson's
+ * own stored origin (see Lesson.originalDate); the class is never consulted, so
+ * editing the class schedule later cannot rewrite this history. */
+function RescheduledSchedule({
+  lesson, t, fmt, lang,
+}: {
+  lesson: LessonDetail;
+  t: (s: string) => string;
+  fmt: Formatter;
+  lang: Lang;
+}) {
+  const originDate = lesson.originalDate ?? lesson.date;
+  const originStart = lesson.originalStart ?? lesson.start;
+  const originDuration = lesson.originalDuration ?? lesson.duration;
+  const originDay = dowFull(isoWeekday(originDate), lang);
+
+  return (
+    <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <SlotBlock
+          // A Makeup or an Extra has no recurring slot of its own — it was placed
+          // once and then moved — so the heading says what is true of each.
+          label={t(lesson.type === "regular" ? "Recurring schedule" : "Original schedule")}
+          date={originDate}
+          start={originStart}
+          duration={originDuration}
+          fmt={fmt}
+          lang={lang}
+        />
+        <SlotBlock
+          label={t("Current lesson")}
+          date={lesson.date}
+          start={lesson.start}
+          duration={lesson.duration}
+          fmt={fmt}
+          lang={lang}
+        />
+      </div>
+      <div>
+        <div style={fieldLabel}>{t("Status")}</div>
+        <div style={{ ...fieldValue, display: "flex", alignItems: "center", gap: 6, color: "var(--sky)" }}>
+          <KindGlyph kind="rescheduled" size={12} />
+          {t("Rescheduled from")} {originDay}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The lesson's life so far, as a vertical timeline: what it started as, whether
+ * it moved, and where it stands now. Presentation only — it reads the lesson's
+ * own type, status and origin, and no history is stored anywhere. */
+function LessonHistory({
+  lesson, t, fmt,
+}: {
+  lesson: LessonDetail;
+  t: (s: string) => string;
+  fmt: Formatter;
+}) {
+  const steps = lessonHistory(lesson);
+  return (
+    <div>
+      <div style={sectionLabel}>{t("History")}</div>
+      {steps.map((s, i) => {
+        const last = i === steps.length - 1;
+        const color = s.kind === "done" ? "var(--green)" : lessonKindColor(s.kind);
+        // `stretch` so the marker column takes the row's full height and the
+        // connector below can simply fill what the text beside it leaves.
+        return (
+          <div key={s.key} style={{ display: "flex", alignItems: "stretch", gap: 10 }}>
+            {/* Marker column: the glyph, then the connector down to the next
+              * step. The connector belongs to the step above it, so the last
+              * step ends cleanly instead of trailing a line into nothing. */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: "none" }}>
+              <span style={{ display: "flex", flex: "none", color, opacity: last ? 1 : 0.8, marginTop: 2 }}>
+                <KindGlyph kind={s.kind === "done" ? "regular" : s.kind} size={13} />
+              </span>
+              {!last && <span style={{ width: 1, flex: 1, background: "var(--border)", margin: "3px 0" }} />}
+            </div>
+            <div style={{ paddingBottom: last ? 0 : 12, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: last ? 600 : 500, color: last ? "var(--fg)" : "var(--fg-2)" }}>
+                {t(s.label)}
+              </div>
+              {/* Date, then clock time on its own line — and only for the steps
+                * that actually have one (see lessonHistory). Both go through the
+                * shared formatter, so they follow the teacher's date and time
+                * preferences like every other date in the app. */}
+              {s.date && (
+                <div style={stampLine}>{fmt.dateLabel(s.date)}</div>
+              )}
+              {s.time && (
+                <div style={stampLine}>{fmt.time12(s.time)}</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function LessonDrawer({ lessonId, onClose }: { lessonId: string | null; onClose: () => void }) {
   const open = lessonId !== null;
@@ -106,17 +238,27 @@ export function LessonDrawer({ lessonId, onClose }: { lessonId: string | null; o
                 <div style={sectionLabel}>{t("Lesson information")}</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                   <div><div style={fieldLabel}>{t("Date")}</div><div style={fieldValue}>{fmt.dateLabel(ld.date)}</div></div>
-                  <div><div style={fieldLabel}>{t("Time")}</div><div style={{ ...fieldValue, fontFamily: "'Geist Mono',monospace" }}>{timeRangeLabel(ld.start, fmt.addMinutes(ld.start, ld.duration), fmt)}</div></div>
+                  <div><div style={fieldLabel}>{t("Time")}</div><div style={timeValue}>{timeRange(ld, fmt)}</div></div>
                   <div><div style={fieldLabel}>{t("Duration")}</div><div style={fieldValue}>{lessonDurationLabel(ld.duration, lang)}</div></div>
                   <div><div style={fieldLabel}>{t("Classroom")}</div><div style={fieldValue}>{ld.classroom || "—"}</div></div>
                 </div>
-                <div style={{ marginTop: 14 }}>
-                  <div style={fieldLabel}>{t("Recurring schedule")}</div>
-                  {/* The Class Detail card's own renderer — one visual language
-                    * for recurring schedules across every screen. */}
-                  <RecurringSchedule schedule={ld.recurringSchedule} fmt={fmt} lang={lang} />
-                </div>
+                {isRescheduled(ld) ? (
+                  /* A moved lesson is told in two halves: the slot it belongs to
+                   * and the slot it is actually being taught in. Showing the
+                   * class's full recurring schedule here instead would answer the
+                   * wrong question — this lesson's own origin is what changed. */
+                  <RescheduledSchedule lesson={ld} t={t} fmt={fmt} lang={lang} />
+                ) : (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={fieldLabel}>{t("Recurring schedule")}</div>
+                    {/* The Class Detail card's own renderer — one visual language
+                      * for recurring schedules across every screen. */}
+                    <RecurringSchedule schedule={ld.recurringSchedule} fmt={fmt} lang={lang} />
+                  </div>
+                )}
               </div>
+
+              <LessonHistory lesson={ld} t={t} fmt={fmt} />
 
               <div>
                 <div style={sectionLabel}>{t("Students")} · {ld.studentCount}</div>

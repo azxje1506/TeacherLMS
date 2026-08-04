@@ -13,7 +13,7 @@ import {
   IconRevenue, IconClock, IconStudents, IconAttendance, IconTrendUp, IconCheck,
   IconHomework, IconReviews, IconClasses, IconLessons, IconCalendar,
 } from "@/components/icons";
-import { timeRangeLabel } from "@/components/classes/class-ui";
+import { timeRange } from "@/components/classes/class-ui";
 
 const card: React.CSSProperties = { background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)", boxShadow: "var(--sh)" };
 
@@ -162,13 +162,17 @@ export default function DashboardPage() {
               <div style={{ padding: "20px", borderTop: "1px solid var(--border-2)", color: "var(--muted)", fontSize: 13 }}>{t("No classes scheduled today.")}</div>
             )}
             {data.todayClasses.map((c) => {
-              const [hh] = c.start.split(":").map(Number);
+              // The tile stacks the clock face over its meridiem. Both come from
+              // the shared formatter now; it used to strip the meridiem with a
+              // regex and re-derive it from start.split(":"), which was a second
+              // implementation of time12 and printed "PM" under a 24h "17:00".
+              const { clock, meridiem } = fmt.clockParts(c.start);
               const done = c.status === "Completed";
               return (
                 <div key={c.lessonId} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderTop: "1px solid var(--border-2)" }}>
                   <div style={{ textAlign: "center", minWidth: 56 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "var(--font-mono-stack)" }}>{fmt.time12(c.start).replace(/ (AM|PM)$/, "")}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted-2)" }}>{hh < 12 ? "AM" : "PM"}</div>
+                    <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "var(--font-mono-stack)" }}>{clock}</div>
+                    {meridiem && <div style={{ fontSize: 11, color: "var(--muted-2)" }}>{meridiem}</div>}
                   </div>
                   <div style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: c.color }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -204,7 +208,7 @@ export default function DashboardPage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.name}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{fmt.dateLabel(u.date)} · {timeRangeLabel(u.start, fmt.addMinutes(u.start, u.duration), fmt)}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{fmt.dateLabel(u.date)} · {timeRange(u, fmt)}</div>
                   </div>
                 </div>
               );

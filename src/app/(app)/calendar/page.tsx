@@ -4,24 +4,37 @@
  * toggle, the title + prev / Today / next controls, the month grid and the week
  * columns. Lessons are generated on the server (lazy ensure) and fetched for the
  * visible range. Clicking a lesson opens the read-only drawer (never navigates
- * away); drag-and-drop moves a lesson to another day via the reschedule endpoint
- * (mutate -> invalidate -> refetch, no optimistic update).
+ * away); dragging one onto another day reschedules it (mutate -> invalidate ->
+ * refetch, no optimistic update).
+ *
+ * Sprint 5.5 turned this screen into the scheduling workspace: the toolbar
+ * filters, the legend, and a pointer-driven drag with a live drop preview and a
+ * conflict check. The drag mechanics live in use-calendar-drag; the cards, the
+ * toolbar and the ghost live in calendar-ui. What stays here is the calendar
+ * itself — the ranges, the grids and what a drop means.
  *
  * The attendance status indicator the comp shows on past lessons is owned by the
  * Attendance sprint and is intentionally omitted here — no Attendance data is
  * read this sprint. */
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { overlaps } from "@/lib/calc";
 import { dow as dowNames } from "@/lib/i18n";
-import { cardStyle, timeRangeLabel } from "@/components/classes/class-ui";
+import type { SelectOption } from "@/components/ui/select";
+import { cardStyle } from "@/components/classes/class-ui";
+import { fetchClasses, classKeys } from "@/components/classes/api";
+import { fetchStudents, studentKeys } from "@/components/students/api";
 import { LessonDrawer } from "@/components/lessons/lesson-drawer";
+import { CalendarLegend, lessonKind } from "@/components/lessons/lesson-ui";
 import {
-  calMonthChipStyle, calWeekEventStyle, lessonTypeBadgeStyle, lessonTypeLabel,
-} from "@/components/lessons/lesson-ui";
+  ANY, CalendarFilters, DragGhost, DropPlaceholder, MonthChip, WeekEvent,
+  type CalendarFilterValues,
+} from "@/components/lessons/calendar-ui";
+import { DROP_ATTR, SCROLLER_ATTR, useCalendarDrag } from "@/components/lessons/use-calendar-drag";
 import {
   fetchLessons, lessonKeys, rescheduleLesson, type LessonRow, type ListParams,
 } from "@/components/lessons/api";
@@ -42,6 +55,8 @@ function iso(d: Date): string {
 function addDays(d: Date, n: number): Date { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function startOfWeek(d: Date): Date { return addDays(d, -d.getDay()); }
 
+const NO_FILTERS: CalendarFilterValues = { q: "", classId: ANY, studentId: ANY, classroom: ANY, kind: "All" };
+
 export default function CalendarPage() {
   const { t, fmt, lang } = useSettings();
   const { toast } = useToast();
@@ -50,7 +65,7 @@ export default function CalendarPage() {
   const [view, setView] = useState<View>("month");
   const [anchor, setAnchor] = useState<Date>(() => new Date("2026-07-10T00:00:00")); // app clock
   const [openId, setOpenId] = useState<string | null>(null);
-  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [filters, setFilters] = useState<CalendarFilterValues>(NO_FILTERS);
 
   // ---- visible date range ----
   const { days, rangeFrom, rangeTo } = useMemo(() => {
@@ -71,19 +86,76 @@ export default function CalendarPage() {
     queryFn: () => fetchLessons(params),
   });
 
+  /* Filter option sources. Classes and Students are read whole (both lists are
+   * small and both queries are already cached by their own screens) so the
+   * dropdowns offer a stable set that does not shuffle as you page through
+   * months. Classrooms are Class-owned, so they come from the same class read
+   * rather than from a fourth request. */
+  const classListParams = { q: "", status: "All" };
+  const { data: classData } = useQuery({
+    queryKey: classKeys.list(classListParams),
+    queryFn: () => fetchClasses(classListParams),
+  });
+  const studentListParams = { q: "", status: "All", grade: "all" };
+  const { data: studentData } = useQuery({
+    queryKey: studentKeys.list(studentListParams),
+    queryFn: () => fetchStudents(studentListParams),
+  });
+
+  const classRows = useMemo(() => classData?.rows ?? [], [classData]);
+
+  const classOptions: SelectOption[] = useMemo(
+    () => classRows.map((c) => ({ value: c.id, label: c.name })),
+    [classRows]
+  );
+  const studentOptions: SelectOption[] = useMemo(
+    () => (studentData?.rows ?? []).map((s) => ({ value: s.id, label: s.name })),
+    [studentData]
+  );
+  const classroomOptions: SelectOption[] = useMemo(() => {
+    const names = new Set<string>();
+    for (const c of classRows) if (c.classroom) names.add(c.classroom);
+    return [...names].sort((a, b) => a.localeCompare(b)).map((n) => ({ value: n, label: n }));
+  }, [classRows]);
+
+  /** Which classes a student is enrolled in — the Class owns the enrolment, so
+   * the student filter is answered by intersecting `studentIds`, never by
+   * copying a roster onto the lesson. */
+  const classesOfStudent = useMemo(() => {
+    if (!filters.studentId) return null;
+    return new Set(classRows.filter((c) => (c.studentIds ?? []).includes(filters.studentId)).map((c) => c.id));
+  }, [classRows, filters.studentId]);
+
+  /* Every filter narrows the same fetched range and they combine, so a lesson is
+   * shown only when it satisfies all five. Filtering is client-side because the
+   * calendar already holds the whole visible range in one page — going back to
+   * the server per keystroke would buy nothing and cost a spinner. */
+  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const visible = useMemo(() => {
+    const q = filters.q.trim().toLowerCase();
+    return rows.filter((l) => {
+      if (q && ![l.className, l.classroom, l.classLevel].some((f) => String(f ?? "").toLowerCase().includes(q))) return false;
+      if (filters.classId && l.classId !== filters.classId) return false;
+      if (classesOfStudent && !classesOfStudent.has(l.classId)) return false;
+      if (filters.classroom && l.classroom !== filters.classroom) return false;
+      if (filters.kind !== "All" && lessonKind(l) !== filters.kind) return false;
+      return true;
+    });
+  }, [rows, filters, classesOfStudent]);
+
   // ---- group lessons by day ----
   const byDay = useMemo(() => {
     const map = new Map<string, LessonRow[]>();
-    for (const l of data?.rows ?? []) {
+    for (const l of visible) {
       const arr = map.get(l.date) ?? [];
       arr.push(l);
       map.set(l.date, arr);
     }
     for (const arr of map.values()) arr.sort((a, b) => a.start.localeCompare(b.start));
     return map;
-  }, [data]);
+  }, [visible]);
 
-  const hasEvents = (data?.rows?.length ?? 0) > 0;
+  const hasEvents = rows.length > 0;
 
   const reschedule = useMutation({
     mutationFn: (vars: { id: string; date: string }) => rescheduleLesson(vars.id, { date: vars.date }),
@@ -91,13 +163,63 @@ export default function CalendarPage() {
     onError: (e: Error) => toast(t(e.message), "error"),
   });
 
-  function dropOn(date: string) {
-    const id = draggingId;
-    setDraggingId(null);
-    if (!id) return;
-    const lesson = (data?.rows ?? []).find((l) => l.id === id);
+  /* ---- drag & drop -------------------------------------------------------
+   *
+   * The single-teacher rule the Classes module enforces on a weekly schedule
+   * applies to individual lessons too: one teacher cannot be in two places at
+   * once. The same interval test (`overlaps` — back-to-back never clashes) is
+   * reused here against the lessons already on the destination day, so the
+   * preview and the rule can never disagree. Cancelled lessons do not occupy the
+   * teacher, so only live ones block. Nothing about attendance or billing is
+   * consulted or changed. */
+  const conflictOn = useCallback((id: string, date: string): LessonRow | null => {
+    const moving = rows.find((l) => l.id === id);
+    if (!moving) return null;
+    return (
+      rows.find(
+        (l) =>
+          l.id !== id &&
+          l.date === date &&
+          l.status !== "Cancelled" &&
+          overlaps(moving.start, moving.duration, l.start, l.duration)
+      ) ?? null
+    );
+  }, [rows]);
+
+  const blockedFor = useCallback((id: string, date: string): string | null => {
+    const moving = rows.find((l) => l.id === id);
+    if (!moving || moving.date === date) return null; // a no-op move is allowed, it just does nothing
+    const clash = conflictOn(id, date);
+    if (!clash) return null;
+    const who = `${clash.className}${clash.classLevel ? ` · ${clash.classLevel}` : ""}`;
+    return `${t("Conflicts with")} ${who}`;
+  }, [rows, conflictOn, t]);
+
+  const onDrop = useCallback((id: string, date: string) => {
+    const lesson = rows.find((l) => l.id === id);
     if (!lesson || lesson.date === date) return; // no-op if unchanged
     reschedule.mutate({ id, date });
+  }, [rows, reschedule]);
+
+  const drag = useCalendarDrag({ onDrop, blockedFor });
+  const { draggingId, overDate, blocked, ghost, ghostRef, landed, onPointerDown, suppressClick } = drag;
+  /* The card the ghost was lifted from stays put and faded for as long as the
+   * ghost exists — through the settle and the bounce alike — so the column never
+   * reflows mid-gesture and a refused drop visibly returns to where it started. */
+  const liftedId = ghost?.id ?? null;
+
+  const onOpen = useCallback((id: string) => setOpenId(id), []);
+  const ghostLesson = ghost ? rows.find((l) => l.id === ghost.id) ?? null : null;
+
+  /** How a day cell should read while something is being dragged over it. */
+  function dropState(dISO: string): "idle" | "over" | "blocked" {
+    if (!draggingId || overDate !== dISO) return "idle";
+    return blocked ? "blocked" : "over";
+  }
+  function dropTint(state: "idle" | "over" | "blocked", base: string): string {
+    if (state === "blocked") return "var(--accent-soft)";
+    if (state === "over") return "var(--hover)";
+    return base;
   }
 
   // ---- title + navigation ----
@@ -114,6 +236,10 @@ export default function CalendarPage() {
 
   const todayIso = "2026-07-10";
   const dows = dowNames(lang, "short");
+  /* Re-keyed on the view and the range so switching month/week — or stepping to
+   * the next period — replays the grid's entry instead of swapping its contents
+   * in place. Same `fadeUp` the screen already enters with; no new motion. */
+  const gridKey = `${view}:${rangeFrom}`;
 
   return (
     <div data-screen-label="Calendar" style={{ animation: "fadeUp .3s ease both" }}>
@@ -150,14 +276,27 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      <CalendarFilters
+        values={filters}
+        onChange={(patch) => setFilters((f) => ({ ...f, ...patch }))}
+        classes={classOptions}
+        students={studentOptions}
+        classrooms={classroomOptions}
+        t={t}
+      />
+      <CalendarLegend lang={lang} />
+
       {!hasEvents && (
-        <div style={{ fontSize: 12.5, color: "var(--muted-2)", background: "var(--card-2)", border: "1px solid var(--border)", borderRadius: 9, padding: "10px 14px", marginBottom: 12 }}>
+        <div style={noticeStyle}>
           {t("No lessons scheduled in this period. Lessons are generated for roughly a two-month window around today.")}
         </div>
       )}
+      {hasEvents && visible.length === 0 && (
+        <div style={noticeStyle}>{t("No lessons match these filters.")}</div>
+      )}
 
       {view === "month" ? (
-        <div style={{ ...cardStyle, overflow: "hidden" }}>
+        <div key={gridKey} style={{ ...cardStyle, overflow: "hidden", animation: "fadeUp .22s ease both" }}>
           {/* DOW header */}
           <div style={{ display: "grid", gridTemplateColumns: MONTH_COLUMNS }}>
             {dows.map((d, i) => (
@@ -177,61 +316,44 @@ export default function CalendarPage() {
               const inMonth = d.getMonth() === anchor.getMonth();
               const isToday = dISO === todayIso;
               const events = byDay.get(dISO) ?? [];
+              const state = dropState(dISO);
               return (
                 <div
                   key={dISO}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); dropOn(dISO); }}
-                  style={{ minWidth: 0, overflow: "hidden", borderRight: "1px solid var(--border-2)", borderBottom: "1px solid var(--border-2)", padding: "6px 6px 8px", background: inMonth ? "var(--card)" : "var(--card-2)", opacity: inMonth ? 1 : 0.6 }}
+                  {...{ [DROP_ATTR]: dISO }}
+                  className="cal-cell"
+                  style={{
+                    minWidth: 0, overflow: "hidden", borderRight: "1px solid var(--border-2)", borderBottom: "1px solid var(--border-2)",
+                    padding: "6px 6px 8px",
+                    background: dropTint(state, inMonth ? "var(--card)" : "var(--card-2)"),
+                    boxShadow: state === "blocked" ? "inset 0 0 0 1px var(--accent)" : undefined,
+                    opacity: inMonth ? 1 : 0.6,
+                  }}
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div
                         onClick={() => goDay(d)}
+                        className={isToday ? "cal-today" : undefined}
                         style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 22, height: 22, borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", background: isToday ? "var(--primary)" : "transparent", color: isToday ? "var(--primary-fg)" : "var(--fg-2)" }}
                       >{d.getDate()}</div>
                     </TooltipTrigger>
                     <TooltipContent>{t("Open day")}</TooltipContent>
                   </Tooltip>
                   {events.slice(0, MONTH_MAX_CHIPS).map((e) => (
-                    <Tooltip key={e.id}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => setOpenId(e.id)}
-                          draggable
-                          onDragStart={() => setDraggingId(e.id)}
-                          onDragEnd={() => setDraggingId(null)}
-                          style={calMonthChipStyle(e.classColor)}
-                        >
-                          {/* Makeup / Extra keep their marker here: this is the
-                            * only place on the calendar that an ad-hoc lesson is
-                            * distinguishable at a glance, and a Regular lesson —
-                            * which is nearly all of them — shows nothing. */}
-                          {e.type !== "regular" && <span style={{ ...lessonTypeBadgeStyle(e.type), padding: "1px 4px", marginRight: 3, fontSize: 8, flex: "none" }}>{t(lessonTypeLabel(e.type))}</span>}
-                          {/* The label truncates inside the chip; without its own
-                            * min-width:0 a long class name would push the chip —
-                            * and with it the column — wider than its track. */}
-                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {fmt.time12(e.start)} {e.className}
-                          </span>
-                        </button>
-                      </TooltipTrigger>
-                      {/* The chip shows a truncated start time + name and has no
-                          room for anything else, so its tooltip carries the full
-                          event: name, where, when — the same three facts, in the
-                          same order, as the week view's card. */}
-                      <TooltipContent>
-                        <div style={tipName}>{e.className}</div>
-                        {e.classroom && (
-                          <div style={tipMeta}>{pinIcon}<span>{e.classroom}</span></div>
-                        )}
-                        <div style={tipMeta}>
-                          {clockIcon}
-                          <span>{timeRangeLabel(e.start, fmt.addMinutes(e.start, e.duration), fmt)}</span>
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
+                    <MonthChip
+                      key={e.id}
+                      lesson={e}
+                      t={t}
+                      fmt={fmt}
+                      dragging={liftedId === e.id}
+                      landed={landed?.id === e.id && landed.date === dISO}
+                      onOpen={onOpen}
+                      onPointerDown={onPointerDown}
+                      suppressClick={suppressClick}
+                    />
                   ))}
+                  {state !== "idle" && <DropPlaceholder view="month" message={blocked} t={t} />}
                   {events.length > MONTH_MAX_CHIPS && (
                     <button onClick={() => goDay(d)} style={{ fontSize: 10, color: "var(--accent)", padding: "1px 5px", border: "none", background: "none", fontFamily: "inherit", cursor: "pointer", textAlign: "left", display: "block" }}>+{events.length - MONTH_MAX_CHIPS} {t("more")}</button>
                   )}
@@ -241,49 +363,46 @@ export default function CalendarPage() {
           </div>
         </div>
       ) : (
-        <div style={{ overflowX: "auto" }}>
+        <div key={gridKey} {...{ [SCROLLER_ATTR]: "1" }} style={{ overflowX: "auto", animation: "fadeUp .22s ease both" }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(150px,1fr))", gap: 10, minWidth: 900 }}>
             {days.map((d) => {
               const dISO = iso(d);
               const isToday = dISO === todayIso;
               const events = byDay.get(dISO) ?? [];
+              const state = dropState(dISO);
               return (
                 <div
                   key={dISO}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); dropOn(dISO); }}
-                  style={{ ...cardStyle, overflow: "hidden", minHeight: 220 }}
+                  {...{ [DROP_ATTR]: dISO }}
+                  className="cal-cell"
+                  style={{
+                    ...cardStyle, overflow: "hidden", minHeight: 220,
+                    borderColor: state === "blocked" ? "var(--accent)" : "var(--border)",
+                    background: dropTint(state, "var(--card)"),
+                  }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid var(--border-2)", background: isToday ? "var(--accent-soft)" : "var(--card-2)" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-2)", textTransform: "uppercase", letterSpacing: ".04em" }}>{dows[d.getDay()]}</div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: isToday ? "var(--accent)" : "var(--fg)" }}>{d.getDate()}</div>
+                    <div className={isToday ? "cal-today" : undefined} style={{ fontSize: 13, fontWeight: 600, color: isToday ? "var(--accent)" : "var(--fg)" }}>{d.getDate()}</div>
                   </div>
                   <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-                    {events.length === 0 && <div style={{ fontSize: 11.5, color: "var(--muted-2)", textAlign: "center", padding: "16px 0" }}>{t("Drop here")}</div>}
+                    {events.length === 0 && state === "idle" && (
+                      <div style={{ fontSize: 11.5, color: "var(--muted-2)", textAlign: "center", padding: "16px 0" }}>{t("Drop here")}</div>
+                    )}
                     {events.map((e) => (
-                      /* Event card: class name, then where, then when. No
-                       * lesson-type badge — on a calendar all but a handful of
-                       * lessons are Regular, so the pill was noise competing
-                       * with the name for the top of the card. The lesson's
-                       * type, status and notes are in the drawer one click away.
-                       *
-                       * Each line keeps the typography its role was given in
-                       * 5.4; only the order of the two subordinate lines moved. */
-                      <button
+                      <WeekEvent
                         key={e.id}
-                        onClick={() => setOpenId(e.id)}
-                        draggable
-                        onDragStart={() => setDraggingId(e.id)}
-                        onDragEnd={() => setDraggingId(null)}
-                        style={calWeekEventStyle(e.classColor)}
-                      >
-                        <div style={eventName}>{e.className}</div>
-                        {e.classroom && <div style={eventRoom}>{e.classroom}</div>}
-                        <div style={eventTime}>
-                          {timeRangeLabel(e.start, fmt.addMinutes(e.start, e.duration), fmt)}
-                        </div>
-                      </button>
+                        lesson={e}
+                        t={t}
+                        fmt={fmt}
+                        dragging={liftedId === e.id}
+                        landed={landed?.id === e.id && landed.date === dISO}
+                        onOpen={onOpen}
+                        onPointerDown={onPointerDown}
+                        suppressClick={suppressClick}
+                      />
                     ))}
+                    {state !== "idle" && <DropPlaceholder view="week" message={blocked} t={t} />}
                   </div>
                 </div>
               );
@@ -292,61 +411,19 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {ghost && ghostLesson && (
+        <DragGhost lesson={ghostLesson} fmt={fmt} width={ghost.width} ghostRef={ghostRef} />
+      )}
+
       <LessonDrawer lessonId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }
 
-/* Week-view event card typography — three genuinely descending steps in size,
- * weight and colour, matching the order the lines are read in: name, then where,
- * then when. The time is the quietest of the three; it used to be set larger and
- * darker than the classroom above it, which fought the order.
- *
- * Each line clips to one line (a card must not grow with the length of a name)
- * and the line-heights are explicit rather than inherited, which is what keeps
- * the three evenly spaced instead of drifting with the font size. */
-const eventLine: React.CSSProperties = {
-  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+const noticeStyle: React.CSSProperties = {
+  fontSize: 12.5, color: "var(--muted-2)", background: "var(--card-2)",
+  border: "1px solid var(--border)", borderRadius: 9, padding: "10px 14px", marginBottom: 12,
 };
-const eventName: React.CSSProperties = {
-  ...eventLine,
-  fontSize: 13, fontWeight: 600, lineHeight: 1.3, letterSpacing: "-.01em", color: "var(--fg)",
-};
-const eventRoom: React.CSSProperties = {
-  ...eventLine,
-  fontSize: 11.5, fontWeight: 500, lineHeight: 1.35, marginTop: 3,
-  color: "var(--fg-2)",
-};
-const eventTime: React.CSSProperties = {
-  ...eventLine,
-  fontSize: 11, fontWeight: 500, lineHeight: 1.35, marginTop: 2,
-  color: "var(--muted-2)", fontFamily: "var(--font-mono-stack)",
-};
-
-/* Month-chip tooltip — the bubble is already small, inverted text, so the two
- * subordinate lines separate from the name by weight and a little transparency
- * rather than by another colour token (which would be reading against --bg).
- * Each is prefixed by its own glyph — the same pin and clock the class card uses
- * for the same two facts — so where and when are told apart at a glance without
- * a label. The title needs no icon: it is the subject of the bubble. */
-const tipName: React.CSSProperties = { fontWeight: 600 };
-const tipMeta: React.CSSProperties = {
-  display: "flex", alignItems: "flex-start", gap: 5,
-  fontWeight: 500, opacity: 0.75, marginTop: 2,
-};
-/** Icons sit on the first line of a value that wraps, hence the nudge. */
-const tipIcon: React.CSSProperties = { flex: "none", marginTop: 1.5 };
-
-const pinIcon = (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={tipIcon}>
-    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" />
-  </svg>
-);
-const clockIcon = (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={tipIcon}>
-    <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
-  </svg>
-);
 
 const navBtn: React.CSSProperties = {
   minWidth: 34, width: 34, height: 34, border: "1px solid var(--border)", borderRadius: 8,
