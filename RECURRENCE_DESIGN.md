@@ -1,11 +1,17 @@
 # Recurrence Engine — Technical Design
 
-**Status:** approved (2026-08-04) with adjustments; design only. Nothing in this
-document has been implemented. No code was written, no database was modified, no
-migration exists.
+**Status:** approved (2026-08-04); **revised 2026-08-06** after the Sprint 5.6.1 dry
+run — see §1.6 for what was measured, ADR-002 for what it changed, and §5.9 for the
+manual-edit protection added to §6 Phase 4.
 
-**Approved scope for Sprint 5.6** is §1–§8 and ADR-001. §9 (technical debt) and §10
-(future improvements) are explicitly **outside** it.
+Sprints **5.6.0 (prerequisites)** and **5.6.1 (report-only reconciliation)** are
+delivered: the pure planner is `src/lib/recurrence.ts`, the dry run is
+`scripts/recurrence-report.ts` (`npm run lessons:reconcile`), the scenario tests are
+`tests/recurrence.test.ts` (`npm test`). **No database has been modified, no
+migration exists, and every write phase is still ahead.**
+
+**Approved scope for Sprint 5.6** is §1–§8, ADR-001 and ADR-002. §9 (technical debt)
+and §10 (future improvements) are explicitly **outside** it.
 
 **Companion documents:** `LESSON_DUPLICATES.md` (the defect and the detection tool),
 `PROJECT_RULES.md` (business rules — authoritative on conflict).
@@ -110,6 +116,48 @@ Two further consequences of the same design, both latent:
   `2026-07-10`. Against a real clock, every lesson would remain `Upcoming` forever
   and revenue — which counts only `Completed` — would stay at zero.
 
+### 1.6 Measured state — Sprint 5.6.1 dry run, 2026-08-06
+
+`npm run lessons:reconcile`, read-only, app clock `2026-07-10`, window
+`2026-06 … 2026-09`. 12 classes, 1009 lessons, 151 attendance records.
+
+| Verb | Count |
+|---|---|
+| KEEP | 257 |
+| UPDATE | 0 |
+| INSERT | 0 |
+| RETIRE | 318 |
+| SKIP (frozen) | 6 |
+
+Reported alongside the plan but never part of it: **11** legacy reschedules awaiting
+Phase 0, and **18** lessons whose class no longer exists.
+
+**Why zero updates and zero inserts.** Ensure runs on every list read, so the correct
+series already exists on every future window date of every Active class. Each desired
+slot finds an exact match, and the stale series sits *beside* it rather than in its
+place. An UPDATE only arises when a stale lesson is alone on its date with an
+unsatisfied slot. The plan's entire write surface today is deletion.
+
+**Agreement with `npm run lessons:duplicates`.** Of the detector's 223 "safely
+removable" lessons, the planner retires **223** — and of its 106 protected candidates
+it touches **zero**. No action is dated before the app clock. The remaining 95
+retirements are ones the detector cannot see, and every one is explained:
+
+| Cause | Count | Why the detector misses it |
+|---|---|---|
+| Archived class `B2`, lessons matching its (fossil) schedule | 82 | the detector ignores class status and marks them KEEP |
+| Archived class `asd` (`6a683d44…`) | 12 | one lesson per date — below the two-or-more threshold |
+| `c4` orphan on 2026-08-04 | 1 | its date-mate was rescheduled away, dissolving the group |
+
+**Orphan census.** The broad orphan count is **366**, matching the original
+measurement exactly. **37** sit alone on their date (the doc previously said 36): 24
+past, 13 future. The planner retires the 13 future ones and none of the 24 past ones.
+The 37th is that `c4` lesson — a reschedule silently hid an orphan from the detector,
+which is the clearest demonstration available of why the reverse pass is necessary.
+
+**The archived share.** 176 of the 318 retirements — 55% — come from two Archived
+classes rather than from any forked series. That finding is what ADR-002 responds to.
+
 ---
 
 ## 2. Business rules
@@ -133,11 +181,12 @@ Completed or Cancelled is past in the sense that matters, whatever its date.
 | **Change weekday** (Tue → Wed) | Future lessons on the old weekday are **retired**; future lessons on the new weekday are **inserted**. Not treated as a move: the dates differ, so identity is not carried across. |
 | **Delete one weekday** | Future lessons on that weekday are retired. Past lessons remain — they were taught. |
 | **Add one weekday** | Future lessons are inserted across the window. Nothing existing is touched. |
-| **Delete entire class** | **Blocked** whenever the class has any past lesson, attendance record, or billing record. **Archive is the only supported way to retire a class that has taught anything.** Today `deleteClass` removes only the Class row and leaves every lesson behind, orphaned: they render `className: "—"` and drop out of revenue silently, because `computeRevenue` iterates classes and a lesson whose class is gone is never visited. Hard delete survives only for a class that has never taught — no lessons at all, or future Upcoming ones only. |
-| **Archive class** | Generation stops (already true). Future Upcoming Regular lessons are **retired** — they will not be taught. Past lessons remain untouched. *Archiving currently also erases the class's historical revenue; that is pre-existing behaviour and is **out of scope for Sprint 5.6** — see §9.1.* |
-| **Restore class** | Future lessons are regenerated from the current schedule. Past lessons are already there and are not re-derived. |
+| **Delete entire class** | **Blocked** whenever the class has any past lesson, attendance record, or billing record. **Archive is the only supported way to retire a class that has taught anything.** Today `deleteClass` removes only the Class row and leaves every lesson behind, orphaned: they render `className: "—"` and drop out of revenue silently, because `computeRevenue` iterates classes and a lesson whose class is gone is never visited. Hard delete survives only for a class that has never taught — no lessons at all, or future Upcoming ones only. The guard prevents new orphans; it does nothing for the **18 that already exist** (§6, "Not in scope — lessons whose class was deleted"). |
+| **Archive class** | Generation stops (already true) and **nothing else happens**. An Archived class is outside reconciliation entirely (§5.8, ADR-002): its lessons are never updated, inserted or retired. Retiring its future lessons is a separate one-shot transition action, deliberately **deferred out of Sprint 5.6** and sequenced behind §9.1 — archiving already erases the class's historical revenue, and bolting a second destructive effect onto a defective operation is the wrong order. Accepted consequence: lessons generated before the archive linger until they age out of the window. *(Revised 2026-08-06; previously this row retired future Upcoming lessons.)* |
+| **Restore class** | Generation resumes and the read-side top-up refills the window from the current schedule. Past lessons are already there and are not re-derived. Because archiving now retires nothing, restore has nothing to undo — the round trip is lossless, where the previous rule made it lossy (notes, classroom overrides and homework links on future lessons did not survive it). |
 | **Cancel one lesson** | The lesson stays `Cancelled` forever. The reconciler never resurrects it, never updates it, and never counts its slot as vacant. It remains excluded from revenue unless `chargeable`. |
 | **Reschedule one lesson** | The lesson is **frozen against reconciliation** for good. Its stored origin (`originalDate` / `originalStart` / `originalDuration`) marks the slot it vacated as *satisfied*, so the reconciler does not regenerate a lesson on the original day. Editing the class schedule afterwards must not drag it back. |
+| **Edit a lesson's notes** | The lesson carries **human-authored content** and is never retired and never replaced by an insert beside it. It **is** still corrected in place when the schedule moves, keeping its id and its notes: the goal is to preserve what the teacher wrote, not to freeze the lesson at its old time. `classroom` is not a signal — see §5.9. |
 | **Create Extra lesson** | Never generated, never reconciled, never retired. `type !== "regular"` is excluded from the reconciler entirely. |
 | **Create Makeup lesson** | Same. Additionally, the Cancelled Regular it references via `fromId` must never be deleted while the makeup exists. |
 
@@ -187,6 +236,12 @@ already enforced the first half by routing every lesson time through one
 `Rescheduled` is **not a status** — it is a modifier carried by the origin fields on
 top of `Upcoming`. It changes who may write to the lesson, not what the lesson is.
 
+**Manually edited** is a modifier of the same family but a weaker one (§5.9): a lesson
+carrying notes is still `Upcoming`, still reconcilable, and is still corrected in place
+when the schedule moves. It withdraws exactly one verb — retire — because the note is
+the teacher's and the timetable is not. A reschedule withdraws every verb; a note
+withdraws only the destructive one.
+
 ### Why past lessons must never change automatically
 
 Four reported figures are computed by re-reading the lesson collection on every
@@ -228,21 +283,27 @@ Reconciliation keys on **`(classId, date)`** and compares *fields*, not ids.
 Run per class, over each date in the generation window that is `>= app clock`:
 
 1. **Desired set** — the `{start, duration}` pairs from `Class.schedule` whose `day`
-   matches that date's weekday. Empty if the class no longer teaches that weekday,
-   or is Archived.
+   matches that date's weekday. Empty if the class no longer teaches that weekday.
+   An Archived class never reaches this step at all — see §5.8.
 2. **Actual set** — the Regular lessons already stored for that `(classId, date)`.
 3. **Partition the actual set into frozen and reconcilable.** Frozen = anything not
    `Upcoming`, anything carrying a reschedule origin, anything with an attendance
-   record. Frozen lessons are removed from consideration and **their slot is
-   consumed** — see 5.6.
+   record, anything referenced by homework. The full list is §6 Phase 4. Frozen
+   lessons are removed from consideration and **their slot is consumed** — see 5.6.
+   A manually edited lesson is **not** frozen here; it is reconcilable, and is
+   protected at step 7 instead (§5.9).
 4. **Exact matches** — a reconcilable lesson whose `start` *and* `duration` equal a
    desired pair is already correct. Pair them off; neither side needs work.
 5. **Update in place** — pair the leftovers on both sides, ordered by start time, and
    write the new `start` / `duration` onto the existing lesson. This is how a slot
-   *edit* preserves the lesson's id, notes, classroom override and homework link.
+   *edit* preserves the lesson's id, notes and homework link. When leftovers compete
+   for the same slot, a **manually edited lesson is paired first** (§5.9): it is the
+   one that cannot be deleted, so giving it the slot corrects it instead of stranding
+   it.
 6. **Insert** — any desired pair still unmatched becomes a new lesson.
 7. **Retire** — any reconcilable lesson still unmatched has no slot backing it and is
-   deleted.
+   deleted — **unless it carries notes**, which is never deleted and is reported as
+   stranded instead (§5.9).
 
 Steps 5–7 are the three verbs ensure currently lacks.
 
@@ -298,10 +359,120 @@ expensive than an insert-only upsert — it must read the window's lessons, and 
 issues updates and deletes that can contend between concurrent requests (the current
 duplicate-key tolerance does not cover update races).
 
-Proposal: drive reconciliation from the **write** side — `updateClass`, archive,
-restore, delete — where the intent actually changes, and keep a cheap insert-only
-top-up on the read side to extend the rolling window forward. This also fixes the
-user-visible lag where a schedule edit is only corrected on the next list read.
+Proposal: drive reconciliation from the **write** side — `updateClass` — where the
+intent actually changes, and keep a cheap insert-only top-up on the read side to
+extend the rolling window forward. This also fixes the user-visible lag where a
+schedule edit is only corrected on the next list read. Archive, restore and delete
+are **not** reconciliation triggers (§5.8).
+
+### 5.8 What the reconciler deliberately does not reconcile
+
+Three sets of lessons are outside the algorithm entirely. Not filtered late, not
+skipped case by case — never presented to it. See ADR-002.
+
+| Excluded | Why |
+|---|---|
+| **Lessons of an Archived class** | The class has no *intent* to compare against. Its schedule is a fossil, so a desired set of `[]` would make every future lesson an orphan by definition — turning one class-level decision into hundreds of per-lesson deletions, which is not reconciliation but a bulk delete wearing its clothes. Measured cost of including them: 55% of the plan (§1.6). |
+| **Lessons whose class no longer exists** | Reconciliation *requires* a schedule; there is none. Any rule that could apply would have to be "delete everything", which would cross the past/future boundary the sprint promises never to cross — 6 of the 18 live instances are past and Completed. Reported, never planned. |
+| **Makeup and Extra lessons** | Never generated, so never reconciled and never retired (§2). |
+
+The first two must still be **reported**. `findOrphanedLessons` already lists the
+classless ones in `npm run lessons:reconcile`; the Archived ones currently appear as
+retirements, and when 5.6.2 removes them from the plan the report must gain a section
+naming them and their lingering future lessons instead. Visibility is the thing that
+was missing, and it costs nothing — but being visible is not the same as being in
+scope.
+
+The rule that falls out of all three: **the reconciler has exactly one input (the
+class's schedule versus its lessons) and one trigger (a schedule edit).** Class
+status is not a second, hidden input capable of mass deletion.
+
+### 5.9 How manually edited lessons are protected
+
+*Added and approved 2026-08-06 as a Phase 4 protection.*
+
+**The principle.** A generated lesson is the reconciler's to correct. A lesson a
+teacher has written on is not — but only its *content* is the teacher's. The schedule
+is still the class's. So:
+
+> **Preserve human-authored content; do not preserve the old schedule forever.**
+
+**The signal: `notes`, and only `notes`.** A Regular lesson is *manually edited* when
+it carries a non-empty `notes` value.
+
+That field is unambiguous. `ensureRegularLessons` writes `notes: ""` at insert, and
+the only path that writes anything else onto an existing Regular lesson is
+`updateLesson` — a human action. A non-empty value therefore means a person typed it,
+with no inference involved. Nothing else in the system stores a lesson's notes, and
+retire is a hard delete with no undo, so the text is gone for good if the lesson goes.
+
+**`classroom` is deliberately excluded.** Regular lessons do not support a true
+classroom override today, and the stored value cannot distinguish generated data from
+a human edit:
+
+- `ensureRegularLessons` stamps `c.classroom` onto every lesson at insert via
+  `$setOnInsert`. Rename the class's classroom afterwards and every lesson generated
+  before the rename keeps the old string — untouched, and indistinguishable from a
+  deliberate override.
+- A genuine override is inert anyway: `classroomFor()` in `src/lib/lessons.ts`
+  discards a Regular lesson's stored classroom at read time and renders the class's,
+  so the value is not shown anywhere in the UI.
+
+Protecting on that field would produce false positives — potentially every lesson
+predating a single classroom rename — for data no one authored and no screen displays.
+It is out of this rule for Sprint 5.6. If Regular lessons gain a real override later,
+the rule can be revisited then.
+
+**No new field is introduced.** An explicit edit stamp (an `editedAt` written by
+`updateLesson`, mirroring `rescheduledAt`) was considered and **rejected for Sprint
+5.6**: `notes` already answers the question exactly, and adding schema surface during
+a data-integrity fix widens the blast radius of the one sprint that most needs a
+narrow one — the same reasoning that keeps `scheduleVersion` out (§10.1).
+
+#### What the protection does and does not do
+
+It is a filter on **two verbs**, not on the candidate set:
+
+| Verb | Applies to a lesson with notes? |
+|---|---|
+| **RETIRE** | **Never.** The lesson is not deleted, whatever its slot is doing. |
+| **INSERT** as a replacement for it | **Never.** It claims its slot through ordinary matching (steps 4–5), so nothing is generated in its place. No extra consumption rule is needed — being reconcilable is what earns it the slot. If no slot survives at all, there is nothing to insert either. |
+| **UPDATE in place** | **Yes — deliberately.** `start` and `duration` are corrected like any other lesson. |
+| **KEEP** | Yes, when it already matches. |
+
+An insert *can* still occur on the same date when the schedule has more slots than the
+day has lessons. That is a genuinely new session, not a replacement, and it is correct.
+
+This is what separates it from every other Phase 4 protection. Attendance, homework,
+the reschedule origin and a non-`Upcoming` status all remove a lesson from
+consideration entirely (§5.2 step 3). A manually edited lesson stays *in* the
+reconcilable set and is corrected normally — it is simply never deleted.
+
+The reason is that in-place update **is** the preservation mechanism. ADR-001 chose it
+over delete-and-recreate precisely so that a slot edit keeps the lesson's id, its
+notes and its homework link. Freezing the lesson would not protect the note; it would
+protect the note's *time*, stranding one lesson at 14:30 while its siblings move to
+10:08, with nothing in the UI to explain why. The verb that destroys the note is
+retire, and that is the verb this rule blocks.
+
+#### Pairing prefers the protected lesson
+
+When leftovers compete for a slot in §5.2 step 5, a manually edited lesson is paired
+first. Otherwise a day holding one plain and one noted lesson, with a single surviving
+slot, could hand the slot to the plain lesson and leave the noted one unmatched — which
+step 7 may not delete, so the day would end up with two lessons: one correct and one
+stale. Preferring the protected lesson resolves it to one corrected lesson plus one
+ordinary retirement, which is what the teacher expects to see.
+
+#### Stranded lessons
+
+If the slot disappears entirely — the class stops teaching that weekday — a noted
+lesson can be neither corrected nor deleted. It stays where it is, and the report must
+**list it as stranded** so a person can decide whether to move it, cancel it, or clear
+the note and let it retire. That is the correct failure mode: visible, undeleted,
+awaiting a human. It is the only case where this rule leaves a lesson out of step with
+its class's schedule, and it is bounded by the number of lessons a teacher has
+actually written on.
 
 ---
 
@@ -316,9 +487,25 @@ Write `originalDate` / `originalStart` / `originalDuration` onto the 11 lessons 
 id-encoded date disagrees with their stored `date`. Additive: no existing field
 changes, no id changes, no status changes.
 
-**This must be deployed and verified before the reconciler ships.** Without it the
-reconciler deletes 11 deliberately rescheduled lessons on its first run. This is the
-single highest-risk ordering constraint in the whole plan.
+**Still mandatory before any write phase — but for a different reason than when this
+was written.** The original argument was that without it the reconciler deletes 11
+deliberately rescheduled lessons on its first run. That is no longer true: the planner
+shipped in 5.6.0 carries a `legacyOriginFallback` that reads the id when the stored
+origin is absent, and the 5.6.1 dry run confirms all 11 are classified as frozen
+reschedules, none retired. The hole is plugged.
+
+What Phase 0 now buys is the thing ADR-001 actually set out to achieve: **it makes
+that fallback removable.** Until the origins are stored, the reconciler still parses
+the lesson id to make a safety decision — the exact coupling ADR-001 exists to
+eliminate — and it can only recover `date` and `start` that way, never `duration`.
+Phase 0 converts an inferred signal into stored data and lets the id go back to being
+opaque.
+
+Measured scope of the risk, 2026-08-06: of the 11, only **3** are load-bearing today
+(future, in-window, on a non-Archived class: `c2`, `c3`, `TEst`). Five are dated
+before the app clock and can never enter the plan; three belong to Archived classes,
+which §5.8 removes from scope. The back-fill should still write all 11 — they are all
+genuine moves and the write is additive — but §7 rates the risk accordingly.
 
 ### Phase 1 — snapshot
 
@@ -334,15 +521,26 @@ class and in total, before anything changes.
 
 Run the reconciler in report-only mode. Diff its intended actions against
 `npm run lessons:duplicates`. Investigate every disagreement — in particular, the
-detector only reports dates holding **two or more** lessons, so the **36 orphans that
-sit alone on their date** are invisible to it and will appear only in the
-reconciler's output. They are legitimate retirements, but they must be recognised
-rather than discovered in production.
+detector only reports dates holding **two or more** lessons, so orphans that sit
+alone on their date are invisible to it and appear only in the reconciler's output.
+They are legitimate retirements, but they must be recognised rather than discovered
+in production.
+
+**Done — 2026-08-06.** Full results in §1.6. The census is 37 alone-on-their-date
+orphans, not the 36 originally stated, of which 13 are future and therefore
+actionable; the other 24 are past and structurally out of scope. Agreement with the
+detector is exact in both directions that matter: all 223 of its safely-removable
+lessons are retired, none of its 106 protected ones are touched.
 
 ### Phase 4 — apply, scoped
 
 Only lessons that are: `type === "regular"`, `date >= app clock`, `status ===
-"Upcoming"`, no attendance record, no reschedule origin, no homework reference.
+"Upcoming"`, no attendance record, no reschedule origin, no homework reference, and
+belonging to a class that exists and is not Archived (§5.8).
+
+One further protection applies to the **retire verb** rather than to the candidate
+set: a lesson carrying `notes` is never deleted (§5.9). It remains eligible for
+in-place update, because updating is how its notes are preserved.
 
 Everything the goals list is protected by construction, not by care:
 
@@ -354,6 +552,14 @@ Everything the goals list is protected by construction, not by care:
 | never change completed homework | homework-reference filter |
 | never modify cancelled lessons | `status === "Upcoming"` filter |
 | never modify rescheduled lessons | origin-field filter, made reliable by Phase 0 |
+| **never destroy human-authored content** | **`notes` filter on the retire verb (§5.9)** |
+| never mass-delete via class status | Archived classes are out of scope (§5.8, ADR-002) |
+
+The list is the whole safety argument: a lesson is excluded unless it positively
+proves it is safe to touch. Each entry protects a different thing a lesson can be —
+a fact (`status`), a relationship (attendance, homework), a position (the origin
+fields), or, now, **content a teacher authored on it**. Only the last of these permits
+correction while forbidding deletion; the rest forbid both.
 
 ### Phase 5 — verify
 
@@ -374,6 +580,39 @@ class.
 
 The only class in the live data needing genuine reconciliation is
 `c4 "Emma Chen · 1-on-1"` — 12 future orphan lessons on the retired `14:30` slot.
+Confirmed exactly by the 5.6.1 dry run: `c4` plans 12 RETIRE, 11 KEEP and 1 SKIP.
+
+### Not in scope — Archived classes
+
+§5.8 removes them from reconciliation, so the migration inherits nothing from them.
+This is a **176-lesson reduction** in what 5.6.3 would otherwise hard-delete, 164 of
+it on `B2` — a class the section above already says to delete by hand rather than
+migrate. Whatever future lessons an Archived class still holds simply stay put.
+
+Retiring them remains a reasonable thing to want. It is a separate one-shot action
+belonging to the archive *transition*, it needs §9.1 settled first, and it needs a
+restore story. None of that belongs in a data-integrity fix.
+
+### Not in scope — lessons whose class was deleted
+
+18 such lessons exist (`classId 6a683d50376b4e471a458dd2`), 12 future and Upcoming, 6
+past and Completed. The reconciler cannot reach them by construction (§5.8) and
+5.6.2's deletion guard only prevents *new* ones, so these need a decision of their
+own — as a dedicated cleanup, not as reconciler output.
+
+Two things must be established before anything is deleted, and neither is known yet:
+
+- **whether any of the 6 past lessons carries an attendance record.** `attendances`
+  has no cascade, so deleting one orphans its register permanently.
+- **whether the class deletion was intentional.** If it was, the past lessons are
+  history of teaching that genuinely happened and their revenue is *already* wrong —
+  `computeRevenue` iterates classes, so a lesson whose class is gone is never visited
+  (§2). That is the same "past figures move without anything being written" defect as
+  §9.1, reached by a third route.
+
+Recommended: keep reporting them indefinitely — the reconciler's report is the only
+surface in the app that shows they exist — and treat the cleanup as a product
+decision with its own sign-off.
 
 ---
 
@@ -383,11 +622,14 @@ The only class in the live data needing genuine reconciliation is
 
 | Risk | Why | Mitigation |
 |---|---|---|
-| **Legacy reschedules deleted** | 11 lessons have no origin fields; the opaque id can no longer identify them | Phase 0 back-fill, deployed and verified first. **Highest risk in the plan.** |
+| **Legacy reschedules deleted** | 11 lessons have no origin fields; an opaque id could not identify them | ~~Highest risk in the plan.~~ **Downgraded 2026-08-06.** The planner's `legacyOriginFallback` reads the id when the stored origin is missing; the 5.6.1 dry run confirms all 11 frozen, none retired. Only 3 are load-bearing at all (§6 Phase 0). Phase 0 stays mandatory to *remove* that fallback, not to prevent deletion. |
+| **Mass deletion via class status** | a desired set of `[]` makes every future lesson of an Archived class an orphan — 176 lessons, 55% of the measured plan | §5.8 / ADR-002: Archived classes are outside reconciliation. Class status is not an input to the algorithm. |
 | **Historical revenue moves** | the per-lesson denominator is a live count of regular lessons per month | hard `date >= app clock` filter; Phase 2/5 before-and-after diff |
 | **Orphaned attendance** | `attendances.lessonId` has no cascade | attendance-record filter; no past lesson in scope |
 | **Broken makeup links** | `fromId` points at a Cancelled Regular | Cancelled lessons are never in scope |
 | **Orphaned homework** | `homeworks.lessonId` is nullable, no cascade | homework-reference filter (currently vacuous — no lesson has one — but must exist) |
+| **Teacher's notes destroyed** | a lesson's `notes` exist nowhere else and the retire verb is a hard delete | `notes` filter on the retire verb (§5.9). This protection did **not** exist in the originally approved design — the update path preserved notes, the retire path did not |
+| **A noted lesson stranded on a dropped weekday** | it may be neither corrected (no slot) nor deleted (protected) | reported as stranded (§5.9), never silently left. Bounded by how many lessons a teacher has actually written on |
 | **Cancellation resurrected** | a frozen lesson's slot read as vacant → re-inserted | slot consumption, §5.6 |
 | **Hard delete is irreversible** | no soft-delete, by design | Phase 1 snapshot |
 
@@ -397,7 +639,8 @@ The only class in the live data needing genuine reconciliation is
 |---|---|
 | **Reports and parent-facing figures shift** | any month whose lesson count changes republishes different numbers; only future months may move |
 | **Notifications** (future sprint) | retiring a lesson someone was notified about needs a rule; none exists yet |
-| **Archive semantics** | archiving erases historical revenue — pre-existing, **out of Sprint 5.6 scope**, tracked in §9.1 |
+| **Archive semantics** | archiving erases historical revenue — pre-existing, **out of Sprint 5.6 scope**, tracked in §9.1. ADR-002 keeps Sprint 5.6 from adding a second destructive effect to the same operation before that is settled |
+| **Archived classes keep stale future lessons** | the price of ADR-002: lessons generated before the archive stay on the Calendar and Lesson List until they age out of the window, and per §9.2 never advance past `Upcoming`. Presentational, not destructive — and reversible, which the alternative is not. Live instances are `B2` (166) and `asd` (12), both development data slated for manual deletion |
 | **Status never advances** (§1.5) | against a real clock nothing becomes `Completed` and revenue stays zero — same engine, but **out of Sprint 5.6 scope**, tracked in §9.2 |
 | **Calendar and drag-drop** | the reconciler writes `start`/`duration` on future lessons; a lesson could move under a teacher mid-drag. Reconciling on the write side (§5.7) narrows this window |
 
@@ -417,26 +660,41 @@ The only class in the live data needing genuine reconciliation is
 
 Sequenced so that each stage is independently shippable and reversible.
 
-### 5.6.0 — Prerequisites (blocking, ~0.5 day)
+### 5.6.0 — Prerequisites — **delivered 2026-08-05, minus the back-fill**
 
-Back-fill legacy reschedule origins (§6 Phase 0). Additive write: no deletions, no id
-changes, no status changes. **Verify all 11 lessons carry an origin before anything
-else merges.** Nothing in 5.6.1+ may land until this is deployed and confirmed.
+Shipped as infrastructure only: the pure planner (`src/lib/recurrence.ts`), the
+read-only dry run (`scripts/recurrence-report.ts`), and 24 scenario tests
+(`tests/recurrence.test.ts`). The window / id / status helpers moved out of
+`src/lib/lessons.ts` verbatim so the planner and the live generator cannot drift;
+`ensureRegularLessons` is byte-for-byte unchanged.
 
-### 5.6.1 — Report-only reconciliation (~2–3 days)
+**The Phase 0 back-fill was NOT performed** — it is a database write, and 5.6.0 was
+scoped to zero writes. It is reported instead, by `findLegacyReschedules`, and the
+planner's `legacyOriginFallback` makes the reconciler safe without it. It remains
+mandatory before any write phase; see §6 Phase 0 for the revised justification.
 
-The algorithm in §5, behind a flag, in **report-only mode**: it emits the updates,
-inserts and retirements it *would* perform and executes none of them. Reuses the
-existing detector's output shape so the two can be diffed. No behaviour change ships.
+### 5.6.1 — Report-only reconciliation — **delivered 2026-08-06**
 
-Exit criterion: its output is understood line by line — including the **36 orphans
-that sit alone on their date**, which the existing detector cannot see (§6 Phase 3).
+As specified: the algorithm in §5 in **report-only mode**, emitting the updates,
+inserts and retirements it *would* perform and executing none of them. No behaviour
+change shipped.
+
+Exit criterion — "its output is understood line by line, including the orphans that
+sit alone on their date and the existing detector cannot see" — **met**. Results in
+§1.6, diff against the detector in §6 Phase 3. The census correction (37 alone, 13 of
+them actionable) and ADR-002 both came out of this run.
 
 ### 5.6.2 — Write reconciliation (~1 day)
 
-Wire the reconciler into the write side: `updateClass`, archive, restore. Block class
-deletion when history exists and make Archive the supported path (§2). Keep the
-read-side top-up insert-only (§5.7). Still report-only for the retire verb.
+Wire the reconciler into the write side: **`updateClass` only.** Archive and restore
+are no longer reconciliation triggers (ADR-002) — archiving keeps its existing
+behaviour of stopping generation and nothing more, which is already what the code
+does, so this is a scope *reduction*. Block class deletion when history exists and
+make Archive the supported path (§2). Keep the read-side top-up insert-only (§5.7).
+Still report-only for the retire verb.
+
+Implements §5.9 as its own change: `notes` blocks retire, permits update, and pairing
+prefers the protected lesson. No new field, and `classroom` is not consulted.
 
 ### 5.6.3 — Migration (~1 day, gated on sign-off)
 
@@ -455,7 +713,19 @@ delete-with-history (must be blocked) / cancel / reschedule / extra / makeup. Pl
 the two subtle cases that no §2 row states directly:
 
 - a **cancelled** lesson's slot must not re-fill on the next read (§5.6);
-- a **rescheduled** lesson must survive a subsequent schedule edit untouched.
+- a **rescheduled** lesson must survive a subsequent schedule edit untouched;
+- a lesson carrying **notes** must never be retired, **must still be corrected in
+  place** when its slot moves, and must keep both its id and its note across that
+  correction (§5.9);
+- where a plain and a noted lesson compete for one surviving slot, the **noted one**
+  takes it and the plain one retires (§5.2 step 5);
+- a noted lesson whose weekday is dropped must be reported as **stranded**, not
+  deleted and not silently left unreported.
+
+These exist as of 5.6.0 in `tests/recurrence.test.ts` and run against the planner;
+5.6.4 re-points them at the enforcing path. The archive case now asserts the opposite
+of what it originally would have — an Archived class must produce **no actions at
+all** (ADR-002).
 
 **Regression** — revenue, teaching hours and attendance rate identical for every past
 month; Calendar, Lesson List, drawer, Class Details and Dashboard unchanged for
@@ -667,3 +937,106 @@ manual.
   makes §9.1 — archiving erasing that class's historical revenue — more visible, not
   less. Sequencing §9.1 before Sprint 5.6 is therefore preferable, though not a
   blocking dependency: the two changes touch different code and different data.
+
+---
+
+## ADR-002 — A class without live intent is outside reconciliation
+
+**Status:** proposed
+**Date:** 2026-08-06
+**Supersedes:** the `Archive class` row of §2 and the "or is Archived" clause of §5.2
+step 1, both as originally written.
+**Context:** the Sprint 5.6.1 dry run (§1.6). 176 of 318 planned retirements — 55% —
+came from two Archived classes rather than from any forked series, and a further 18
+lessons belong to a class that no longer exists at all.
+
+### Decision
+
+1. **Archived classes are not reconciled.** They are excluded before the algorithm
+   begins, not filtered inside it. No update, no insert, no retire.
+2. **Lessons whose class was deleted are not reconciled**, for the same structural
+   reason: there is no schedule to compare against.
+3. Both remain **reported** by `npm run lessons:reconcile`.
+4. Retiring an Archived class's future lessons, if it is wanted, is a one-shot action
+   belonging to the archive *transition* — a separate sprint, sequenced behind §9.1.
+5. Consequently the only reconciliation trigger on the write side is `updateClass`.
+
+### Rationale
+
+**A fossil schedule is not intent.** The algorithm's whole premise (§2) is *edit
+intent → reconcile future facts*. An Archived class has withdrawn its intent; its
+schedule records what it used to do. Feeding that to a comparison whose job is to find
+disagreements produces a desired set of `[]`, at which point every future lesson is an
+orphan **by definition rather than by evidence**. The output looks like reconciliation
+and is really a bulk delete — one class-level decision, taken once by a human, re-expressed
+as 176 independent per-lesson deletions each carrying its own hard delete.
+
+**It fails open, in a design that is supposed to fail closed.** Every other protection
+in §6 Phase 4 is a filter that *excludes* a lesson unless it proves itself safe.
+Class status worked the other way: a single field flipping on one document put every
+future lesson of that class into the delete set. That is precisely the shape of bug
+this sprint exists to remove, and it would have entered through the fix.
+
+**The report becomes readable.** 318 retirements fall to 142. `c4`'s 12 genuine
+orphans go from 3.8% of the plan to 8.5%, and everything remaining shares one cause —
+a forked series — so a reviewer checks one kind of thing. 5.6.1's exit criterion is
+"the output is understood line by line"; 55% of it being a single decision repeated
+made that harder for no gain.
+
+**The migration shrinks and stays uniform.** 176 hard deletes leave 5.6.3, 164 of them
+on `B2`, which §6 already excludes from migration as development data. The migration
+then touches only lessons orphaned by a schedule edit — one cause, one justification,
+one rollback story.
+
+**Archive stops being lossy.** The retired rule deleted future lessons on archive and
+regenerated them on restore, discarding per-lesson notes, classroom overrides and
+homework links in between — the very things ADR-001's in-place update exists to
+preserve. Users read Archive as reversible because it is a status, not a deletion.
+Making it destroy data contradicts that, and it does so on the operation §2 now
+mandates as the *only* way to retire a class with history.
+
+**Maintenance.** The reconciler keeps one input and one trigger. Nobody reading it
+later has to hold "…except when status is Archived, in which case it deletes
+everything" in their head, and no future status value can acquire delete semantics by
+accident.
+
+### What this costs
+
+Future Upcoming lessons generated before a class was archived stay where they are.
+They keep appearing on the Calendar and Lesson List until they age out of the rolling
+window, and per §9.2 they never advance past `Upcoming`, so they linger as permanently
+"upcoming" past sessions. That is a real wart. It is presentational, it is reversible,
+and it is bounded — generation already stops at archive, so the set never grows. The
+two live instances are `B2` (166 lessons) and `asd` (12), both development data due to
+be deleted by hand, so today's practical cost is zero.
+
+The alternative — deleting them — is unbounded in the sense that matters: it cannot be
+undone.
+
+### Alternatives considered
+
+**A. Keep the original rule (archive retires future lessons during reconciliation).**
+Rejected: the reasons above, chiefly that it lets class status mass-delete through a
+code path designed to fail closed.
+
+**B. Retire on the archive transition, inside Sprint 5.6.2.** The likely eventual
+answer, and not rejected on merit — deferred. It is a destructive class-level
+operation with a 166-lesson blast radius on one class, it is entangled with §9.1, and
+it needs a restore story. None of that is needed to fix the fork defect, which is what
+Sprint 5.6 is for.
+
+**C. Hide an Archived class's future lessons at read time instead of deleting them.**
+Rejected for Sprint 5.6: it is a UI behaviour change (PROJECT_RULES requires a design
+before new UI behaviour), and it puts a status filter on every read — the same cost
+§5.3 rejected soft-delete flags for. Worth revisiting alongside option B.
+
+### Consequences
+
+- §5.8 states the exclusion; §5.2 step 1 no longer mentions Archived.
+- 5.6.2 shrinks: `updateClass` is the only write-side trigger.
+- 5.6.4's archive scenario test asserts *no actions*, the opposite of the original.
+- The 18 classless lessons need their own decision, with two facts established first
+  (§6, "Not in scope — lessons whose class was deleted").
+- §9.1 becomes more clearly the next thing to settle: archive's semantics are now
+  known to be wrong in one direction (revenue) and deliberately incomplete in another
+  (future lessons).

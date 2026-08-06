@@ -7,8 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "tsx --test tests/*.test.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
-    "lessons:duplicates": "tsx --env-file=.env.local scripts/find-duplicate-lessons.ts"
+    "lessons:duplicates": "tsx --env-file=.env.local scripts/find-duplicate-lessons.ts",
+    "lessons:reconcile": "tsx --env-file=.env.local scripts/recurrence-report.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

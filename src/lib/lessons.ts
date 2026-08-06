@@ -22,10 +22,11 @@
 import "server-only";
 import { dbConnect } from "./db";
 import { ClassModel, LessonModel, StudentModel, mongoose } from "./models";
-import {
-  TODAY_ISO, CURRENT_MONTH, LESSON_WINDOW_PREVIOUS_MONTHS, LESSON_WINDOW_NEXT_MONTHS,
-} from "./constants";
-import type { Klass, Lesson, LessonStatus, ScheduleSlot } from "./types";
+// The rolling-window, id and status helpers live in the pure recurrence core so
+// this service and the (report-only) reconciliation planner cannot drift apart.
+// Behaviour is unchanged — they were moved verbatim (see src/lib/recurrence.ts).
+import { datesForWeekday, regularId, statusForDate, windowMonths } from "./recurrence";
+import type { Klass, Lesson, ScheduleSlot } from "./types";
 import type {
   ExtraLessonInput, MakeupLessonInput, LessonRescheduleInput, LessonUpdateInput,
 } from "./schemas";
@@ -34,48 +35,6 @@ const clean = "-_id -__v";
 
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500; // the calendar pulls a whole month/week in one page
-
-/* ------------------------------------------------------- rolling-window utils */
-
-function daysInMonth(year: number, month1: number): number {
-  return new Date(year, month1, 0).getDate();
-}
-
-/** All ISO dates in `YYYY-MM` whose weekday === `dow`. */
-function datesForWeekday(month: string, dow: number): string[] {
-  const [y, m] = month.split("-").map(Number);
-  const out: string[] = [];
-  const dim = daysInMonth(y, m);
-  for (let d = 1; d <= dim; d++) {
-    if (new Date(y, m - 1, d).getDay() === dow) {
-      out.push(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
-    }
-  }
-  return out;
-}
-
-/** The window months (previous / current / next N) as `YYYY-MM`, derived from
- * the app clock and the configurable constants — no hardcoded months. */
-function windowMonths(): string[] {
-  const [y, m] = CURRENT_MONTH.split("-").map(Number);
-  const out: string[] = [];
-  for (let i = -LESSON_WINDOW_PREVIOUS_MONTHS; i <= LESSON_WINDOW_NEXT_MONTHS; i++) {
-    const d = new Date(y, m - 1 + i, 1);
-    out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }
-  return out;
-}
-
-/** Stable Regular-lesson id — the one thing shared with the seed generator. */
-function regularId(classId: string, date: string, start: string): string {
-  return `L-${classId}-${date}-${start.replace(":", "")}`;
-}
-
-/** A generated/created lesson is Completed if its date is before the app clock,
- * otherwise Upcoming. Cancellation is only ever a user action. */
-function statusForDate(date: string): LessonStatus {
-  return date < TODAY_ISO ? "Completed" : "Upcoming";
-}
 
 function isDupKey(e: unknown): boolean {
   const err = e as { code?: number; writeErrors?: Array<{ code?: number }> };

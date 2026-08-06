@@ -29,6 +29,13 @@ import type { Klass, Lesson } from "../src/lib/types";
 
 const clean = "-_id -__v";
 
+/* Mongoose would otherwise issue `createCollection` + `createIndexes` on first
+ * use of a model — small writes, but writes, and this script promises none.
+ * Both are read after the connection opens, so setting them here is effective
+ * and affects this process only (see scripts/recurrence-report.ts). */
+mongoose.set("autoIndex", false);
+mongoose.set("autoCreate", false);
+
 /** How a lesson in a collided group is classified. */
 type Verdict = "KEEP" | "CANDIDATE" | "RESCHEDULED";
 
