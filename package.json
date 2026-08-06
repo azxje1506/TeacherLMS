@@ -10,7 +10,8 @@
     "test": "tsx --test tests/*.test.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "lessons:duplicates": "tsx --env-file=.env.local scripts/find-duplicate-lessons.ts",
-    "lessons:reconcile": "tsx --env-file=.env.local scripts/recurrence-report.ts"
+    "lessons:reconcile": "tsx --env-file=.env.local scripts/recurrence-report.ts",
+    "lessons:backfill-origins": "tsx --env-file=.env.local scripts/backfill-lesson-origins.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

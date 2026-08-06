@@ -32,3 +32,17 @@ export async function dbConnect(): Promise<typeof mongoose> {
   cache.conn = await cache.promise;
   return cache.conn;
 }
+
+/** Is this error nothing but duplicate-key noise (code 11000)?
+ *
+ * Concurrent writers racing on a unique id is expected, not exceptional: the
+ * loser's insert is a no-op because the winner wrote the identical document.
+ * Lives here rather than in one service because both writers of Regular lessons
+ * need it — the read-side `ensureRegularLessons` and the write-side reconciler —
+ * and only one of the two may import `server-only`. */
+export function isDupKey(e: unknown): boolean {
+  const err = e as { code?: number; writeErrors?: Array<{ code?: number }> };
+  if (err?.code === 11000) return true;
+  return Array.isArray(err?.writeErrors) && err.writeErrors.length > 0 &&
+    err.writeErrors.every((w) => w?.code === 11000);
+}

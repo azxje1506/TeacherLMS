@@ -4,7 +4,9 @@
  * PATCH  /api/classes/:id -> the updated Class. A body of only { notes } saves
  *        the detail's Teacher notes card without revalidating the whole form.
  * DELETE /api/classes/:id -> { ok: true }. Removes ONLY the Class record;
- *        Students, Lessons, Attendance and Finance are never touched.
+ *        Students, Lessons, Attendance and Finance are never touched. Refused
+ *        with 409 when the class has taught anything — archive it instead
+ *        (RECURRENCE_DESIGN §2).
  */
 
 import { getClass, updateClass, updateClassNotes, deleteClass, ScheduleConflictError } from "@/lib/classes";
@@ -60,8 +62,18 @@ export async function DELETE(_req: Request, { params }: Ctx) {
   return handle(async () => {
     await requireSession();
     const { id } = await params;
-    const ok = await deleteClass(id);
-    if (!ok) return error("Class not found", 404);
-    return json({ ok: true });
+    const res = await deleteClass(id);
+    if (res.ok) return json({ ok: true });
+    if (res.reason === "not_found") return error("Class not found", 404);
+    // 409 carries the counts as data too, so a future UI can explain WHAT is
+    // holding the class open without re-deriving it (RECURRENCE_DESIGN §2).
+    return json(
+      {
+        error: "This class has teaching history — archive it instead of deleting",
+        code: "class_has_history",
+        history: res.history,
+      },
+      409
+    );
   });
 }

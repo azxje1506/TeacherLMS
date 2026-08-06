@@ -20,7 +20,7 @@
  */
 
 import "server-only";
-import { dbConnect } from "./db";
+import { dbConnect, isDupKey } from "./db";
 import { ClassModel, LessonModel, StudentModel, mongoose } from "./models";
 // The rolling-window, id and status helpers live in the pure recurrence core so
 // this service and the (report-only) reconciliation planner cannot drift apart.
@@ -36,18 +36,18 @@ const clean = "-_id -__v";
 export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 500; // the calendar pulls a whole month/week in one page
 
-function isDupKey(e: unknown): boolean {
-  const err = e as { code?: number; writeErrors?: Array<{ code?: number }> };
-  if (err?.code === 11000) return true;
-  return Array.isArray(err?.writeErrors) && err.writeErrors.length > 0 &&
-    err.writeErrors.every((w) => w?.code === 11000);
-}
-
 /* --------------------------------------------------------- ensure (generation) */
 
-/** Reconcile Regular lessons for every Active class across the rolling window.
+/** Top up Regular lessons for every Active class across the rolling window.
  * Idempotent: `$setOnInsert` keyed by the stable id inserts only what's missing
- * and never touches an existing lesson. Cheap enough to run on every read. */
+ * and never touches an existing lesson. Cheap enough to run on every read.
+ *
+ * INSERT-ONLY, deliberately (RECURRENCE_DESIGN §5.7). This is the read side's
+ * only job: extend the rolling window forward as time passes. Correcting a lesson
+ * whose slot MOVED, and removing one whose slot is GONE, belong to the write side
+ * — `updateClass` -> `reconcileClass` (src/lib/reconciler.ts) — where the intent
+ * actually changes. Keeping the two verbs off this path keeps list reads cheap
+ * and keeps update/delete contention off a request that only wanted to read. */
 export async function ensureRegularLessons(): Promise<void> {
   await dbConnect();
   const classes = await ClassModel.find({ status: { $ne: "Archived" } }).select(clean).lean<Klass[]>();

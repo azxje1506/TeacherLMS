@@ -26,6 +26,10 @@ import {
 } from "./constants";
 import { fromMinutes, hash, overlaps, toMinutes } from "./calc";
 import { createFormat } from "./format";
+import {
+  formatReconcileReport, hasTeachingHistory, readTeachingHistory, reconcileClass,
+  type ReconcileReport, type TeachingHistory,
+} from "./reconciler";
 import type { Klass, ScheduleAvailability, ScheduleConflict, Student } from "./types";
 import { SLOT_MAX_MINUTES, SLOT_MIN_MINUTES, type ClassInput } from "./schemas";
 
@@ -380,7 +384,26 @@ export async function createClass(input: ClassInput): Promise<Klass> {
 }
 
 /** Update in place; returns null when the id is unknown. Preserves the class's
- * `studentIds` (enrolment is a later sprint) and its stable colour. */
+ * `studentIds` (enrolment is a later sprint) and its stable colour.
+ *
+ * SCHEDULE RECONCILIATION (RECURRENCE_DESIGN §5.7, ADR-002 decision 5). This is
+ * the one and only write-side reconciliation trigger: editing the schedule is
+ * where the teacher's INTENT changes, so it is where the future lessons derived
+ * from that intent are corrected. Before this existed, a schedule edit forked the
+ * series and the old one was never reachable again (§1.4).
+ *
+ * Archive and restore are NOT separate triggers. They arrive here as ordinary
+ * updates with `status` swapped, and the reconciler's own rules settle both: an
+ * Archived class is outside reconciliation entirely, so archiving plans nothing
+ * and destroys nothing; a restored class is Active again, so the same pass that
+ * corrects a schedule edit refills its window.
+ *
+ * The class write is authoritative and already committed when reconciliation
+ * runs. A reconciliation that ABORTS (§6 Phase 4 — the plan disagreed with the
+ * stored data) therefore must not fail the request: the schedule the teacher
+ * typed is saved either way, the lessons are simply left as they were, and the
+ * violations are logged for a person to read. Failing the PATCH would report a
+ * lost edit that was not lost, and would offer the teacher no way forward. */
 export async function updateClass(id: string, input: ClassInput): Promise<Klass | null> {
   await dbConnect();
   const existing = await ClassModel.findOne({ id }).select(clean).lean<Klass>();
@@ -388,6 +411,19 @@ export async function updateClass(id: string, input: ClassInput): Promise<Klass 
   await assertNoScheduleConflict(id, input);
   const doc = applyInput(input, id, existing.color, existing);
   await ClassModel.updateOne({ id }, { $set: doc });
+
+  let report: ReconcileReport | null = null;
+  try {
+    report = await reconcileClass(id);
+  } catch (e) {
+    console.error("[reconcile] failed for class", id, e);
+  }
+  if (report?.outcome === "aborted") console.error(formatReconcileReport(report));
+  else if (report && report.summary.update + report.summary.insert +
+      report.summary.retire + report.summary.strand > 0) {
+    console.log(formatReconcileReport(report));
+  }
+
   return doc;
 }
 
@@ -400,10 +436,38 @@ export async function updateClassNotes(id: string, notes: string): Promise<Klass
   return res ?? null;
 }
 
-/** Delete the Class record only. Students, Lessons, Attendance and Finance
- * records are never touched (PROJECT_RULES / Sprint 4 scope). */
-export async function deleteClass(id: string): Promise<boolean> {
+/** Why a delete was refused, so the Route Handler can map it to a status. */
+export type ClassDeleteResult =
+  | { ok: true }
+  | { ok: false; reason: "not_found" }
+  | { ok: false; reason: "has_history"; history: TeachingHistory };
+
+/** Delete the Class record only — and only when the class has never taught.
+ *
+ * BLOCKED whenever the class holds any past lesson, attendance record or billing
+ * record (RECURRENCE_DESIGN §2, "Delete entire class"). **Archive is the only
+ * supported way to retire a class that has taught anything.**
+ *
+ * The reason is that this delete has no cascade and never will: it removes the
+ * Class row and leaves every lesson behind, orphaned. Those lessons then render
+ * `className: "—"` and drop out of revenue *silently*, because `computeRevenue`
+ * iterates classes and a lesson whose class is gone is never visited — history
+ * that was already shown to a teacher or a parent changes with nothing written to
+ * explain it. 18 such lessons already exist in the live data; the guard prevents
+ * new ones and deliberately does nothing about those (§6, "Not in scope").
+ *
+ * Hard delete survives for a class that has never taught: no lessons at all, or
+ * future Upcoming ones only. Students, Lessons, Attendance and Finance records
+ * are still never touched (PROJECT_RULES / Sprint 4 scope). */
+export async function deleteClass(id: string): Promise<ClassDeleteResult> {
   await dbConnect();
+  const existing = await ClassModel.findOne({ id }).select("id -_id").lean();
+  if (!existing) return { ok: false, reason: "not_found" };
+
+  const history = await readTeachingHistory(id);
+  if (hasTeachingHistory(history)) return { ok: false, reason: "has_history", history };
+
   const res = await ClassModel.deleteOne({ id });
-  return res.deletedCount > 0;
+  if (res.deletedCount === 0) return { ok: false, reason: "not_found" };
+  return { ok: true };
 }

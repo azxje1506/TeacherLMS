@@ -24,8 +24,8 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  effectiveOrigin, findLegacyReschedules, findOrphanedLessons, originFromId,
-  planClass, planWouldWrite, reconcileContext, summarizePlan,
+  effectiveOrigin, findArchivedClassLessons, findLegacyReschedules, findOrphanedLessons,
+  isManuallyEdited, originFromId, planClass, planWouldWrite, reconcileContext, summarizePlan,
   type PlanAction, type ReconcileContext,
 } from "../src/lib/recurrence";
 import type { Klass, Lesson, ScheduleSlot } from "../src/lib/types";
@@ -69,7 +69,7 @@ describe("§2 schedule edits", () => {
 
     const plan = planClass(c, lessons, ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 3, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 3, insert: 0, retire: 0, strand: 0, skip: 0 });
     assert.deepEqual(ids(plan, "update"), lessons.map((l) => l.id).sort(), "ids are preserved");
     for (const a of verbs(plan, "update")) {
       assert.equal(a.verb === "update" && a.to.start, "10:08");
@@ -81,7 +81,7 @@ describe("§2 schedule edits", () => {
     const c = klass([{ day: 2, start: "14:30", duration: 60 }]);
     const plan = planClass(c, TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 3, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 3, insert: 0, retire: 0, strand: 0, skip: 0 });
     for (const a of verbs(plan, "update")) {
       assert.equal(a.verb === "update" && a.to.duration, 60);
     }
@@ -91,7 +91,7 @@ describe("§2 schedule edits", () => {
     const c = klass([{ day: 3, start: "14:30", duration: 45 }]);
     const plan = planClass(c, TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 3, retire: 3, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 3, retire: 3, strand: 0, skip: 0 });
     assert.deepEqual(verbs(plan, "insert").map((a) => a.date).sort(), WED);
     assert.deepEqual(verbs(plan, "retire").map((a) => a.date).sort(), TUE);
   });
@@ -99,7 +99,7 @@ describe("§2 schedule edits", () => {
   it("delete one weekday — retires its future lessons and inserts nothing", () => {
     const plan = planClass(klass([]), TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 3, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 3, strand: 0, skip: 0 });
     assert.equal(
       verbs(plan, "retire").every((a) => a.verb === "retire" && a.reason.includes("no longer teaches")),
       true
@@ -113,22 +113,52 @@ describe("§2 schedule edits", () => {
     ]);
     const plan = planClass(c, TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 3, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 3, retire: 0, strand: 0, skip: 0 });
     assert.deepEqual(verbs(plan, "insert").map((a) => a.date).sort(), WED);
   });
 
-  it("archive class — retires future Upcoming lessons and generates nothing", () => {
+  // ADR-002 reversed this case. It originally retired every future Upcoming
+  // lesson; it now asserts the opposite, and the reason is the point of the ADR:
+  // an Archived class has withdrawn its intent, so a desired set of [] would make
+  // every future lesson an orphan BY DEFINITION rather than by evidence — one
+  // class-level decision re-expressed as N hard deletes, through a code path that
+  // is supposed to fail closed.
+  it("archive class — produces NO actions of any verb (§5.8, ADR-002)", () => {
     const c = klass([{ day: 2, start: "14:30", duration: 45 }], { status: "Archived" });
+    const lessons = TUE.map((d) => lesson(d, "14:30", 45));
+
+    const plan = planClass(c, lessons, ctx());
+
+    assert.deepEqual(plan, [], "an archived class is excluded before the algorithm begins");
+    assert.equal(planWouldWrite(plan), false);
+  });
+
+  it("archive class — a stale schedule still produces nothing to update or retire", () => {
+    // The dangerous shape: the fossil schedule disagrees with every stored lesson.
+    const c = klass([{ day: 3, start: "09:00", duration: 60 }], { status: "Archived" });
     const plan = planClass(c, TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 3, skip: 0 });
+    assert.deepEqual(plan, []);
+  });
+
+  it("archived classes are reported instead, so the lessons stay visible (§5.8)", () => {
+    const archived = klass([{ day: 2, start: "14:30", duration: 45 }], { status: "Archived" });
+    const lingering = [
+      lesson(PAST_TUE, "14:30", 45, { status: "Completed" }), // past — not lingering
+      ...TUE.map((d) => lesson(d, "14:30", 45)),
+    ];
+
+    const found = findArchivedClassLessons([archived], lingering, APP_CLOCK);
+
+    assert.equal(found.length, 1);
+    assert.deepEqual(found[0].lessons.map((l) => l.date), TUE);
   });
 
   it("restore class — regenerates the future from the current schedule", () => {
     const c = klass([{ day: 2, start: "14:30", duration: 45 }], { status: "Active" });
     const plan = planClass(c, [], ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 3, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 3, retire: 0, strand: 0, skip: 0 });
     assert.deepEqual(verbs(plan, "insert").map((a) => a.date).sort(), TUE);
   });
 
@@ -136,7 +166,7 @@ describe("§2 schedule edits", () => {
     const c = klass([{ day: 2, start: "14:30", duration: 45 }]);
     const plan = planClass(c, TUE.map((d) => lesson(d, "14:30", 45)), ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, strand: 0, skip: 0 });
     assert.equal(planWouldWrite(plan), false);
   });
 });
@@ -151,7 +181,7 @@ describe("§4 the past is immutable", () => {
     const plan = planClass(c, lessons, ctx());
 
     assert.equal(plan.some((a) => a.date < APP_CLOCK), false);
-    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, strand: 0, skip: 0 });
   });
 
   it("a Completed lesson carrying a FUTURE date is frozen, and keeps its slot", () => {
@@ -163,7 +193,7 @@ describe("§4 the past is immutable", () => {
 
     const plan = planClass(c, lessons, ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, strand: 0, skip: 1 });
   });
 });
 
@@ -180,7 +210,7 @@ describe("§5.6 a frozen lesson still occupies its slot", () => {
     const plan = planClass(c, lessons, ctx());
 
     assert.equal(verbs(plan, "insert").length, 0, "the cancelled Tuesday must not re-fill");
-    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, strand: 0, skip: 1 });
   });
 
   it("a cancelled lesson does not block the OTHER slots on the same day", () => {
@@ -220,7 +250,7 @@ describe("§5.4 rescheduled lessons are frozen", () => {
 
     const plan = planClass(c, lessons, ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 0, insert: 0, retire: 0, strand: 0, skip: 1 });
     assert.equal(verbs(plan, "skip")[0].date, "2026-07-16");
   });
 
@@ -237,7 +267,7 @@ describe("§5.4 rescheduled lessons are frozen", () => {
     // it vacated stays claimed even though the schedule's time changed underneath
     // it. Re-inserting there would give the teacher the lesson twice.
     assert.equal(verbs(plan, "insert").length, 0);
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 2, insert: 0, retire: 0, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 2, insert: 0, retire: 0, strand: 0, skip: 1 });
   });
 
   it("a LEGACY move (no stored origin) is protected by the id fallback — §6 Phase 0", () => {
@@ -273,7 +303,7 @@ describe("§6 Phase 4 protective filters", () => {
     const plan = planClass(c, lessons, ctx({ attended: new Set([lessons[0].id]) }));
 
     assert.equal(plan.find((a) => a.lessonId === lessons[0].id)?.verb, "skip");
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 2, insert: 0, retire: 0, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 2, insert: 0, retire: 0, strand: 0, skip: 1 });
   });
 
   it("a lesson referenced by homework is never touched", () => {
@@ -282,7 +312,7 @@ describe("§6 Phase 4 protective filters", () => {
     const plan = planClass(c, lessons, ctx({ homeworked: new Set([lessons[1].id]) }));
 
     assert.equal(plan.find((a) => a.lessonId === lessons[1].id)?.verb, "skip");
-    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 2, skip: 1 });
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 2, strand: 0, skip: 1 });
   });
 
   it("Makeup and Extra lessons are excluded from the reconciler entirely", () => {
@@ -295,8 +325,81 @@ describe("§6 Phase 4 protective filters", () => {
 
     const plan = planClass(c, lessons, ctx());
 
-    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 3, update: 0, insert: 0, retire: 0, strand: 0, skip: 0 });
     assert.equal(plan.some((a) => a.lessonId === "makeup-1" || a.lessonId === "extra-1"), false);
+  });
+});
+
+/* ------------------------------------- §5.9 — manually edited lessons */
+
+describe("§5.9 a lesson a teacher has written on", () => {
+  const noted = (date: string, start: string, duration: number, text = "Bring the unit 4 handout") =>
+    lesson(date, start, duration, { notes: text });
+
+  it("is corrected IN PLACE when its slot moves, keeping both its id and its note", () => {
+    const c = klass([{ day: 2, start: "10:08", duration: 45 }]);
+    const lessons = TUE.map((d) => noted(d, "14:30", 45));
+
+    const plan = planClass(c, lessons, ctx());
+
+    // Deliberately NOT frozen: freezing would protect the note's TIME, stranding
+    // one lesson at 14:30 while its siblings move. Update is the preservation
+    // mechanism — the write touches `start` and `duration` and nothing else.
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 3, insert: 0, retire: 0, strand: 0, skip: 0 });
+    assert.deepEqual(ids(plan, "update"), lessons.map((l) => l.id).sort(), "ids are preserved");
+  });
+
+  it("is NEVER retired — it is stranded and reported instead", () => {
+    const plan = planClass(klass([]), TUE.map((d) => noted(d, "14:30", 45)), ctx());
+
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 0, strand: 3, skip: 0 });
+    for (const a of verbs(plan, "strand")) {
+      assert.equal(a.verb === "strand" && a.notes, "Bring the unit 4 handout");
+      assert.equal(a.verb === "strand" && a.reason.includes("notes"), true);
+    }
+  });
+
+  it("takes the surviving slot when it competes with a plain lesson (§5.2 step 5)", () => {
+    // One slot survives on the day; two lessons want it. The noted one must win,
+    // or the day ends up with one corrected lesson AND one stale undeletable one.
+    const c = klass([{ day: 2, start: "09:00", duration: 60 }]);
+    const lessons = [lesson(TUE[0], "07:00", 60), noted(TUE[0], "20:00", 60)];
+
+    const plan = planClass(c, lessons, ctx()).filter((a) => a.date === TUE[0]);
+
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 1, insert: 0, retire: 1, strand: 0, skip: 0 });
+    assert.deepEqual(ids(plan, "update"), [lessons[1].id], "the noted lesson is paired first");
+    assert.deepEqual(ids(plan, "retire"), [lessons[0].id], "the plain one retires");
+  });
+
+  it("is not INSERTED beside — it claims its slot through ordinary matching", () => {
+    const c = klass([{ day: 2, start: "10:08", duration: 45 }]);
+    const plan = planClass(c, [noted(TUE[0], "14:30", 45)], ctx()).filter((a) => a.date === TUE[0]);
+
+    assert.equal(verbs(plan, "insert").length, 0);
+    assert.equal(verbs(plan, "update").length, 1);
+  });
+
+  it("does not block a genuinely NEW session on the same day", () => {
+    const c = klass([
+      { day: 2, start: "14:30", duration: 45 },
+      { day: 2, start: "18:00", duration: 60 }, // a second weekly session, added
+    ]);
+    const plan = planClass(c, [noted(TUE[0], "14:30", 45)], ctx()).filter((a) => a.date === TUE[0]);
+
+    assert.deepEqual(summarizePlan(plan), { keep: 1, update: 0, insert: 1, retire: 0, strand: 0, skip: 0 });
+  });
+
+  it("`classroom` is not a signal — only `notes` is (§5.9)", () => {
+    assert.equal(isManuallyEdited(lesson(TUE[0], "14:30", 45, { classroom: "Room Z" })), false);
+    assert.equal(isManuallyEdited(lesson(TUE[0], "14:30", 45, { notes: "   " })), false, "whitespace is not content");
+    assert.equal(isManuallyEdited(lesson(TUE[0], "14:30", 45, { notes: "call the parent" })), true);
+
+    // A class-wide classroom rename leaves every earlier lesson holding the old
+    // string, so protecting on it would strand lessons nobody wrote on.
+    const c = klass([]);
+    const plan = planClass(c, [lesson(TUE[0], "14:30", 45, { classroom: "Room A" })], ctx());
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 0, retire: 1, strand: 0, skip: 0 });
   });
 });
 
@@ -317,7 +420,7 @@ describe("§5.2 leftover pairing on a multi-slot weekday", () => {
 
     const plan = planClass(c, lessons, ctx()).filter((a) => a.date === TUE[0]);
 
-    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 1, insert: 0, retire: 0, skip: 0 });
+    assert.deepEqual(summarizePlan(plan), { keep: 2, update: 1, insert: 0, retire: 0, strand: 0, skip: 0 });
     const [update] = verbs(plan, "update");
     assert.equal(update.verb === "update" && update.from.start, "08:00");
     assert.equal(update.verb === "update" && update.to.start, "08:30");

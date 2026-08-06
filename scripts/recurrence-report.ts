@@ -28,8 +28,8 @@ import { dbConnect } from "../src/lib/db";
 import { AttendanceModel, ClassModel, HomeworkModel, LessonModel, mongoose } from "../src/lib/models";
 import { DOW_FULL } from "../src/lib/constants";
 import {
-  findLegacyReschedules, findOrphanedLessons, FREEZE_LABEL, planReconciliation,
-  reconcileContext, summarizePlan, weekdayOf, type PlanAction,
+  findArchivedClassLessons, findLegacyReschedules, findOrphanedLessons, FREEZE_LABEL,
+  planReconciliation, reconcileContext, summarizePlan, weekdayOf, type PlanAction,
 } from "../src/lib/recurrence";
 import type { Klass, Lesson } from "../src/lib/types";
 
@@ -63,6 +63,9 @@ async function main() {
   const plan = planReconciliation(classes, lessons, ctx);
   const legacy = findLegacyReschedules(lessons);
   const orphans = findOrphanedLessons(classes, lessons);
+  // ADR-002 removed Archived classes from the plan. §5.8 requires them to stay
+  // visible, so what used to appear as retirements is reported here instead.
+  const archived = findArchivedClassLessons(classes, lessons, ctx.appClock);
 
   // How many Regular lessons share each class+date — a retirement that is alone
   // on its date is invisible to `npm run lessons:duplicates` (§6 Phase 3).
@@ -89,6 +92,13 @@ async function main() {
         id: lesson.id, classId: lesson.classId, date: lesson.date, start: lesson.start, inferred,
       })),
       orphanedLessons: orphans.map((l) => ({ id: l.id, classId: l.classId, date: l.date, status: l.status })),
+      archivedClasses: archived.map(({ klass, lessons: lingering }) => ({
+        classId: klass.id,
+        name: klass.name,
+        lingeringFutureLessons: lingering.length,
+        from: lingering.map((l) => l.date).sort()[0],
+        to: lingering.map((l) => l.date).sort().at(-1),
+      })),
     }, null, 2));
     return;
   }
@@ -121,11 +131,14 @@ async function main() {
 
   for (const [classId, actions] of byClass) {
     const s = summarizePlan(actions);
-    if (s.update + s.insert + s.retire === 0) continue; // converged — nothing to say
+    // Converged — nothing to say. A strand counts: the lesson is untouched, but
+    // it is out of step with its class and wants a human (§5.9).
+    if (s.update + s.insert + s.retire + s.strand === 0) continue;
     console.log("");
     console.log("-".repeat(72));
     console.log(`Class:\n  ${className.get(classId) ?? "—"}  (${classId})`);
-    console.log(`\n  keep=${s.keep}  update=${s.update}  insert=${s.insert}  retire=${s.retire}  skip=${s.skip}`);
+    console.log(`\n  keep=${s.keep}  update=${s.update}  insert=${s.insert}  retire=${s.retire}` +
+      `  strand=${s.strand}  skip=${s.skip}`);
     for (const a of actions) {
       if (a.verb === "keep") continue;
       const when = `${a.date} (${DOW_FULL[weekdayOf(a.date)]})`;
@@ -144,12 +157,35 @@ async function main() {
         console.log(`    Slot:       ${a.start} (${a.duration} min)`);
         console.log(`    Reason:     ${a.reason}`);
         if (alone(a)) console.log(`    NOTE:       alone on its date — invisible to lessons:duplicates`);
+      } else if (a.verb === "strand") {
+        console.log(`\n  STRAND   ${when}`);
+        console.log(`    Lesson ID:  ${a.lessonId}`);
+        console.log(`    Slot:       ${a.start} (${a.duration} min)`);
+        console.log(`    Reason:     ${a.reason}`);
+        console.log(`    Notes:      ${a.notes.replace(/\s+/g, " ").slice(0, 60)}`);
+        console.log(`    ACTION:     move it, cancel it, or clear the note and let it retire`);
       } else {
         console.log(`\n  SKIP     ${when}`);
         console.log(`    Lesson ID:  ${a.lessonId}`);
         console.log(`    Slot:       ${a.start} (${a.duration} min)`);
         console.log(`    PROTECTED:  ${a.frozen.map((f) => FREEZE_LABEL[f]).join("; ")}`);
       }
+    }
+  }
+
+  if (archived.length > 0) {
+    console.log("");
+    console.log(rule);
+    console.log("ARCHIVED CLASSES — outside reconciliation (§5.8, ADR-002)");
+    console.log("An archived class has withdrawn its intent, so its schedule is a fossil and");
+    console.log("nothing is compared against it: no update, no insert, no retire. The future");
+    console.log("lessons below simply stay put until they age out of the rolling window.");
+    console.log("Retiring them is a one-shot archive-transition action, not reconciliation.");
+    console.log(rule);
+    for (const { klass, lessons: lingering } of archived) {
+      const dates = lingering.map((l) => l.date).sort();
+      console.log(`  ${klass.name}  (${klass.id})`);
+      console.log(`    ${lingering.length} future Upcoming regular lesson(s)  ${dates[0]} .. ${dates[dates.length - 1]}`);
     }
   }
 
@@ -177,9 +213,12 @@ async function main() {
   console.log(`  Would RETIRE (hard delete) ............... ${s.retire}`);
   console.log(`    ...alone on their date (unseen by the`);
   console.log(`       duplicate detector) ................. ${invisible}`);
+  console.log(`  Stranded — noted, no slot, undeletable .... ${s.strand}`);
   console.log(`  Frozen, left alone (skip) ................ ${s.skip}`);
   console.log(`  Legacy reschedules needing Phase 0 ....... ${legacy.length}`);
   console.log(`  Orphaned lessons (class deleted) ......... ${orphans.length}`);
+  console.log(`  Archived classes holding future lessons .. ${archived.length}` +
+    ` (${archived.reduce((n, a) => n + a.lessons.length, 0)} lesson(s), never reconciled)`);
   console.log("");
   console.log("  This is a report. Nothing has been written.");
   console.log("");

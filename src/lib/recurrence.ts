@@ -1,12 +1,13 @@
-/* Recurrence — the PURE reconciliation core (Sprint 5.6.0, prerequisites only).
+/* Recurrence — the PURE reconciliation core (Sprint 5.6.0 … 5.6.2).
  *
- * REPORT-ONLY BY CONSTRUCTION. Nothing in this file reads or writes the database:
- * no Mongoose import, no model import, no connection, no async function. Every
+ * PURE BY CONSTRUCTION. Nothing in this file reads or writes the database: no
+ * Mongoose import, no model import, no connection, no async function. Every
  * export is a pure function over values the caller has already loaded. It
  * produces a PLAN — a list of the updates, inserts and retirements a reconciler
- * WOULD perform — and executes none of them. Sprint 5.6.1 consumes this plan;
- * only 5.6.2+ is allowed to act on it. A test in tests/recurrence.test.ts
- * enforces exactly that, by scanning this file for database access.
+ * WOULD perform — and executes none of them. Sprint 5.6.2 added an executor that
+ * acts on that plan (src/lib/reconciler.ts); this module still never writes, and
+ * a test in tests/recurrence.test.ts enforces that by scanning it for database
+ * access.
  *
  * WHY IT EXISTS (see RECURRENCE_DESIGN.md §1, §5 and ADR-001)
  * `ensureRegularLessons` walks schedule -> lessons and has exactly one verb:
@@ -26,6 +27,11 @@
  *    is a filter on the candidate set, not a rule someone has to remember.
  *  - A frozen lesson still CONSUMES its slot (§5.6), so a cancellation is never
  *    silently undone by an insert on the next pass.
+ *  - A lesson a teacher has written on is never RETIRED (§5.9). It stays
+ *    reconcilable — in-place update is how its notes survive a slot move — and
+ *    is reported as `strand` when no slot survives for it at all.
+ *  - A class with no live intent is never presented to the algorithm (§5.8,
+ *    ADR-002): an Archived class produces no actions of any verb.
  *
  * The window/id/status helpers at the top were lifted verbatim out of
  * `src/lib/lessons.ts` so the planner and the live generator cannot drift apart.
@@ -167,6 +173,33 @@ export function findOrphanedLessons(
   return lessons.filter((l) => !known.has(l.classId));
 }
 
+/** An Archived class and the future lessons it still holds.
+ *
+ * ADR-002 removes these from reconciliation, and §5.8 requires them to stay
+ * VISIBLE: generation already stopped at archive, so the set never grows, but the
+ * lessons keep appearing on the Calendar and Lesson List until they age out of
+ * the rolling window. Being visible is not the same as being in scope — nothing
+ * here is ever planned, and retiring them is a separate one-shot action belonging
+ * to the archive transition (ADR-002 decision 4).
+ *
+ * Not window-filtered: a lingering lesson is lingering whether or not the current
+ * window reaches it. */
+export function findArchivedClassLessons(
+  classes: readonly Klass[],
+  lessons: readonly Lesson[],
+  appClock: string = TODAY_ISO
+): Array<{ klass: Klass; lessons: Lesson[] }> {
+  const out: Array<{ klass: Klass; lessons: Lesson[] }> = [];
+  for (const c of classes) {
+    if (c.status !== "Archived") continue;
+    const lingering = lessons.filter(
+      (l) => l.classId === c.id && l.type === "regular" && l.date >= appClock && l.status === "Upcoming"
+    );
+    if (lingering.length > 0) out.push({ klass: c, lessons: lingering });
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ context */
 
 /** Everything the planner needs that is not a Class or a Lesson. Assembled by
@@ -227,6 +260,27 @@ export function freezeReasons(l: Lesson, ctx: ReconcileContext): FreezeReason[] 
   return out;
 }
 
+/** Has a human written on this lesson? (§5.9)
+ *
+ * `notes` is the ONE signal, and it is unambiguous: `ensureRegularLessons`
+ * inserts `notes: ""`, and the only path that writes anything else onto an
+ * existing Regular lesson is `updateLesson` — a human action. Nothing else in
+ * the system stores a lesson's notes and retire is a hard delete, so the text is
+ * gone for good if the lesson goes.
+ *
+ * `classroom` is deliberately NOT consulted: generation stamps the class's room
+ * onto every lesson at insert, so the stored value cannot tell a human override
+ * apart from generated data — and `classroomFor()` discards it at read time
+ * anyway, so no screen shows it.
+ *
+ * This is NOT a freeze reason. A manually edited lesson stays in the reconcilable
+ * set and is corrected in place like any other; the protection is a filter on the
+ * RETIRE verb alone (§5.2 step 7), because in-place update is what preserves the
+ * note rather than what threatens it. */
+export function isManuallyEdited(l: Lesson): boolean {
+  return (l.notes ?? "").trim() !== "";
+}
+
 /* --------------------------------------------------------------- plan shapes */
 
 /** A `{start, duration}` pair — a schedule slot with its weekday already applied. */
@@ -235,7 +289,7 @@ export interface DesiredSlot {
   duration: number;
 }
 
-export type PlanVerb = "keep" | "update" | "insert" | "retire" | "skip";
+export type PlanVerb = "keep" | "update" | "insert" | "retire" | "strand" | "skip";
 
 interface PlanBase {
   classId: string;
@@ -279,6 +333,21 @@ export interface RetireAction extends PlanBase {
   reason: string;
 }
 
+/** A manually edited lesson with no slot behind it (§5.9). It can be neither
+ * corrected (no slot survives) nor deleted (the note is the teacher's), so it
+ * stays exactly where it is and is REPORTED for a person to decide: move it,
+ * cancel it, or clear the note and let it retire. The one case where the design
+ * knowingly leaves a lesson out of step with its class's schedule — visible,
+ * undeleted, awaiting a human. */
+export interface StrandAction extends PlanBase {
+  verb: "strand";
+  lessonId: string;
+  start: string;
+  duration: number;
+  notes: string;
+  reason: string;
+}
+
 /** Frozen — listed so the report can show WHAT was protected and why, rather
  * than silently omitting it. */
 export interface SkipAction extends PlanBase {
@@ -289,7 +358,8 @@ export interface SkipAction extends PlanBase {
   frozen: FreezeReason[];
 }
 
-export type PlanAction = KeepAction | UpdateAction | InsertAction | RetireAction | SkipAction;
+export type PlanAction =
+  | KeepAction | UpdateAction | InsertAction | RetireAction | StrandAction | SkipAction;
 
 export interface ReconcilePlan {
   appClock: string;
@@ -300,13 +370,14 @@ export interface ReconcilePlan {
 export type PlanSummary = Record<PlanVerb, number>;
 
 export function summarizePlan(actions: readonly PlanAction[]): PlanSummary {
-  const out: PlanSummary = { keep: 0, update: 0, insert: 0, retire: 0, skip: 0 };
+  const out: PlanSummary = { keep: 0, update: 0, insert: 0, retire: 0, strand: 0, skip: 0 };
   for (const a of actions) out[a.verb]++;
   return out;
 }
 
 /** The verbs that would write. `true` means a run in enforcing mode would change
- * data — the single check a caller needs to answer "is this a no-op?". */
+ * data — the single check a caller needs to answer "is this a no-op?". `strand`
+ * is deliberately absent: it reports a lesson left untouched. */
 export function planWouldWrite(actions: readonly PlanAction[]): boolean {
   return actions.some((a) => a.verb === "update" || a.verb === "insert" || a.verb === "retire");
 }
@@ -401,9 +472,25 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
   // of lessons is identical either way. `slotKey` (§10.2) is the exact answer, and
   // is out of scope for the same reason it always was — the schedule editor has no
   // stable slot identity to key on.
-  while (unsatisfied.length > 0 && unmatched.length > 0) {
+  //
+  // §5.9 — when leftover lessons outnumber the surviving slots, the ones that go
+  // without are chosen FIRST, and a manually edited lesson is never among them:
+  // it is the one step 7 may not delete, so giving it a slot corrects it instead
+  // of stranding it. Which slot each survivor then takes is still decided by
+  // start order, so the preference changes only WHO is left over.
+  const capacity = unsatisfied.length;
+  const noted = unmatched.filter(isManuallyEdited);
+  const plain = unmatched.filter((l) => !isManuallyEdited(l));
+  const paired = [
+    ...noted.slice(0, capacity),
+    ...plain.slice(0, Math.max(0, capacity - noted.length)),
+  ].sort(byLesson);
+  const pairedIds = new Set(paired.map((l) => l.id));
+  const dropped = unmatched.filter((l) => !pairedIds.has(l.id));
+
+  while (unsatisfied.length > 0 && paired.length > 0) {
     const slot = unsatisfied.shift()!;
-    const l = unmatched.shift()!;
+    const l = paired.shift()!;
     out.push({
       verb: "update", classId, date, lessonId: l.id,
       from: { start: l.start, duration: l.duration },
@@ -438,11 +525,22 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
   }
 
   // ---- 7. retire what has no slot behind it (the reverse pass, §5.3) ----
+  // ...unless a teacher has written on it, which is never deleted (§5.9). The
+  // note exists nowhere else and retire is a hard delete, so the lesson is left
+  // exactly where it is and reported as stranded for a human to resolve.
   const reason = input.desired.length === 0
     ? "the class no longer teaches on this weekday"
     : "no slot in the class's current schedule has this start/duration";
-  for (const l of unmatched) {
-    out.push({ verb: "retire", classId, date, lessonId: l.id, start: l.start, duration: l.duration, reason });
+  for (const l of dropped) {
+    out.push(
+      isManuallyEdited(l)
+        ? {
+            verb: "strand", classId, date, lessonId: l.id, start: l.start, duration: l.duration,
+            notes: l.notes ?? "",
+            reason: `${reason} — kept because it carries teacher's notes`,
+          }
+        : { verb: "retire", classId, date, lessonId: l.id, start: l.start, duration: l.duration, reason }
+    );
   }
 
   return out;
@@ -454,13 +552,23 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
  * point: schedule -> lessons alone is what made orphans unreachable (§5.3).
  *  - every window date matching a desired weekday (finds what is missing);
  *  - every window date that already holds a Regular lesson (finds what is stale);
- *  - every window date a reschedule vacated (keeps that slot occupied). */
+ *  - every window date a reschedule vacated (keeps that slot occupied).
+ *
+ * An ARCHIVED class returns immediately with no actions (§5.8, ADR-002). It is
+ * excluded before the algorithm begins rather than filtered inside it: a fossil
+ * schedule is not intent, so comparing against it would make every future lesson
+ * an orphan BY DEFINITION rather than by evidence — one class-level decision
+ * re-expressed as hundreds of independent hard deletes. Class status is not a
+ * second, hidden input capable of mass deletion. Those lessons are reported
+ * instead, by `findArchivedClassLessons`. */
 export function planClass(klass: Klass, lessons: readonly Lesson[], ctx: ReconcileContext): PlanAction[] {
+  if (klass.status === "Archived") return [];
+
   const months = new Set(ctx.months);
   const inWindow = (date: string) => months.has(monthOf(date)) && date >= ctx.appClock;
 
   const regulars = lessons.filter((l) => l.classId === klass.id && l.type === "regular");
-  const schedule: ScheduleSlot[] = klass.status === "Archived" ? [] : klass.schedule ?? [];
+  const schedule: ScheduleSlot[] = klass.schedule ?? [];
 
   const byDate = new Map<string, Lesson[]>();
   const vacatedByDate = new Map<string, DesiredSlot[]>();
