@@ -11,7 +11,9 @@
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "lessons:duplicates": "tsx --env-file=.env.local scripts/find-duplicate-lessons.ts",
     "lessons:reconcile": "tsx --env-file=.env.local scripts/recurrence-report.ts",
-    "lessons:backfill-origins": "tsx --env-file=.env.local scripts/backfill-lesson-origins.ts"
+    "lessons:backfill-origins": "tsx --env-file=.env.local scripts/backfill-lesson-origins.ts",
+    "lessons:snapshot": "tsx --env-file=.env.local scripts/snapshot-lessons.ts",
+    "lessons:migration-report": "tsx --env-file=.env.local scripts/migration-report.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

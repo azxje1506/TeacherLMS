@@ -36,7 +36,11 @@ import { dbConnect, isDupKey } from "./db";
 import { AttendanceModel, BillingModel, ClassModel, HomeworkModel, LessonModel } from "./models";
 import { TODAY_ISO } from "./constants";
 import {
-  findLegacyReschedules, freezeReasons, isManuallyEdited, planClass, reconcileContext,
+  phase0Equivalence, verifyPhase0, verifyPhase0Applied,
+  type Phase0Equivalence, type Phase0Item, type Phase0Verification,
+} from "./migration";
+import {
+  freezeReasons, isManuallyEdited, planClass, reconcileContext,
   statusForDate, summarizePlan, windowMonths,
   type PlanAction, type PlanSummary, type ReconcileContext,
 } from "./recurrence";
@@ -45,10 +49,12 @@ import type { Klass, Lesson } from "./types";
 const clean = "-_id -__v";
 
 /** Sprint 5.6.2 applies every verb but one. §8: "Still report-only for the retire
- * verb." Retire is a hard delete with no undo (§5.3), and the §6 Phase 1 snapshot
- * that makes it recoverable is 5.6.3's job — so until then a retirement is
- * planned, audited and reported, and the lesson stays where it is. 5.6.4 flips
- * this to `true` once 5.6.3 has cleared the backlog.
+ * verb." Retire is a hard delete with no undo (§5.3), so a retirement is planned,
+ * audited and reported, and the lesson stays where it is.
+ *
+ * STILL FALSE AFTER 5.6.3. That sprint built the §6 Phase 1 snapshot and verified
+ * the migration; it deliberately did not enable the delete. Flipping this is
+ * 5.6.4's single act, and MIGRATION_PHASE0.md lists what must be true first.
  *
  * Typed `boolean` rather than inferred as `false` deliberately: the executor's
  * retire branch must stay live code, type-checked and lintable, not something the
@@ -59,24 +65,22 @@ export const RETIRE_ENABLED: boolean = false;
  * §6 Phase 0 — back-fill legacy reschedule origins
  * ==========================================================================*/
 
-/** One lesson the back-fill would stamp, and what it would write. */
-export interface OriginBackfillItem {
-  id: string;
-  classId: string;
-  /** Where the lesson sits now — never modified. */
-  date: string;
-  start: string;
-  /** The three fields the back-fill writes, and nothing else. */
-  originalDate: string;
-  originalStart: string;
-  originalDuration: number;
-}
-
 export interface OriginBackfillResult {
-  items: OriginBackfillItem[];
+  /** Every legacy reschedule, each carrying its own verification (§6 Phase 0).
+   * `item.target` is the triple that would be — or was — written. */
+  items: Phase0Item[];
+  /** Would stamping them change any reconciliation decision? It must not: Phase 0
+   * changes where the reconciler reads a fact, never what it concludes. */
+  equivalence: Phase0Equivalence;
+  /** Everything that must be resolved before an apply is permitted. Non-empty
+   * means NOTHING was written, whatever `apply` asked for. */
+  blockers: string[];
   /** How many were actually written. Zero unless `apply` was requested. */
   written: number;
   applied: boolean;
+  /** The read-back proof: what actually landed, and what else moved. Present
+   * only after an apply. */
+  verification: Phase0Verification | null;
 }
 
 /** §6 Phase 0, "mandatory, blocking".
@@ -98,25 +102,54 @@ export interface OriginBackfillResult {
  * `rescheduledAt` is NOT stamped — that field records when a move happened, and
  * this back-fill does not know when these moves happened.
  *
+ * VERIFIED ON BOTH SIDES OF THE WRITE (Sprint 5.6.3). Before: every item is
+ * checked against the design by `verifyPhase0`, and the whole plan is checked for
+ * equivalence — stamping the origins must not change one reconciliation decision.
+ * A single blocker means nothing is written at all, `apply` or not, for the same
+ * reason `auditPlan` aborts whole: the back-fill is a set, and half of one is not
+ * a smaller version of it. After: the collection is re-read and diffed field by
+ * field, so "every updated lesson is exactly the expected target, and no other
+ * lesson moved" is a measurement rather than a claim.
+ *
  * Reports by default; writes only when asked. Running it is a migration step
- * (§6), sequenced behind the Phase 1 snapshot and outside Sprint 5.6.2. */
+ * (§6), sequenced behind the Phase 1 snapshot — see MIGRATION_PHASE0.md. */
 export async function backfillLegacyOrigins(
   { apply = false }: { apply?: boolean } = {}
 ): Promise<OriginBackfillResult> {
   await dbConnect();
-  const lessons = await LessonModel.find({ type: "regular" }).select(clean).lean<Lesson[]>();
 
-  const items: OriginBackfillItem[] = findLegacyReschedules(lessons).map(({ lesson, inferred }) => ({
-    id: lesson.id,
-    classId: lesson.classId,
-    date: lesson.date,
-    start: lesson.start,
-    originalDate: inferred.date,
-    originalStart: inferred.start,
-    originalDuration: inferred.duration,
-  }));
+  // The verification needs the same inputs the planner does: a lesson's freeze
+  // classification depends on attendance and homework, and its corroboration on
+  // the class's current schedule.
+  const [classes, before, attendance, homework] = await Promise.all([
+    ClassModel.find().select(clean).lean<Klass[]>(),
+    LessonModel.find().select(clean).lean<Lesson[]>(),
+    AttendanceModel.find().select("lessonId -_id").lean<Array<{ lessonId: string }>>(),
+    HomeworkModel.find().select("lessonId -_id").lean<Array<{ lessonId: string | null }>>(),
+  ]);
 
-  if (!apply || items.length === 0) return { items, written: 0, applied: false };
+  const ctx = reconcileContext({
+    months: windowMonths(),
+    attended: new Set(attendance.map((a) => a.lessonId)),
+    homeworked: new Set(homework.map((h) => h.lessonId).filter((id): id is string => !!id)),
+    legacyOriginFallback: true,
+  });
+
+  const items = verifyPhase0(classes, before, ctx);
+  const equivalence = phase0Equivalence(classes, before, items, ctx);
+
+  const blockers: string[] = [];
+  for (const i of items) for (const p of i.problems) blockers.push(`${i.lessonId} — ${p}`);
+  if (!equivalence.identical) {
+    blockers.push(
+      "the back-fill would change the reconciliation plan" +
+      ` (${equivalence.onlyBefore.length} action(s) lost, ${equivalence.onlyAfter.length} gained)`
+    );
+  }
+
+  if (!apply || items.length === 0 || blockers.length > 0) {
+    return { items, equivalence, blockers, written: 0, applied: false, verification: null };
+  }
 
   const res = await LessonModel.bulkWrite(
     items.map((it) => ({
@@ -124,20 +157,20 @@ export async function backfillLegacyOrigins(
         // The filter re-asserts the precondition at write time: only a lesson
         // that STILL has no stored origin is stamped, so a concurrent reschedule
         // can never be overwritten by this back-fill.
-        filter: { id: it.id, originalDate: { $exists: false } },
-        update: {
-          $set: {
-            originalDate: it.originalDate,
-            originalStart: it.originalStart,
-            originalDuration: it.originalDuration,
-          },
-        },
+        filter: { id: it.lessonId, originalDate: { $exists: false } },
+        update: { $set: { ...it.target } },
       },
     })),
     { ordered: false }
   );
 
-  return { items, written: res.modifiedCount ?? 0, applied: true };
+  const after = await LessonModel.find().select(clean).lean<Lesson[]>();
+  return {
+    items, equivalence, blockers,
+    written: res.modifiedCount ?? 0,
+    applied: true,
+    verification: verifyPhase0Applied(before, after, items),
+  };
 }
 
 /* ============================================================================

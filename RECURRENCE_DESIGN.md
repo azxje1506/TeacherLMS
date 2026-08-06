@@ -696,11 +696,27 @@ Still report-only for the retire verb.
 Implements §5.9 as its own change: `notes` blocks retire, permits update, and pairing
 prefers the protected lesson. No new field, and `classroom` is not consulted.
 
-### 5.6.3 — Migration (~1 day, gated on sign-off)
+### 5.6.3 — Migration (~1 day, gated on sign-off) — **prepared 2026-08-06, not applied**
 
 Snapshot, baseline every past month's figures, dry run, apply, verify (§6 Phases
 1–5). No special handling for the development test classes — they are removed
 manually and are not a migration concern.
+
+**Tooling delivered; no database has been written.** The snapshot and baseline are
+`npm run lessons:snapshot` (§6 Phases 1–2, files only), the verification is
+`src/lib/migration.ts` + `npm run lessons:migration-report` (deterministic — no
+wall clock, every list sorted, one sha256 to compare runs), and the Phase 0 apply
+is gated behind a snapshot whose lessons digest still matches the live collection.
+`RETIRE_ENABLED` stays `false` and no destructive cleanup runs automatically. The
+operating procedure, the rollback and the remaining blockers are
+`MIGRATION_PHASE0.md`.
+
+Measured 2026-08-06, all read-only: 11 legacy reschedules, all 11 verified as
+genuine moves, 3 load-bearing; the plan is **identical** with the origins stored
+and `legacyOriginFallback` off, which is what makes the fallback removable; 142
+planned retirements, all 142 independently corroborated against the class
+schedules, 1 of them alone on its date; zero write actions touching a protected
+lesson.
 
 ### 5.6.4 — Enable + Regression (~1 day)
 

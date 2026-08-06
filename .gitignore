@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# migration snapshots (RECURRENCE_DESIGN.md §6 Phase 1) — production data
+/backups
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
