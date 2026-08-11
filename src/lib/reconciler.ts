@@ -132,6 +132,10 @@ export async function backfillLegacyOrigins(
     months: windowMonths(),
     attended: new Set(attendance.map((a) => a.lessonId)),
     homeworked: new Set(homework.map((h) => h.lessonId).filter((id): id is string => !!id)),
+    // The one place the legacy signal is still read on purpose: this is the Phase 0
+    // tool itself. Both `verifyPhase0` and `phase0Equivalence` override the flag in
+    // BOTH directions internally, so the value here decides nothing — it states the
+    // intent. Everywhere else the fallback is off (§5.4, applied 2026-08-07).
     legacyOriginFallback: true,
   });
 
@@ -408,9 +412,10 @@ async function readReconcileState(classId: string): Promise<ReconcileState> {
       months: windowMonths(),
       attended: new Set(attendance.map((a) => a.lessonId)),
       homeworked: new Set(homework.map((h) => h.lessonId).filter((id): id is string => !!id)),
-      // Stays true until the §6 Phase 0 back-fill has been deployed AND verified.
-      // Turning it off first would retire eleven deliberately moved lessons.
-      legacyOriginFallback: true,
+      // `legacyOriginFallback` is deliberately absent — it now defaults to false.
+      // The §6 Phase 0 back-fill was applied and verified on 2026-08-07, so all 11
+      // legacy moves carry a stored origin and the reconciler no longer parses a
+      // lesson id to decide anything (ADR-001). Do not reintroduce it here.
     }),
   };
 }

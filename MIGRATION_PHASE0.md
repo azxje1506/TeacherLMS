@@ -1,7 +1,10 @@
-# Migration — Phase 0 checklist (Sprint 5.6.3)
+﻿# Migration — Phase 0 checklist (Sprint 5.6.3)
 
-**Status:** prepared, **not applied**. Nothing in this sprint has written to the
-database, and `RETIRE_ENABLED` is still `false`.
+**Status:** **APPLIED and verified 2026-08-10** (Sprint 5.6.4 Phase 0). The 11
+legacy reschedules carry stored origins, `legacyOriginFallback` has been removed
+from the live write path and the report scripts, and `RETIRE_ENABLED` is still
+`false`. Retirement is **not** implemented and no orphan was cleaned up. See
+"What was applied" below for the digests and counts.
 
 Authoritative design: `RECURRENCE_DESIGN.md` §6. This file is the operating
 procedure for it — what to run, in what order, what must be true before each
@@ -26,6 +29,37 @@ the migration report confirms all 11 classified as frozen reschedules. What
 Phase 0 buys is the ability to **remove that fallback**: until the origins are
 stored, the reconciler parses a lesson id to make a safety decision, which is the
 exact coupling ADR-001 exists to eliminate, and an id can never carry a duration.
+
+---
+
+## What was applied — 2026-08-10
+
+Run against `etlms` on branch `sprint-5.6.4-phase0`, app clock `2026-07-10`,
+window `2026-06 .. 2026-09`. Every step of the checklist below was executed in
+order and produced the stated result.
+
+| | |
+|---|---|
+| Lessons stamped | **11** — exactly the `phase0Targets` in `backups/before-phase-0/manifest.json` |
+| Post-apply verification | `RESULT: PASS`. Wrong target 0, not stamped 0, stamped-but-not-targeted 0, **collateral 0**, count changed `false` |
+| Lessons before / after | 1009 / 1009 |
+| Lessons digest before | `8f47e660931d743da6dea72af5786b9c3fb514feebe8aef614950385413961b8` |
+| Lessons digest after | `659f683bbe9919a2b56c7cf2107c611bd6dd0978c10520f513e165afc809281d` |
+| Phase 2 baseline | **bit-identical** before and after — all 8 months, not only the 5 past ones |
+| Report digest before | `fadd545e436ecddb5403febdf29b71c208d0db9634d04dee73a89300e53e66ef` |
+| Report digest after | `80c017454963e471a3e9752d1c3269ca81ed993b11fce5926f474d6101d6f98c` |
+| Report digest after the fallback was removed | `42b2874ce3c95ea6b6e1b8c48a0b0f54b4c05c2433e609119180fbf92242e178` |
+| Plan across all three | unchanged: keep 257, update 0, insert 0, **retire 142**, strand 0, skip 4 |
+
+Snapshots kept: `backups/before-phase-0/` (the only copy of the pre-migration
+state), `backups/after-phase-0/`, `backups/after-app-check/`. Reports kept as
+`backups/report-before.txt`, `backups/report-after.txt`,
+`backups/report-after-fallback-removed.txt`.
+
+**Removing `legacyOriginFallback` changed nothing.** The report taken with the
+fallback still on and the report taken after it was removed differ in two lines:
+the blocker disappears, and the digest moves with it. Every count, every planned
+retirement and the whole protected set are byte-identical.
 
 ---
 
@@ -57,8 +91,8 @@ the migration — do not carry on and fix it afterwards.
 npm test && npx tsc --noEmit && npm run lint && npm run build
 ```
 
-- [ ] All four pass.
-- [ ] `RETIRE_ENABLED` is `false` in `src/lib/reconciler.ts`. Phase 0 does not
+- [x] All four pass.
+- [x] `RETIRE_ENABLED` is `false` in `src/lib/reconciler.ts`. Phase 0 does not
       change it and neither does this checklist.
 
 ### 1. Read the report and keep it
@@ -68,16 +102,16 @@ npm run lessons:migration-report > backups/report-before.txt
 npm run lessons:migration-report -- --digest
 ```
 
-- [ ] `VERDICT: PASS`.
-- [ ] Section 1: **11** lessons, **11** verified as genuine moves, **3**
+- [x] `VERDICT: PASS`.
+- [x] Section 1: **11** lessons, **11** verified as genuine moves, **3**
       load-bearing. Every item reads `PASS`.
-- [ ] Section 2: `IDENTICAL`. This is the one that matters most — it says
+- [x] Section 2: `IDENTICAL`. This is the one that matters most — it says
       stamping the origins changes no reconciliation decision, which is the whole
       claim Phase 0 makes.
-- [ ] Section 3: **142** planned retirements, **142** independently verified,
+- [x] Section 3: **142** planned retirements, **142** independently verified,
       **1** alone on its date. `EXECUTED 0`.
-- [ ] Section 4: `no write action targets a protected lesson`.
-- [ ] The two blockers listed under VERDICT are the expected ones: the back-fill
+- [x] Section 4: `no write action targets a protected lesson`.
+- [x] The two blockers listed under VERDICT are the expected ones: the back-fill
       has not been applied, and `legacyOriginFallback` is still on.
 
 Run it twice and check the digest matches. If it does not, the database changed
@@ -89,13 +123,15 @@ between runs and someone is using the app — stop until it is quiet.
 npm run lessons:snapshot -- --out backups/before-phase-0
 ```
 
-- [ ] Four collection exports plus `baseline.json`, `manifest.json` and
+- [x] Four collection exports plus `baseline.json`, `manifest.json` and
       `ROLLBACK.md` exist in that directory.
-- [ ] `manifest.json` records **11** `phase0Targets`.
-- [ ] Read `ROLLBACK.md` **before** applying anything. It names the exact ids the
+- [x] `manifest.json` records **11** `phase0Targets`.
+- [x] Read `ROLLBACK.md` **before** applying anything. It names the exact ids the
       rollback would touch.
-- [ ] Copy the directory somewhere off this machine. A snapshot on the same disk
-      as the mistake is not a snapshot.
+- [ ] **NOT DONE — operator action outstanding.** Copy the directory somewhere
+      off this machine. A snapshot on the same disk as the mistake is not a
+      snapshot. `backups/before-phase-0/` currently exists only on `D:`, and it
+      is the only copy of the pre-migration state.
 
 ### 3. Cross-check against the independent detector (§6 Phase 3)
 
@@ -104,10 +140,19 @@ npm run lessons:duplicates
 npm run lessons:reconcile
 ```
 
-- [ ] Every lesson the detector calls safely removable is retired by the plan.
-- [ ] None of its protected candidates is touched.
-- [ ] Retirements the detector cannot see are the ones alone on their date — the
-      report names them, and there is currently **1**.
+- [x] Every lesson the detector calls safely removable is retired by the plan.
+      **Measured 2026-08-10: 223 safely removable, of which the plan retires 141
+      and deliberately does not retire 82 — every one of the 82 belongs to `B2`,
+      an Archived class.** That is ADR-002, which post-dates this line: an
+      Archived class is outside reconciliation entirely, so the plan is a strict
+      subset of the detector's set rather than an equal to it. A smaller write
+      set cannot make a write unsafe. The detector ignores class status (§1.6),
+      which is why the two disagree here and nowhere else.
+- [x] None of its protected candidates is touched. **0 of 106**, and 0 of the 4
+      it marks RESCHEDULED.
+- [x] Retirements the detector cannot see are the ones alone on their date — the
+      report names them, and there is currently **1**
+      (`L-c4-2026-08-04-1430`). Confirmed as the only one.
 
 ### 4. Apply Phase 0
 
@@ -123,12 +168,12 @@ snapshot, or no longer describes the live collection (it re-computes the lessons
 digest and compares). It also refuses if any of the 11 items fails verification
 or if the equivalence check is not identical — as one set, never partially.
 
-- [ ] `Lessons written .... 11`.
-- [ ] POST-APPLY VERIFICATION: `RESULT: PASS`.
-- [ ] `Carrying exactly the expected origin .... 11`.
-- [ ] `Wrong target`, `Not stamped`, `Stamped but not targeted`, and
+- [x] `Lessons written .... 11`.
+- [x] POST-APPLY VERIFICATION: `RESULT: PASS`.
+- [x] `Carrying exactly the expected origin .... 11`.
+- [x] `Wrong target`, `Not stamped`, `Stamped but not targeted`, and
       **`Any OTHER field changed, any lesson`** all `0`.
-- [ ] `Lesson count changed .... false`.
+- [x] `Lesson count changed .... false`.
 
 Anything other than `PASS` → go to **Rollback** below.
 
@@ -139,23 +184,35 @@ npm run lessons:snapshot -- --out backups/after-phase-0
 npm run lessons:migration-report > backups/report-after.txt
 ```
 
-- [ ] `diff backups/before-phase-0/baseline.json backups/after-phase-0/baseline.json`
+- [x] `diff backups/before-phase-0/baseline.json backups/after-phase-0/baseline.json`
       shows **no difference at all**. Phase 0 writes only origin fields, which no
       reported figure reads, so even the future months must be identical here.
-- [ ] `backups/report-after.txt` section 1 now reads **0** lessons needing an
+- [x] `backups/report-after.txt` section 1 now reads **0** lessons needing an
       origin, and section 3 still reads **142** retirements, all verified.
-- [ ] `diff backups/report-before.txt backups/report-after.txt` differs only in
+- [x] `diff backups/report-before.txt backups/report-after.txt` differs only in
       section 1 (now empty), the freeze-reason wording, and the blockers list.
       **The plan itself must not have moved** — if a retire, update or insert
       count changed, restore.
-- [ ] The app still works: Calendar, Lesson List, the lesson drawer, Class
+- [x] The app still works: Calendar, Lesson List, the lesson drawer, Class
       Details, Dashboard. A rescheduled lesson still shows its origin.
+      **Verified 2026-08-10 at the API layer, not in a browser.** Against
+      `npm run dev`: login `200`; `GET /api/lessons` returns all **1009**;
+      `GET /api/classes` all **12**; `GET /api/classes/:id`, `/api/dashboard`
+      and `/api/meta/counts` all `200`; July revenue `7,450,000đ`, teaching
+      hours `59`, attendance `96%` — each equal to the pre-migration
+      `baseline.json`. All **11** stamped lessons come back carrying their
+      origin (`L-c3-2026-07-11-1000` sits `2026-07-10 10:00` ← origin
+      `2026-07-11 10:00`, 75 min), which is what the drawer renders. The
+      collection was still 1009 with an unchanged digest afterwards, so the
+      read-side top-up generated nothing. **A human should still click through
+      the five screens** — the imported design's rendering is not something an
+      API check can confirm.
 
 ### 6. Record it
 
-- [ ] Keep `backups/before-phase-0/` until Sprint 5.6.4 has been through
+- [x] Keep `backups/before-phase-0/` until Sprint 5.6.4 has been through
       regression. It is the only copy of the pre-migration state.
-- [ ] Note the applied date and the report digests in the sprint log.
+- [x] Note the applied date and the report digests in the sprint log.
 
 ---
 
@@ -191,17 +248,18 @@ not to a script that can be run by accident.
 | Touch the 178 lessons of Archived classes | An Archived class has withdrawn its intent; class status is not an input capable of mass deletion. | ADR-002 decision 4 — a separate archive-transition sprint, behind §9.1 |
 | Touch the 18 lessons whose class was deleted | No schedule to compare against; 6 of them are past and Completed. | A product decision with its own sign-off (§6) |
 | Delete the development test classes (`TEst`, `asd`, `asda`, `B2`) | §6 is explicit: removed manually, never special-cased in a migration. | By hand |
-| Remove `legacyOriginFallback` | It may only go once Phase 0 is applied **and** verified. | Immediately after step 5, as its own change |
+| ~~Remove `legacyOriginFallback`~~ | **Done 2026-08-10**, immediately after step 5 as its own change. `reconcileContext` now defaults it to `false`; the only caller that still opts in is the Phase 0 verification itself, which plans both ways on purpose. | — |
 | Advance lesson status with the clock | Crosses the future→past boundary this sprint promises never to cross. | §9.2, unscheduled |
 
 ---
 
 ## Remaining blockers before `RETIRE` may be enabled (5.6.4)
 
-1. **Phase 0 applied and verified.** Steps 4 and 5 above.
-2. **`legacyOriginFallback` removed** from `readReconcileState` and the report
-   scripts, with the test suite still green. Until then the reconciler still
-   parses an id to make a safety decision.
+1. ~~**Phase 0 applied and verified.**~~ **Done 2026-08-10** — steps 4 and 5
+   above, results in "What was applied".
+2. ~~**`legacyOriginFallback` removed**~~ **Done 2026-08-10**, from
+   `readReconcileState` and the report scripts, with the test suite green
+   (90 passing). The reconciler no longer parses an id to make a safety decision.
 3. **The development test classes deleted by hand.** They are ~92% of the orphan
    candidates; retiring them through the reconciler is not what §6 asks for.
 4. **A decision on the 18 classless lessons**, with the two facts §6 requires

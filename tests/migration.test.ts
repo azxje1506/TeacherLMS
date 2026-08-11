@@ -365,8 +365,11 @@ describe("the migration report", () => {
     legacyMove(TUE[1], TUE[2], "10:08", 45), // a legacy move
   ];
 
+  // Deliberately the PRE-Phase-0 state: a legacy move with no stored origin and
+  // the fallback still on. That is the state this report exists to describe, and
+  // the two blockers below are what it must say about it.
   const report = () => buildMigrationReport({
-    classes: [forked], lessons, ctx: ctx(), retireEnabled: false,
+    classes: [forked], lessons, ctx: ctx({ legacyOriginFallback: true }), retireEnabled: false,
   });
 
   it("verifies the whole picture and reports RETIRE as still disabled", () => {
@@ -390,9 +393,23 @@ describe("the migration report", () => {
     assert.equal(formatMigrationReport(report()), formatMigrationReport(report()));
     // …and independent of the order the database happened to return lessons in.
     const shuffled = buildMigrationReport({
-      classes: [forked], lessons: [...lessons].reverse(), ctx: ctx(), retireEnabled: false,
+      classes: [forked], lessons: [...lessons].reverse(),
+      ctx: ctx({ legacyOriginFallback: true }), retireEnabled: false,
     });
     assert.equal(formatMigrationReport(shuffled), formatMigrationReport(report()));
+  });
+
+  it("clears both Phase 0 blockers once the origins are stored and the fallback is off", () => {
+    // The state this sprint reached: `applyPhase0` stands in for the back-fill,
+    // and `ctx()` now defaults the fallback off. Neither blocker may survive it.
+    const stamped = applyPhase0(lessons, verifyPhase0([forked], lessons, ctx({ legacyOriginFallback: true })));
+    const r = buildMigrationReport({ classes: [forked], lessons: stamped, ctx: ctx(), retireEnabled: false });
+
+    assert.equal(r.verdict.ok, true);
+    assert.deepEqual(r.verdict.blockers, []);
+    assert.equal(r.phase0.items.length, 0, "no lesson still needs an origin");
+    // …and the plan itself did not move, which is the whole claim of Phase 0.
+    assert.deepEqual(r.plan, report().plan);
   });
 
   it("fails the verdict when the plan and the design disagree", () => {

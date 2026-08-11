@@ -7,8 +7,14 @@ manual-edit protection added to §6 Phase 4.
 Sprints **5.6.0 (prerequisites)** and **5.6.1 (report-only reconciliation)** are
 delivered: the pure planner is `src/lib/recurrence.ts`, the dry run is
 `scripts/recurrence-report.ts` (`npm run lessons:reconcile`), the scenario tests are
-`tests/recurrence.test.ts` (`npm test`). **No database has been modified, no
-migration exists, and every write phase is still ahead.**
+`tests/recurrence.test.ts` (`npm test`).
+
+**§6 Phase 0 was applied and verified on 2026-08-10** (Sprint 5.6.4 Phase 0) — the
+only database write this design has authorised so far, and a strictly additive one:
+eleven origin triples, nothing else touched, every reported figure unmoved. See
+`MIGRATION_PHASE0.md`. `legacyOriginFallback` went with it. **`RETIRE_ENABLED` is
+still `false`: retirement is not implemented, and the 142 planned retirements and
+the orphan lessons are all still in place.**
 
 **Approved scope for Sprint 5.6** is §1–§8, ADR-001 and ADR-002. §9 (technical debt)
 and §10 (future improvements) are explicitly **outside** it.
@@ -327,12 +333,16 @@ lesson is future, Upcoming, unattended and unmoved.
 A lesson carrying `originalDate` is frozen (step 3). It is never updated, never
 retired, and never re-paired.
 
-**Critical dependency:** this test only works for moves made after Sprint 5.5
-introduced the origin fields. The live database contains **11 legacy moves with no
-`originalDate`**, detectable only because the date embedded in their id no longer
-matches their `date` field. Under the new design the id is opaque and no longer
-consulted — so those 11 lessons would be invisible as reschedules and **retired as
-orphans**. The back-fill in §6 is therefore a hard prerequisite, not a nicety.
+**Critical dependency — discharged 2026-08-10.** This test only works for moves made
+after Sprint 5.5 introduced the origin fields. The live database contained **11
+legacy moves with no `originalDate`**, detectable only because the date embedded in
+their id no longer matched their `date` field. Under the new design the id is opaque
+and no longer consulted — so those 11 lessons would have been invisible as
+reschedules and **retired as orphans**. The back-fill in §6 was therefore a hard
+prerequisite, not a nicety; it has now been applied, all 11 carry stored origins,
+and `legacyOriginFallback` has been removed from the live write path and the report
+scripts. `reconcileContext` defaults it to `false`; the sole remaining opt-in is the
+Phase 0 verification itself, which plans both ways in order to prove they agree.
 
 ### 5.5 How cancelled and completed lessons are skipped
 
@@ -481,7 +491,7 @@ actually written on.
 The reconciler, once shipped, retires future orphans by itself. A one-time migration
 is therefore needed for **one** thing only — and that thing must run **first**.
 
-### Phase 0 — back-fill legacy reschedule origins (**mandatory, blocking**)
+### Phase 0 — back-fill legacy reschedule origins (**mandatory, blocking**) — **APPLIED 2026-08-10**
 
 Write `originalDate` / `originalStart` / `originalDuration` onto the 11 lessons whose
 id-encoded date disagrees with their stored `date`. Additive: no existing field
@@ -622,7 +632,7 @@ decision with its own sign-off.
 
 | Risk | Why | Mitigation |
 |---|---|---|
-| **Legacy reschedules deleted** | 11 lessons have no origin fields; an opaque id could not identify them | ~~Highest risk in the plan.~~ **Downgraded 2026-08-06.** The planner's `legacyOriginFallback` reads the id when the stored origin is missing; the 5.6.1 dry run confirms all 11 frozen, none retired. Only 3 are load-bearing at all (§6 Phase 0). Phase 0 stays mandatory to *remove* that fallback, not to prevent deletion. |
+| **Legacy reschedules deleted** | 11 lessons have no origin fields; an opaque id could not identify them | ~~Highest risk in the plan.~~ **Downgraded 2026-08-06.** The planner's `legacyOriginFallback` reads the id when the stored origin is missing; the 5.6.1 dry run confirms all 11 frozen, none retired. Only 3 are load-bearing at all (§6 Phase 0). Phase 0 stayed mandatory to *remove* that fallback, not to prevent deletion. **Closed 2026-08-10:** all 11 carry stored origins, the fallback is gone, and the plan did not move. |
 | **Mass deletion via class status** | a desired set of `[]` makes every future lesson of an Archived class an orphan — 176 lessons, 55% of the measured plan | §5.8 / ADR-002: Archived classes are outside reconciliation. Class status is not an input to the algorithm. |
 | **Historical revenue moves** | the per-lesson denominator is a live count of regular lessons per month | hard `date >= app clock` filter; Phase 2/5 before-and-after diff |
 | **Orphaned attendance** | `attendances.lessonId` has no cascade | attendance-record filter; no past lesson in scope |
@@ -718,7 +728,22 @@ planned retirements, all 142 independently corroborated against the class
 schedules, 1 of them alone on its date; zero write actions touching a protected
 lesson.
 
-### 5.6.4 — Enable + Regression (~1 day)
+### 5.6.4 Phase 0 — apply the migration — **delivered 2026-08-10**
+
+Executed `MIGRATION_PHASE0.md` end to end against the live database: baseline
+verification green, snapshot taken, cross-checked against the independent detector,
+the back-fill applied to all **11** lessons, post-apply verification `PASS` with
+**zero** collateral, and the Phase 2 baseline **bit-identical** before and after —
+every month, not only the five past ones. `legacyOriginFallback` was then removed
+as its own change, and the migration report proves it altered no decision: the plan
+is byte-identical across all three runs (keep 257, update 0, insert 0, retire 142,
+strand 0, skip 4).
+
+Scope held exactly: **`RETIRE_ENABLED` stays `false`**, retirement is unimplemented,
+no orphan was cleaned up, no schema field was added and no business rule outside
+Phase 0 was touched. Digests and counts are in `MIGRATION_PHASE0.md`.
+
+### 5.6.4B — Enable + Regression (~1 day)
 
 Flip the reconciler from report-only to enforcing. Blast radius is small because
 5.6.3 has already cleared the backlog.

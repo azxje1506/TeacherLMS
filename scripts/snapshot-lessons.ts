@@ -91,7 +91,8 @@ async function main() {
     months: windowMonths(),
     attended: new Set(attendance.map((a) => a.lessonId)),
     homeworked: new Set(homework.map((h) => h.lessonId).filter((id): id is string => !!id)),
-    legacyOriginFallback: true,
+    // Off since Phase 0 was applied (§5.4). `verifyPhase0` overrides the flag in
+    // both directions internally, so the work list it returns is unaffected.
   });
   const phase0 = verifyPhase0(classes, lessons, ctx);
 

@@ -277,7 +277,9 @@ describe("§5.4 rescheduled lessons are frozen", () => {
     const legacy = lesson(TUE[0], "10:00", 45, { date: "2026-07-16" });
     const lessons = [legacy, ...TUE.slice(1).map((d) => lesson(d, "10:00", 45))];
 
-    const withFallback = planClass(c, lessons, ctx());
+    // The fallback is an explicit opt-in since Phase 0 was applied — the context
+    // defaults to false now, and only the Phase 0 verification asks for it.
+    const withFallback = planClass(c, lessons, ctx({ legacyOriginFallback: true }));
     assert.equal(withFallback.find((a) => a.lessonId === legacy.id)?.verb, "skip");
     assert.equal(verbs(withFallback, "retire").length, 0);
     assert.equal(verbs(withFallback, "insert").length, 0, "the vacated slot stays occupied");

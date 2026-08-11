@@ -172,6 +172,54 @@ function enrichRow(l: Lesson, classMap: Map<string, Klass>): LessonRow {
   };
 }
 
+/** Date, then start time, then id — the stable ordering the list has always used
+ * within a direction. The id tiebreak matters: without it two lessons sharing a
+ * slot could swap places between requests and the pager would repeat or drop a
+ * row. */
+function byDateTime(a: LessonRow, b: LessonRow): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  if (a.start !== b.start) return a.start < b.start ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** How the Lesson List orders its rows.
+ *
+ * An Upcoming lesson is something still to be taught, so the list opens on the
+ * NEAREST one and reads forward. A Completed or Cancelled lesson is history, and
+ * history reads newest first — which is the order this list has always used and
+ * the only order the imported design was drawn against.
+ *
+ * The two therefore cannot share one direction, so they are ordered as two
+ * blocks: every Upcoming lesson ascending, then every historical one descending.
+ * Under the status chips this is invisible — each chip shows a single block — and
+ * on "All" it puts the next lesson at the top, which is what the screen is for.
+ *
+ * The whole filtered set is still sorted BEFORE it is paginated, which is what
+ * keeps the pager correct: the blocks are a property of the ordering, not of a
+ * page, so row 51 is the same lesson whether or not anyone asked for page 2.
+ *
+ * `status` is the signal rather than the date, so it agrees with the chip a
+ * teacher just clicked. One consequence worth naming: a lesson still marked
+ * Upcoming whose date has passed sorts to the very top. That is honest — nothing
+ * advances a lesson's status as time passes (RECURRENCE_DESIGN §9.2), so such a
+ * lesson genuinely is the most overdue thing on the list.
+ *
+ * An explicit `dir` keeps the old uniform date sort, so the documented
+ * `GET /api/lessons?dir=` contract is unchanged for any caller that sends one. */
+function orderRows(dir?: string): (a: LessonRow, b: LessonRow) => number {
+  if (dir) {
+    const sign = dir === "asc" ? 1 : -1;
+    return (a, b) => byDateTime(a, b) * sign;
+  }
+  const rank = (r: LessonRow) => (r.status === "Upcoming" ? 0 : 1);
+  return (a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    return byDateTime(a, b) * (ra === 0 ? 1 : -1);
+  };
+}
+
 /** Read the lesson list, reconciling Regular lessons first, then filtering /
  * sorting / paginating. Enriches each row with class name + colour only. */
 export async function listLessons(query: LessonQuery = {}): Promise<LessonListResult> {
@@ -200,11 +248,8 @@ export async function listLessons(query: LessonQuery = {}): Promise<LessonListRe
   const q = (query.q ?? "").trim().toLowerCase();
   if (q) rows = rows.filter((r) => [r.className, r.classroom].some((f) => String(f ?? "").toLowerCase().includes(q)));
 
-  // ---- sort: by date (default), newest first; stable tiebreak ----
-  const dir = query.dir === "asc" ? 1 : -1;
-  rows.sort((a, b) => (
-    (a.date < b.date ? -1 : a.date > b.date ? 1 : a.start < b.start ? -1 : a.start > b.start ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0) * dir
-  ));
+  // ---- sort ----
+  rows.sort(orderRows(query.dir));
 
   // ---- paginate ----
   const total = rows.length;

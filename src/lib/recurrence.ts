@@ -213,8 +213,14 @@ export interface ReconcileContext {
   attended: ReadonlySet<string>;
   /** `Homework.lessonId` — currently vacuous in the live data, must still exist (§7). */
   homeworked: ReadonlySet<string>;
-  /** Treat an id/date disagreement as a reschedule (§5.4). Keep true until the
-   * Phase 0 back-fill is deployed and verified. */
+  /** Treat an id/date disagreement as a reschedule (§5.4).
+   *
+   * OFF SINCE PHASE 0 WAS APPLIED (2026-08-07). The back-fill stored the origin
+   * triple on all 11 legacy moves, so the reconciler no longer parses a lesson id
+   * to make a safety decision — the coupling ADR-001 exists to eliminate. It
+   * survives as an explicit opt-in for one caller only: the Phase 0 verification
+   * in `src/lib/migration.ts`, which plans BOTH ways to prove the two agree.
+   * Nothing on the live write path may turn it on again. */
   legacyOriginFallback: boolean;
 }
 
@@ -224,7 +230,7 @@ export function reconcileContext(overrides: Partial<ReconcileContext> = {}): Rec
     months: windowMonths(),
     attended: new Set<string>(),
     homeworked: new Set<string>(),
-    legacyOriginFallback: true,
+    legacyOriginFallback: false,
     ...overrides,
   };
 }

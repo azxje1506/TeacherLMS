@@ -58,9 +58,9 @@ async function main() {
       months: windowMonths(),
       attended: new Set(attendance.map((a) => a.lessonId)),
       homeworked: new Set(homework.map((h) => h.lessonId).filter((id): id is string => !!id)),
-      // Still on. Removing it is what Phase 0 buys, and only after the back-fill
-      // has been applied AND verified (§5.4, §6 Phase 0).
-      legacyOriginFallback: true,
+      // Gone. Removing it is what Phase 0 bought, and the back-fill was applied
+      // AND verified on 2026-08-07 (§5.4, §6 Phase 0). The context now defaults to
+      // false, so this report plans against stored origins alone.
     }),
     retireEnabled: RETIRE_ENABLED,
   });
