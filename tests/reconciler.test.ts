@@ -213,11 +213,12 @@ describe("teachingHistoryOf — deletion is blocked by history (§2)", () => {
 
 /* ------------------------------------------------------ the sprint's promise */
 
-describe("Sprint 5.6.2 guarantees", () => {
-  it("retire is still report-only — the hard delete is not enabled", () => {
-    // §8: 5.6.2 wires update and insert; retire waits for the §6 Phase 1 snapshot
-    // and is turned on by 5.6.4. Flipping this constant is that sprint's job, and
-    // this test is the reminder that the flip is a deliberate act.
-    assert.equal(RETIRE_ENABLED, false);
+describe("Sprint 5.6.4B guarantees", () => {
+  it("retire is enabled — the hard delete is live", () => {
+    // §8: 5.6.2 wired update and insert and left retire report-only; 5.6.4B turns
+    // it on, which was that sprint's single act. The assertion is inverted rather
+    // than deleted so the tripwire still works in the other direction: an
+    // accidental revert to report-only now fails the suite just as loudly.
+    assert.equal(RETIRE_ENABLED, true);
   });
 });

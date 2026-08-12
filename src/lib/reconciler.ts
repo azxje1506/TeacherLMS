@@ -52,14 +52,23 @@ const clean = "-_id -__v";
  * verb." Retire is a hard delete with no undo (§5.3), so a retirement is planned,
  * audited and reported, and the lesson stays where it is.
  *
- * STILL FALSE AFTER 5.6.3. That sprint built the §6 Phase 1 snapshot and verified
- * the migration; it deliberately did not enable the delete. Flipping this is
- * 5.6.4's single act, and MIGRATION_PHASE0.md lists what must be true first.
+ * TRUE SINCE 5.6.4B. Every precondition MIGRATION_PHASE0.md lists was met first:
+ * Phase 0 applied and verified, `legacyOriginFallback` removed, the development
+ * classes and the classless lessons cleared by hand, the §8 regression green, and
+ * a `backups/before-retire` snapshot taken and copied off the machine. The plan at
+ * the moment of the flip was keep 114 / update 0 / insert 0 / retire 12 / strand 0
+ * / skip 3 — the 12 being c4's obsolete Tuesday 14:30 series, 2026-07-14 through
+ * 2026-09-29, none of them protected, rescheduled, cancelled, attended or noted.
  *
- * Typed `boolean` rather than inferred as `false` deliberately: the executor's
- * retire branch must stay live code, type-checked and lintable, not something the
- * compiler folds away and nobody notices when the flag turns over. */
-export const RETIRE_ENABLED: boolean = false;
+ * Retire is a hard delete with no undo (§5.3). It is reached only for a lesson the
+ * planner and `auditPlan` have BOTH proved is future, Upcoming, unattended,
+ * unmoved, un-homeworked and un-noted, on an Active class, and only through
+ * `updateClass` (ADR-002 decision 5).
+ *
+ * Typed `boolean` rather than inferred deliberately: the executor's retire branch
+ * must stay live code, type-checked and lintable, not something the compiler folds
+ * away and nobody notices when the flag turns over. */
+export const RETIRE_ENABLED: boolean = true;
 
 /* ============================================================================
  * §6 Phase 0 — back-fill legacy reschedule origins
