@@ -25,7 +25,10 @@ import { ClassModel, LessonModel, StudentModel, mongoose } from "./models";
 // The rolling-window, id and status helpers live in the pure recurrence core so
 // this service and the (report-only) reconciliation planner cannot drift apart.
 // Behaviour is unchanged — they were moved verbatim (see src/lib/recurrence.ts).
-import { datesForWeekday, regularId, statusForDate, windowMonths } from "./recurrence";
+import {
+  datesForWeekday, regularId, satisfiedRegularSlots, slotKey, statusForDate, windowMonths,
+} from "./recurrence";
+import type { OccupancyLesson } from "./recurrence";
 import type { Klass, Lesson, ScheduleSlot } from "./types";
 import type {
   ExtraLessonInput, MakeupLessonInput, LessonRescheduleInput, LessonUpdateInput,
@@ -50,14 +53,36 @@ export const MAX_PAGE_SIZE = 500; // the calendar pulls a whole month/week in on
  * and keeps update/delete contention off a request that only wanted to read. */
 export async function ensureRegularLessons(): Promise<void> {
   await dbConnect();
-  const classes = await ClassModel.find({ status: { $ne: "Archived" } }).select(clean).lean<Klass[]>();
   const months = windowMonths();
+  // The window as a date range, so the occupancy read stays bounded as the
+  // collection grows. A lesson matters here if it SITS in the window or if it
+  // vacated a slot inside it, hence the `$or` — a lesson rescheduled out of the
+  // window still holds the slot it left (§5.6).
+  const from = `${months[0]}-01`;
+  const to = `${months[months.length - 1]}-31`;
+  const range = { $gte: from, $lte: to };
+
+  const [classes, existing] = await Promise.all([
+    ClassModel.find({ status: { $ne: "Archived" } }).select(clean).lean<Klass[]>(),
+    LessonModel.find({ type: "regular", $or: [{ date: range }, { originalDate: range }] })
+      .select("id classId type date start originalDate originalStart -_id")
+      .lean<OccupancyLesson[]>(),
+  ]);
+
+  // Which slots already have a lesson standing in them, or were deliberately
+  // vacated. Keyed on (classId, date, start) — NOT on the lesson id, which the
+  // reconciler preserves across an in-place update and which therefore stops
+  // matching the slot it was minted for (§5.7, ADR-001). `id` is read for one
+  // reason only: `originClaim`'s defensive fallback for a legacy move that
+  // carries no stored origin. Stored fields always win.
+  const satisfied = satisfiedRegularSlots(existing);
 
   const ops: Parameters<typeof LessonModel.bulkWrite>[0] = [];
   for (const c of classes) {
     for (const month of months) {
       for (const slot of c.schedule ?? []) {
         for (const date of datesForWeekday(month, slot.day)) {
+          if (satisfied.has(slotKey(c.id, date, slot.start))) continue;
           const id = regularId(c.id, date, slot.start);
           ops.push({
             updateOne: {

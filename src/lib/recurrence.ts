@@ -200,6 +200,93 @@ export function findArchivedClassLessons(
   return out;
 }
 
+/** Which `(classId, date, start)` slots the read-side top-up must NOT generate
+ * into, keyed `classId|date|start` (§5.7).
+ *
+ * `ensureRegularLessons` used to decide this by computing the canonical id
+ * `L-<classId>-<date>-<HHMM>` and inserting when no document held it. That is an
+ * ID-keyed test, and ADR-001 made the id opaque precisely because it stops being
+ * a reliable answer: the reconciler UPDATES a lesson's `start` in place and
+ * deliberately keeps its id, so a lesson minted at 22:00 and corrected to 10:00
+ * still carries `…-2200`. The top-up then computed `…-1000`, found nothing, and
+ * inserted a SECOND lesson into a slot that was already occupied — re-forking the
+ * series the update had just repaired.
+ *
+ * A slot is satisfied when either:
+ *
+ *  - **a Regular lesson stands in it** — same class, same date, same start. Its id
+ *    plays no part in this, which is the whole point. Status is not consulted
+ *    either: a Cancelled lesson occupies its slot exactly as §5.6 requires, and a
+ *    lesson rescheduled ONTO this date occupies the slot it landed in.
+ *  - **a reschedule vacated it** — the lesson moved away, and §5.6 says the slot
+ *    it left stays spoken for so the move does not silently undo itself. Which
+ *    slot that is comes from `originClaim`, where the stored origin fields are
+ *    authoritative and the id survives only as a defensive fallback for legacy
+ *    data that carries none.
+ *
+ * `duration` is deliberately NOT part of the key. Two lessons may never share a
+ * start time on one date whatever their lengths, and a duration-only difference is
+ * something the reconciler corrects IN PLACE (§2, "change duration"); generating a
+ * second lesson beside the first would be the very defect this guard exists to
+ * prevent. Matching on start alone mirrors `planDate`'s own slot claims.
+ *
+ * Pure, so the decision is unit-testable without a database — `src/lib/lessons.ts`
+ * declares `server-only` and cannot be imported by the test runner. */
+export function satisfiedRegularSlots(lessons: readonly OccupancyLesson[]): Set<string> {
+  const out = new Set<string>();
+  for (const l of lessons) {
+    if (l.type !== "regular") continue;
+    out.add(slotKey(l.classId, l.date, l.start));
+    const origin = originClaim(l);
+    if (origin) out.add(slotKey(l.classId, origin.date, origin.start));
+  }
+  return out;
+}
+
+/** The narrow view of a Regular lesson the occupancy scan reads. `id` is carried
+ * for ONE purpose — the defensive legacy fallback in `originClaim` — and is never
+ * used to identify the slot a lesson currently stands in (ADR-001). */
+export type OccupancyLesson = Pick<
+  Lesson, "id" | "classId" | "type" | "date" | "start" | "originalDate" | "originalStart"
+>;
+
+/** The slot this lesson VACATED, or null when it still sits where it was minted.
+ *
+ * **Stored origin fields are authoritative.** When `originalDate` is present the
+ * move was recorded properly and the id is never consulted. `originalStart ?? start`
+ * mirrors `effectiveOrigin` exactly, so a half-written origin — a date with no
+ * start, which `rescheduleLesson` cannot produce but pre-Phase-0 data could —
+ * claims the lesson's current start instead of claiming nothing at all.
+ *
+ * **The id is a defensive legacy fallback only**, reached solely when no stored
+ * origin exists. Before this module existed, `ensureRegularLessons` keyed its
+ * upsert on the canonical id, which meant a moved lesson's id-encoded slot was
+ * protected as a side effect of the filter matching. Keying on stored values
+ * instead is the fix (§5.7) but it dropped that accident, leaving the vacated slot
+ * of a legacy move with no stored origin open to a fresh insert. Phase 0
+ * back-filled all 11 such lessons and `rescheduleLesson` always writes the origin
+ * triple, so this branch should now be unreachable — it exists so that the guard
+ * fails CLOSED on data that predates or violates that precondition rather than
+ * silently re-forking a series.
+ *
+ * A canonical id is not evidence of a move: the fallback fires only when the
+ * id-encoded slot disagrees with where the lesson actually sits. Note that unlike
+ * `effectiveOrigin` — which describes cross-date moves for the planner's `vacated`
+ * map and so compares the date alone — a disagreement in EITHER the date or the
+ * start counts here, because an in-place start correction (ADR-001 keeps the id)
+ * leaves exactly that footprint and is the shape this guard exists to survive. */
+export function originClaim(l: OccupancyLesson): { date: string; start: string } | null {
+  if (l.originalDate) return { date: l.originalDate, start: l.originalStart ?? l.start };
+  const encoded = originFromId(l.id);
+  if (!encoded || (encoded.date === l.date && encoded.start === l.start)) return null;
+  return encoded;
+}
+
+/** The key `satisfiedRegularSlots` builds, so callers cannot format it differently. */
+export function slotKey(classId: string, date: string, start: string): string {
+  return `${classId}|${date}|${start}`;
+}
+
 /* ------------------------------------------------------------------ context */
 
 /** Everything the planner needs that is not a Class or a Lesson. Assembled by

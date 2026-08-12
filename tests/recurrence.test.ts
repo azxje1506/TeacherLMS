@@ -25,7 +25,8 @@ import { describe, it } from "node:test";
 
 import {
   effectiveOrigin, findArchivedClassLessons, findLegacyReschedules, findOrphanedLessons,
-  isManuallyEdited, originFromId, planClass, planWouldWrite, reconcileContext, summarizePlan,
+  isManuallyEdited, originClaim, originFromId, planClass, planWouldWrite, reconcileContext,
+  satisfiedRegularSlots, slotKey, summarizePlan,
   type PlanAction, type ReconcileContext,
 } from "../src/lib/recurrence";
 import type { Klass, Lesson, ScheduleSlot } from "../src/lib/types";
@@ -59,6 +60,241 @@ function lesson(date: string, start: string, duration: number, over: Partial<Les
 
 const verbs = (actions: PlanAction[], verb: PlanAction["verb"]) => actions.filter((a) => a.verb === verb);
 const ids = (actions: PlanAction[], verb: PlanAction["verb"]) => verbs(actions, verb).map((a) => a.lessonId).sort();
+
+/* --------------------------------- §5.7 — the read-side top-up's slot guard */
+
+describe("§5.7 read-side top-up — which slots still need generating", () => {
+  /** The shape `ensureRegularLessons` reads. The id is present but is never what
+   * decides where a lesson STANDS — it is read only by `originClaim`'s defensive
+   * fallback, for a legacy move that carries no stored origin. */
+  const row = (over: Partial<Lesson> & Pick<Lesson, "id" | "date" | "start">) => ({
+    classId: "c2", type: "regular" as const, duration: 60, ...over,
+  });
+  const asks = (slots: Set<string>, date: string, start: string) => slots.has(slotKey("c2", date, start));
+
+  it("A. a stale, non-canonical id still occupies its slot — no insert", () => {
+    // The c2 case: minted for a 22:00 slot, corrected to 10:00 in place by the
+    // reconciler, id deliberately left alone (ADR-001). The old code computed
+    // `L-c2-2026-07-12-1000`, missed it, and inserted a duplicate.
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-2200", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true, "the 10:00 slot is taken");
+    // …and the slot the id was minted for is claimed too — see the F1 suite below.
+    // The id-keyed upsert this guard replaced protected that slot as a side effect
+    // of its filter matching, so claiming it keeps the guard failing closed.
+    assert.equal(asks(satisfied, "2026-07-12", "22:00"), true, "the id-encoded origin is claimed defensively");
+  });
+
+  it("B. a RESCHEDULED lesson occupies the destination slot it landed on — no insert", () => {
+    const satisfied = satisfiedRegularSlots([
+      row({
+        id: "L-c2-2026-07-10-1000", date: "2026-07-12", start: "10:00",
+        originalDate: "2026-07-10", originalStart: "10:00", originalDuration: 60,
+      }) as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true, "the destination slot is taken");
+    // …and §5.6: the slot it VACATED stays spoken for, so the move is not undone.
+    assert.equal(asks(satisfied, "2026-07-10", "10:00"), true, "the vacated origin slot is still claimed");
+  });
+
+  it("C. a genuinely missing slot is still generated", () => {
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-19", "10:00"), false, "next Sunday has nothing yet");
+    assert.equal(asks(satisfied, "2026-07-15", "16:00"), false, "the Wednesday slot has nothing yet");
+  });
+
+  it("D. the slot a lesson STANDS in never depends on its id", () => {
+    // The id may only ever ADD a defensive claim on a slot the lesson has left.
+    // It can never move, weaken or explain away the slot the lesson occupies now,
+    // which is the coupling ADR-001 exists to remove.
+    const canonical = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    const stale = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-2200", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    const nonsense = satisfiedRegularSlots([
+      row({ id: "whatever-this-is", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    for (const [label, set] of [["canonical", canonical], ["stale", stale], ["nonsense", nonsense]] as const) {
+      assert.equal(asks(set, "2026-07-12", "10:00"), true, `${label}: the occupied slot is satisfied`);
+    }
+    assert.deepEqual([...canonical], [...nonsense], "an unparseable id decides exactly what a canonical one does");
+    // The stale id differs by the defensive origin claim, and by nothing else.
+    assert.deepEqual(
+      [...stale].filter((k) => !canonical.has(k)),
+      [slotKey("c2", "2026-07-12", "22:00")]
+    );
+  });
+
+  it("a Cancelled lesson holds its slot, so the cancellation is not undone (§5.6)", () => {
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00", status: "Cancelled" }) as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true);
+  });
+
+  it("a duration-only difference does NOT justify a second lesson at the same start", () => {
+    // The reconciler corrects duration in place (§2). Generating beside it would
+    // put two lessons on one start time, which is the defect being fixed.
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-2200", date: "2026-07-12", start: "10:00", duration: 45 }) as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true);
+  });
+
+  it("Makeup and Extra lessons never satisfy a recurring slot (§2)", () => {
+    const satisfied = satisfiedRegularSlots([
+      { classId: "c2", type: "makeup", date: "2026-07-12", start: "10:00" } as Lesson,
+      { classId: "c2", type: "extra", date: "2026-07-19", start: "10:00" } as Lesson,
+    ]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), false);
+    assert.equal(asks(satisfied, "2026-07-19", "10:00"), false);
+  });
+
+  it("a slot is only satisfied for its OWN class", () => {
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    assert.equal(satisfied.has(slotKey("c3", "2026-07-12", "10:00")), false);
+  });
+
+  it("the live c2 shape: three lessons on one date leave nothing to generate", () => {
+    const satisfied = satisfiedRegularSlots([
+      row({ id: "L-c2-2026-07-10-1000", date: "2026-07-12", start: "10:00",
+            originalDate: "2026-07-10", originalStart: "10:00", originalDuration: 60 }) as Lesson,
+      row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00" }) as Lesson,
+      row({ id: "L-c2-2026-07-12-2200", date: "2026-07-12", start: "10:00" }) as Lesson,
+    ]);
+    // Sunday 10:00 and the vacated Friday 10:00 are both accounted for, so the
+    // top-up adds nothing — whatever the reconciler later retires. The 22:00 key
+    // is the defensive claim from the `…-2200` id; c2 teaches no Sunday 22:00
+    // slot, so it suppresses nothing.
+    assert.deepEqual([...satisfied].sort(), [
+      slotKey("c2", "2026-07-10", "10:00"),
+      slotKey("c2", "2026-07-12", "10:00"),
+      slotKey("c2", "2026-07-12", "22:00"),
+    ].sort());
+  });
+});
+
+/* ------------- §5.7 — F1/F1b: stored origins win, the id is a legacy fallback */
+
+describe("§5.7 origin claims — stored fields are authoritative, the id is a safety net", () => {
+  const row = (over: Partial<Lesson> & Pick<Lesson, "id" | "date" | "start">) => ({
+    classId: "c2", type: "regular" as const, duration: 60, ...over,
+  });
+  const asks = (slots: Set<string>, date: string, start: string) => slots.has(slotKey("c2", date, start));
+
+  it("1. a legacy in-place correction with no stored origin claims BOTH slots", () => {
+    // F1: the id-keyed upsert this guard replaced protected the id-encoded slot as
+    // an accident of its filter matching. Phase 0 back-filled every legacy move so
+    // this should be unreachable — it is here so the guard fails closed if it isn't.
+    const l = row({ id: "L-c2-2026-07-12-2200", date: "2026-07-12", start: "10:00" }) as Lesson;
+    assert.equal(l.originalDate, undefined, "the premise: nothing was stored");
+
+    const satisfied = satisfiedRegularSlots([l]);
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true, "the slot it stands in");
+    assert.equal(asks(satisfied, "2026-07-12", "22:00"), true, "…and the slot its id was minted for");
+    // So a schedule asking for either time on this date generates nothing.
+    assert.deepEqual(
+      ["10:00", "22:00"].filter((start) => !asks(satisfied, "2026-07-12", start)),
+      [], "neither slot may be topped up"
+    );
+  });
+
+  it("2. originalDate without originalStart falls back to the stored start (F1b)", () => {
+    const l = row({
+      id: "L-c2-2026-07-10-1000", date: "2026-07-12", start: "10:00", originalDate: "2026-07-10",
+    }) as Lesson;
+    assert.equal(l.originalStart, undefined, "the premise: a half-written origin");
+
+    assert.deepEqual(originClaim(l), { date: "2026-07-10", start: "10:00" });
+    // …which is exactly what the planner's own origin resolution does (§5.4).
+    const planner = effectiveOrigin(l, false)!;
+    assert.equal(planner.date, "2026-07-10");
+    assert.equal(planner.start, "10:00", "mirrors effectiveOrigin's `originalStart ?? start`");
+
+    const satisfied = satisfiedRegularSlots([l]);
+    assert.equal(asks(satisfied, "2026-07-10", "10:00"), true, "the origin is claimed, not skipped");
+    assert.equal(asks(satisfied, "2026-07-12", "10:00"), true, "and the destination too");
+  });
+
+  it("3. a canonical id is not evidence of a move — no phantom claim", () => {
+    const l = row({ id: "L-c2-2026-07-12-1000", date: "2026-07-12", start: "10:00" }) as Lesson;
+    assert.equal(originClaim(l), null, "the id agrees with where it sits");
+
+    const satisfied = satisfiedRegularSlots([l]);
+    assert.deepEqual([...satisfied], [slotKey("c2", "2026-07-12", "10:00")]);
+    assert.equal(asks(satisfied, "2026-07-10", "10:00"), false, "the Friday slot is genuinely missing");
+  });
+
+  it("4. a stored origin beats a conflicting id outright", () => {
+    const l = row({
+      id: "L-c2-2026-07-10-2200", date: "2026-07-12", start: "10:00",
+      originalDate: "2026-07-09", originalStart: "16:00", originalDuration: 60,
+    }) as Lesson;
+    assert.deepEqual(originClaim(l), { date: "2026-07-09", start: "16:00" });
+
+    const satisfied = satisfiedRegularSlots([l]);
+    assert.equal(asks(satisfied, "2026-07-09", "16:00"), true, "the recorded origin is claimed");
+    assert.equal(asks(satisfied, "2026-07-10", "22:00"), false, "the id's disagreement is ignored");
+    assert.equal(satisfied.size, 2, "one destination, one origin — the id adds nothing");
+  });
+
+  it("an unparseable id contributes no claim at all", () => {
+    assert.equal(originClaim(row({ id: "objectid-ish", date: "2026-07-12", start: "10:00" }) as Lesson), null);
+  });
+});
+
+/* ------------------------- §5.7 — the two sides agree on the live c2 shape */
+
+describe("§5.7 planner and read-side top-up agree (the c2 regression)", () => {
+  // One Sunday 10:00 slot; on 2026-07-12 a lesson rescheduled onto the date plus
+  // the two plain lessons the forked series left behind, all stored at 10:00.
+  const SUNDAY = "2026-07-12";
+  const sunday: ScheduleSlot = { day: 0, start: "10:00", duration: 60 };
+  const moved = lesson(SUNDAY, "10:00", 60, {
+    id: "L-c1-2026-07-10-1000",
+    originalDate: "2026-07-10", originalStart: "10:00", originalDuration: 60,
+    rescheduledAt: "2026-07-09T08:00:00.000Z",
+  });
+  const plain = lesson(SUNDAY, "10:00", 60); // id …-2026-07-12-1000, the canonical one
+  const stale = lesson(SUNDAY, "10:00", 60, { id: "L-c1-2026-07-12-2200" });
+
+  it("5. the reschedule is skipped, both plain lessons retire, nothing is inserted onto the date", () => {
+    const actions = planClass(klass([sunday]), [moved, plain, stale], ctx());
+
+    assert.deepEqual(ids(actions, "skip"), ["L-c1-2026-07-10-1000"], "the move is frozen, never retired");
+    assert.deepEqual(ids(actions, "retire"), ["L-c1-2026-07-12-1000", "L-c1-2026-07-12-2200"].sort());
+    assert.deepEqual(
+      verbs(actions, "insert").filter((a) => a.date === SUNDAY), [],
+      "the moved lesson occupies the slot, so nothing is generated beside it (§5.6)"
+    );
+    // The later Sundays are untouched by any of this and still fill normally.
+    assert.deepEqual(verbs(actions, "insert").map((a) => a.date).sort(), ["2026-07-19", "2026-07-26"]);
+  });
+
+  it("5b. and the top-up will not regenerate what the planner retires", () => {
+    const held = (slots: Set<string>, date: string, start: string) => slots.has(slotKey("c1", date, start));
+
+    const before = satisfiedRegularSlots([moved, plain, stale]);
+    assert.equal(held(before, SUNDAY, "10:00"), true, "the date is occupied while all three are present");
+    assert.equal(held(before, "2026-07-10", "10:00"), true, "…and the vacated Friday stays spoken for");
+
+    // The state the retire leaves behind: only the rescheduled lesson survives.
+    // This is the case that used to re-fork — the top-up computed the canonical
+    // `L-c1-2026-07-12-1000`, found it deleted, and inserted it straight back.
+    const after = satisfiedRegularSlots([moved]);
+    assert.equal(held(after, SUNDAY, "10:00"), true, "the retired canonical lesson is NOT regenerated");
+    assert.equal(held(after, "2026-07-10", "10:00"), true, "the origin claim survives the retire");
+    assert.equal(planWouldWrite(planClass(klass([sunday]), [moved], ctx()).filter((a) => a.date === SUNDAY)), false,
+      "and the planner has nothing left to do on that date either");
+  });
+});
 
 /* ------------------------------------------------- §2 — editing the schedule */
 
