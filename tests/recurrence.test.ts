@@ -294,6 +294,85 @@ describe("§5.4 rescheduled lessons are frozen", () => {
     // is a duplicate-key error, not merely a lost lesson.
     assert.equal(without.some((a) => a.verb === "insert" && a.lessonId === legacy.id), true);
   });
+
+  it("occupies the slot it now SITS in when the schedule later gains that slot", () => {
+    /* Reported against live class c2. A lesson was moved Friday -> Sunday, and the
+     * Sunday slot was added to the recurring schedule AFTERWARDS. The lesson is
+     * already sitting on Sunday at exactly that time, so the slot is satisfied and
+     * nothing should be generated for it.
+     *
+     * §5.6 only says a rescheduled lesson consumes the slot it VACATED. It is
+     * silent on the slot it now OCCUPIES, and `planDate` implements the section as
+     * written: a frozen lesson whose origin is on another date pushes no claim for
+     * the date it landed on. The desired Sunday slot therefore reads as unsatisfied
+     * and step 6 inserts beside it — a duplicate at the same date, start and
+     * duration, which is the fork this engine exists to prevent.
+     *
+     * Calendar: the app clock is Friday 2026-07-10; July 2026 Sundays are 5, 12,
+     * 19, 26 and Fridays are 3, 10, 17, 24, 31. */
+    const SUN_HOST = "2026-07-12";   // where the lesson now sits
+    const FRI_ORIGIN = "2026-07-10"; // the slot it vacated (the app clock itself)
+    const SUN_REST = ["2026-07-19", "2026-07-26"];
+    const FRI_REST = ["2026-07-17", "2026-07-24", "2026-07-31"];
+    const WED_ALL = ["2026-07-15", "2026-07-22", "2026-07-29"];
+
+    const c = klass([
+      { day: 0, start: "10:00", duration: 60 }, // Sunday   — added AFTER the move
+      { day: 3, start: "16:00", duration: 60 }, // Wednesday
+      { day: 5, start: "10:00", duration: 60 }, // Friday   — the original slot
+    ]);
+
+    // Minted for Friday the 10th, moved onto Sunday the 12th. Its id still encodes
+    // the origin, exactly as the generator left it — ids are never recomputed.
+    const moved = lesson(FRI_ORIGIN, "10:00", 60, {
+      date: SUN_HOST,
+      originalDate: FRI_ORIGIN,
+      originalStart: "10:00",
+      originalDuration: 60,
+      rescheduledAt: "2026-07-09T08:00:00.000Z",
+    });
+
+    const plan = planClass(c, [moved], ctx());
+
+    // 1. the rescheduled lesson is untouched, and its origin survives
+    const mine = plan.filter((a) => a.lessonId === moved.id);
+    assert.deepEqual(mine.map((a) => a.verb), ["skip"], "the moved lesson is only ever skipped");
+    assert.equal(moved.originalDate, FRI_ORIGIN, "origin is not mutated by planning");
+    assert.equal(moved.originalStart, "10:00");
+    assert.equal(moved.originalDuration, 60);
+
+    // 2. NOTHING is generated on the date it now occupies — the slot is taken
+    const onHost = verbs(plan, "insert").filter((a) => a.date === SUN_HOST);
+    assert.deepEqual(
+      onHost.map((a) => `${a.date} ${a.verb === "insert" ? a.start : ""}`), [],
+      "a recurring lesson was generated on top of the rescheduled one"
+    );
+
+    // 3. no two planned lessons share a date + start + duration on that day.
+    // `update` is excluded because it carries from/to rather than a single slot —
+    // and assertion 1 has already established this date produces none.
+    const onHostAll = plan
+      .filter((a): a is Exclude<PlanAction, { verb: "update" }> =>
+        a.date === SUN_HOST && a.verb !== "update" && a.verb !== "retire" && a.verb !== "strand")
+      .map((a) => `${a.date} ${a.start} ${a.duration}`);
+    assert.equal(new Set(onHostAll).size, onHostAll.length, "duplicate date/start/duration on the host date");
+    assert.equal(onHostAll.length, 1, "exactly one lesson stands on the host date");
+
+    // 4. the Friday slot it vacated is NOT refilled for this lesson (§5.6)
+    assert.deepEqual(
+      verbs(plan, "insert").filter((a) => a.date === FRI_ORIGIN).map((a) => a.lessonId), [],
+      "the vacated origin slot was refilled"
+    );
+
+    // 5. every OTHER date in the window is still generated normally
+    assert.deepEqual(
+      ids(plan, "insert"),
+      [...SUN_REST.map((d) => `L-c1-${d}-1000`),
+       ...WED_ALL.map((d) => `L-c1-${d}-1600`),
+       ...FRI_REST.map((d) => `L-c1-${d}-1000`)].sort()
+    );
+    assert.deepEqual(summarizePlan(plan), { keep: 0, update: 0, insert: 8, retire: 0, strand: 0, skip: 1 });
+  });
 });
 
 /* ------------------------------------------------- §6 Phase 4 — filters */

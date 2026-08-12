@@ -435,6 +435,7 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
   // ---- 3. partition into frozen and reconcilable ----
   const reconcilable: Lesson[] = [];
   const claims: string[] = []; // start times a frozen lesson has spoken for on this date
+  const occupied: string[] = []; // …and the slots a moved lesson physically stands in
   for (const l of [...input.actual].sort(byLesson)) {
     const frozen = freezeReasons(l, ctx);
     if (frozen.length === 0) {
@@ -442,10 +443,18 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
       continue;
     }
     out.push({ verb: "skip", classId, date, lessonId: l.id, start: l.start, duration: l.duration, frozen });
-    // A lesson rescheduled ONTO this date claims nothing here — it claims the slot
-    // it vacated, on its origin date, which arrives through `vacated`.
+    // The slot it VACATED. For a lesson moved onto this date from another one that
+    // slot lives on the origin date, and arrives there through `vacated`.
     const origin = effectiveOrigin(l, ctx.legacyOriginFallback);
     if (!origin || origin.date === date) claims.push(origin?.start ?? l.start);
+    // …and the slot it now OCCUPIES (§5.6). A moved lesson is physically standing
+    // on this date at this time, so the schedule asking for a session there is
+    // already satisfied — generating one would put a second lesson on top of a
+    // lesson nobody may touch. Tracked apart from `claims` because it must consume
+    // ONLY an exact match: unlike a vacated slot it never falls through to
+    // `unclaimed`, so it can never take a slot at a different time away from a
+    // genuinely new session on the same day.
+    if (origin) occupied.push(l.start);
   }
   for (const v of input.vacated ?? []) claims.push(v.start);
 
@@ -457,6 +466,15 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
     const i = remaining.findIndex((s) => s.start === start);
     if (i >= 0) remaining.splice(i, 1);
     else unclaimed.push(start);
+  }
+  // Then the slots moved lessons are standing in. Exact start match, and NO
+  // `unclaimed` fallthrough on purpose: a lesson sitting at 14:00 must not absorb
+  // a 10:00 slot the class genuinely still teaches that day. Matching on start
+  // alone mirrors the claims loop above — two lessons may not share a start time,
+  // whatever their durations, and a frozen lesson cannot be corrected anyway.
+  for (const start of occupied) {
+    const i = remaining.findIndex((s) => s.start === start);
+    if (i >= 0) remaining.splice(i, 1);
   }
 
   // ---- 4. exact matches: already correct, nobody needs work ----

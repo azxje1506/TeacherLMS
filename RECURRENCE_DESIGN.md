@@ -191,7 +191,7 @@ Completed or Cancelled is past in the sense that matters, whatever its date.
 | **Archive class** | Generation stops (already true) and **nothing else happens**. An Archived class is outside reconciliation entirely (§5.8, ADR-002): its lessons are never updated, inserted or retired. Retiring its future lessons is a separate one-shot transition action, deliberately **deferred out of Sprint 5.6** and sequenced behind §9.1 — archiving already erases the class's historical revenue, and bolting a second destructive effect onto a defective operation is the wrong order. Accepted consequence: lessons generated before the archive linger until they age out of the window. *(Revised 2026-08-06; previously this row retired future Upcoming lessons.)* |
 | **Restore class** | Generation resumes and the read-side top-up refills the window from the current schedule. Past lessons are already there and are not re-derived. Because archiving now retires nothing, restore has nothing to undo — the round trip is lossless, where the previous rule made it lossy (notes, classroom overrides and homework links on future lessons did not survive it). |
 | **Cancel one lesson** | The lesson stays `Cancelled` forever. The reconciler never resurrects it, never updates it, and never counts its slot as vacant. It remains excluded from revenue unless `chargeable`. |
-| **Reschedule one lesson** | The lesson is **frozen against reconciliation** for good. Its stored origin (`originalDate` / `originalStart` / `originalDuration`) marks the slot it vacated as *satisfied*, so the reconciler does not regenerate a lesson on the original day. Editing the class schedule afterwards must not drag it back. |
+| **Reschedule one lesson** | The lesson is **frozen against reconciliation** for good. Its stored origin (`originalDate` / `originalStart` / `originalDuration`) marks the slot it vacated as *satisfied*, while its current stored date/start/duration mark the slot it now occupies as *occupied*. The reconciler must not regenerate either occurrence on top of the rescheduled lesson. Editing the class schedule afterwards must not drag it back or create another recurring lesson at its current location. |
 | **Edit a lesson's notes** | The lesson carries **human-authored content** and is never retired and never replaced by an insert beside it. It **is** still corrected in place when the schedule moves, keeping its id and its notes: the goal is to preserve what the teacher wrote, not to freeze the lesson at its old time. `classroom` is not a signal — see §5.9. |
 | **Create Extra lesson** | Never generated, never reconciled, never retired. `type !== "regular"` is excluded from the reconciler entirely. |
 | **Create Makeup lesson** | Same. Additionally, the Cancelled Regular it references via `fromId` must never be deleted while the makeup exists. |
@@ -357,10 +357,22 @@ that Tuesday's lesson has been cancelled, the desired pair `10:00` must be treat
 already satisfied — otherwise step 6 inserts a fresh lesson and the cancellation
 silently undoes itself on the next read.
 
-The same applies to a rescheduled lesson, using the slot it *vacated*
-(`originalDate` + `originalStart`), not the slot it now sits in. This is what today's
-id-keyed lookup achieves accidentally: the id stays pinned to the original date, so
-the slot reads as occupied. Under the new design it must be explicit.
+The same applies to a rescheduled lesson, but it occupies two logical slots:
+
+- the slot it *vacated* (`originalDate` + `originalStart` + `originalDuration`), which
+  must remain satisfied so the reconciler does not regenerate the original occurrence;
+- the slot it *now sits in* (`date` + `start` + `duration`), which must also be treated
+  as occupied so a later schedule edit cannot generate a recurring lesson on top of the
+  rescheduled occurrence.
+
+The rescheduled lesson therefore remains frozen in its current position while also
+claiming its original slot. These are separate consumption rules: the origin slot is
+consumed through the reschedule origin, while the current slot is consumed through the
+lesson's actual stored date/start/duration. Neither consumption changes the lesson or
+its origin fields.
+
+This must be explicit in the planner. The lesson id is opaque and must not be used to
+infer either slot.
 
 ### 5.7 Where reconciliation runs
 
