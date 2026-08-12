@@ -25,6 +25,10 @@
 import { dbConnect } from "../src/lib/db";
 import { ClassModel, LessonModel, AttendanceModel, mongoose } from "../src/lib/models";
 import { TODAY_ISO, DOW_FULL } from "../src/lib/constants";
+// The judging itself is pure and lives in src/lib/duplicates.ts, so it can be
+// unit-tested without a database — this file calls `main()` at module load and
+// could never be imported by a test.
+import { judgeDate, noKeep, weekdayOf, type Judged } from "../src/lib/duplicates";
 import type { Klass, Lesson } from "../src/lib/types";
 
 const clean = "-_id -__v";
@@ -36,44 +40,13 @@ const clean = "-_id -__v";
 mongoose.set("autoIndex", false);
 mongoose.set("autoCreate", false);
 
-/** How a lesson in a collided group is classified. */
-type Verdict = "KEEP" | "CANDIDATE" | "RESCHEDULED";
-
-interface Judged {
-  lesson: Lesson;
-  verdict: Verdict;
-  reason: string;
-  /** Reasons this lesson must not be touched by any future migration. */
-  protections: string[];
-}
-
 interface Group {
   klass: Klass;
   date: string;
   weekday: number;
   judged: Judged[];
-  /** True when nothing on this date matches the class's current schedule. */
+  /** True when nothing on this date occupies a slot the class still teaches. */
   noKeep: boolean;
-}
-
-/** Weekday of an ISO date, in local time (matches how the app reads dates). */
-function weekdayOf(iso: string): number {
-  return new Date(iso + "T00:00:00").getDay();
-}
-
-/** The date a generated Regular lesson's id was built for. Null when the id does
- * not follow the generated convention (Makeup `M-…`, Extra `X-…`, ad-hoc ids). */
-function dateFromId(id: string): string | null {
-  return /^L-.+-(\d{4}-\d{2}-\d{2})-\d{4}$/.exec(id)?.[1] ?? null;
-}
-
-/** Has this lesson been deliberately moved? Two signals, because the stored
- * origin fields only exist for moves made after they were introduced: earlier
- * reschedules are only visible as an id whose encoded date no longer matches. */
-function wasMoved(l: Lesson): boolean {
-  if (l.originalDate) return true;
-  const encoded = dateFromId(l.id);
-  return encoded !== null && encoded !== l.date;
 }
 
 async function main() {
@@ -107,48 +80,15 @@ async function main() {
     const klass = classById.get(classId);
     if (!klass) continue;
 
-    const weekday = weekdayOf(date);
-    const slots = (klass.schedule ?? []).filter((s) => s.day === weekday);
+    const judged = judgeDate({ klass, date, lessons: arr, attended, appClock: TODAY_ISO });
+    const group: Group = { klass, date, weekday: weekdayOf(date), judged, noKeep: noKeep(judged) };
 
-    const judged: Judged[] = arr
-      .slice()
-      .sort((a, b) => a.start.localeCompare(b.start))
-      .map((lesson) => {
-        const protections: string[] = [];
-        if (lesson.date < TODAY_ISO) protections.push("past lesson (drives revenue for its month)");
-        if (attended.has(lesson.id)) protections.push("has an attendance record");
-        if (lesson.status === "Cancelled") protections.push("cancelled (a makeup may reference it via fromId)");
-
-        if (wasMoved(lesson)) {
-          return {
-            lesson, protections, verdict: "RESCHEDULED" as const,
-            reason: lesson.originalDate
-              ? `deliberately moved from ${lesson.originalDate}`
-              : `deliberately moved from ${dateFromId(lesson.id)} (pre-dates the stored origin fields)`,
-          };
-        }
-        const match = slots.find((s) => s.start === lesson.start && s.duration === lesson.duration);
-        return match
-          ? {
-              lesson, protections, verdict: "KEEP" as const,
-              reason: "matches the class's current schedule for this weekday",
-            }
-          : {
-              lesson, protections, verdict: "CANDIDATE" as const,
-              reason: slots.length === 0
-                ? "the class no longer teaches on this weekday"
-                : "no slot in the class's current schedule has this start/duration",
-            };
-      });
-
-    // Distinct start times is what separates a forked series from a reschedule
-    // that happened to land on an occupied day.
-    const distinctStarts = new Set(judged.map((j) => j.lesson.start)).size;
-    const group: Group = {
-      klass, date, weekday, judged,
-      noKeep: !judged.some((j) => j.verdict === "KEEP"),
-    };
-    (distinctStarts > 1 ? forks : sameTimeCollisions).push(group);
+    // What separates an actionable group from an informational one is whether
+    // anything on the date is SURPLUS — not whether the lessons happen to share a
+    // start time. Routing on distinct start times is what hid the c2 defect: two
+    // lessons stored at the same 10:00 against a single 10:00 slot were filed as
+    // "never a migration candidate" and never looked at again.
+    (judged.some((j) => j.verdict === "CANDIDATE") ? forks : sameTimeCollisions).push(group);
   }
 
   const byDate = (a: Group, b: Group) => a.klass.name.localeCompare(b.klass.name) || a.date.localeCompare(b.date);
@@ -234,10 +174,11 @@ function report(forks: Group[], collisions: Group[]) {
   if (collisions.length > 0) {
     console.log("");
     console.log(rule);
-    console.log("SAME-TIME COLLISIONS — NOT forked series, listed for completeness");
-    console.log("Two lessons share a date AND a start time. These come from a lesson");
-    console.log("being rescheduled onto a day that already had one, which is a");
-    console.log("teacher's decision. Never a migration candidate.");
+    console.log("NOTHING SURPLUS — listed for completeness, no candidate here");
+    console.log("These dates hold more than one lesson, but every one of them is");
+    console.log("accounted for: a reschedule the teacher placed deliberately, an");
+    console.log("Archived class outside reconciliation, or a slot the schedule");
+    console.log("genuinely still teaches. Not a migration candidate.");
     console.log(rule);
     for (const g of collisions) {
       console.log(`\n  ${g.klass.name} — ${g.date}`);
@@ -256,14 +197,16 @@ function report(forks: Group[], collisions: Group[]) {
   console.log(rule);
   console.log("SUMMARY");
   console.log(rule);
-  console.log(`  Forked class+date groups .................. ${forks.length}`);
-  console.log(`  Groups with no surviving KEEP ............. ${forks.filter((g) => g.noKeep).length}`);
+  const every = [...all, ...collisions.flatMap((g) => g.judged)];
+  console.log(`  Groups holding a surplus lesson ........... ${forks.length}`);
+  console.log(`  Groups with nothing occupying a slot ...... ${forks.filter((g) => g.noKeep).length}`);
   console.log(`  Lessons marked KEEP ...................... ${all.filter((j) => j.verdict === "KEEP").length}`);
   console.log(`  Lessons marked CANDIDATE ................. ${candidates.length}`);
   console.log(`    ...of which PROTECTED (never delete) ... ${candidates.length - removable.length}`);
   console.log(`    ...of which safely removable ........... ${removable.length}`);
-  console.log(`  Lessons marked RESCHEDULED (never touch) . ${all.filter((j) => j.verdict === "RESCHEDULED").length}`);
-  console.log(`  Same-time collisions ..................... ${collisions.length}`);
+  console.log(`  Lessons marked RESCHEDULED (never touch) . ${every.filter((j) => j.verdict === "RESCHEDULED").length}`);
+  console.log(`  Lessons on an Archived class (§5.8) ...... ${every.filter((j) => j.verdict === "ARCHIVED").length}`);
+  console.log(`  Groups with nothing surplus .............. ${collisions.length}`);
   console.log("");
   console.log("  Per affected class:");
   const perClass = new Map<string, { name: string; candidates: number; removable: number }>();
