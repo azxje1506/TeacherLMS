@@ -6,6 +6,32 @@
  */
 
 export type StudentStatus = "Active" | "Trial" | "Paused" | "Archived";
+
+/** A class's lifecycle status.
+ *
+ *  - `Active`   — teaching now. Generates Regular lessons across the rolling
+ *                 window and occupies its weekly slots for the single-teacher
+ *                 conflict rule.
+ *  - `Ended`    — the teaching is over. Generation stops, the slots are released,
+ *                 and the future Upcoming lessons the class still held are retired
+ *                 once, by the ordinary reconciler, on the transition — from NEXT
+ *                 month onward. The current calendar month is deliberately spared,
+ *                 because deleting its lessons would shrink the denominator
+ *                 `computeRevenue` bills that month against (see `planClass`).
+ *                 Everything already taught is untouched: Completed lessons,
+ *                 attendance, homework, billing and the revenue derived from them.
+ *  - `Archived` — hidden from the working list. Generation stops and the slots are
+ *                 released, but NOTHING else happens — the class is outside
+ *                 reconciliation entirely, so whatever future lessons it holds stay
+ *                 exactly where they are (§5.8, ADR-002).
+ *
+ * Ended and Archived are deliberately NOT synonyms, and no code may treat them as
+ * one: Ended is a statement about the teaching, Archived is a statement about the
+ * list. Ending clears the future because the teacher said the class is over;
+ * archiving preserves it because archiving is reversible and says nothing about
+ * whether the class will run again. */
+export type ClassStatus = "Active" | "Ended" | "Archived";
+
 export type AttendanceStatus = "Present" | "Absent" | "Late" | "Excused";
 export type LessonType = "regular" | "makeup" | "extra";
 export type LessonStatus = "Upcoming" | "Completed" | "Cancelled";
@@ -88,7 +114,7 @@ export interface Klass {
   level: string;
   fee: number; // monthly fee, VND
   classroom: string;
-  status: "Active" | "Archived";
+  status: ClassStatus;
   studentIds: string[]; // -> Student.id[]
   notes: string;
   schedule: ScheduleSlot[];

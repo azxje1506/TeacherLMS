@@ -37,7 +37,8 @@ import { createHash } from "node:crypto";
 
 import {
   effectiveOrigin, findArchivedClassLessons, findLegacyReschedules, findOrphanedLessons,
-  freezeReasons, isManuallyEdited, monthOf, planReconciliation, summarizePlan, weekdayOf,
+  freezeReasons, isManuallyEdited, isReconcilableClass, monthOf, planReconciliation,
+  summarizePlan, weekdayOf,
   type PlanAction, type PlanSummary, type PlanVerb, type ReconcileContext, type RetireAction,
 } from "./recurrence";
 import type { Klass, Lesson, LessonStatus, RevenueResult } from "./types";
@@ -181,7 +182,12 @@ export function verifyPhase0(
     if (!klass) {
       notes.push("class no longer exists — the origin cannot be corroborated against a schedule");
     } else {
-      if (klass.status !== "Active") notes.push(`class is ${klass.status} — outside reconciliation (§5.8)`);
+      // Only a class the reconciler will never look at is worth noting here. An
+      // Ended class is still reconciled (toward an empty schedule), so saying it is
+      // "outside reconciliation" would be plainly false.
+      if (!isReconcilableClass(klass.status)) {
+        notes.push(`class is ${klass.status} — outside reconciliation (§5.8)`);
+      }
       const day = weekdayOf(target.originalDate);
       const slots = (klass.schedule ?? []).filter((s) => s.day === day && s.start === target.originalStart);
       if (slots.length === 0) {
@@ -211,9 +217,12 @@ export function verifyPhase0(
 
     // ---- how much this lesson depends on Phase 0 (§6, "only 3 are load-bearing") ----
     const bare = freezeReasons(l, { ...ctx, legacyOriginFallback: false });
+    // "Reconcilable", not "Active": an Ended class retires its future lessons, so
+    // a legacy reschedule on one is MORE exposed without its stored origin, not
+    // less. Reading this as Active-only would under-report the risk.
     const loadBearing =
       bare.length === 0 && l.date >= ctx.appClock && months.has(monthOf(l.date)) &&
-      klass !== null && klass.status === "Active";
+      klass !== null && isReconcilableClass(klass.status);
     if (loadBearing) {
       notes.push("load-bearing: with the fallback off and no back-fill, this lesson becomes a retire candidate");
     }
@@ -468,7 +477,12 @@ export function verifyFutureOrphans(
     }
 
     if (!klass) problems.push("class no longer exists — never reconciled (§5.8)");
-    else if (klass.status !== "Active") problems.push(`class is ${klass.status} — outside reconciliation (ADR-002)`);
+    // A retirement on an Ended class is legitimate — that is how ending clears a
+    // class's future — so only a class genuinely outside reconciliation is a
+    // problem here. Membership test, so an unrecognised status is still refused.
+    else if (!isReconcilableClass(klass.status)) {
+      problems.push(`class is ${klass.status} — outside reconciliation (ADR-002)`);
+    }
 
     const sk = slotKey(a.start, a.duration);
     const left = surplus.get(k)?.get(sk) ?? 0;
@@ -560,6 +574,10 @@ export function verifyProtected(
     if (ctx.homeworked.has(l.id)) why.push("homework");
     const klass = byClass.get(l.classId);
     if (!klass) why.push("class-missing");
+    // ARCHIVED ONLY. This builds the set of lessons NO write verb may touch, and
+    // an Ended class's lessons are the one case where a retire is the intended
+    // outcome — listing them as protected would make the Ended transition report
+    // itself as a violation of its own rules.
     else if (klass.status === "Archived") why.push("class-archived");
 
     if (l.type === "regular" && isManuallyEdited(l)) noteProtected++;
@@ -662,7 +680,13 @@ export interface MigrationReport {
   orphans: { items: OrphanItem[]; ok: boolean; aloneOnDate: number };
   protectedSet: ProtectedReport;
   outOfScope: {
-    archivedClasses: Array<{ classId: string; name: string; lessons: number; from: string; to: string }>;
+    archivedClasses: Array<{
+      classId: string; name: string; lessons: number; from: string; to: string;
+      /** Lessons already settled as Cancelled because their date passed while the
+       * class was Archived (src/lib/lifecycle.ts). Approximate — see
+       * `findArchivedClassLessons`. */
+      cancelledWhileArchived: number;
+    }>;
     classlessLessons: Array<{ lessonId: string; classId: string; date: string; start: string; status: LessonStatus }>;
   };
   /** What still stands between here and enabling RETIRE (5.6.4). */
@@ -684,11 +708,14 @@ export function buildMigrationReport(input: {
   const protectedSet = verifyProtected(classes, lessons, plan.actions, ctx);
 
   const archived = findArchivedClassLessons(classes, lessons, ctx.appClock)
-    .map(({ klass, lessons: lingering }) => {
-      const dates = lingering.map((l) => l.date).sort();
+    .map(({ klass, remaining, cancelledWhileArchived }) => {
+      const dates = remaining.map((l) => l.date).sort();
       return {
-        classId: klass.id, name: klass.name, lessons: lingering.length,
+        classId: klass.id, name: klass.name, lessons: remaining.length,
         from: dates[0], to: dates[dates.length - 1],
+        // Settled by the lesson lifecycle rather than lingering. Counted, not
+        // listed: it is the archive's cost so far, and it never becomes work.
+        cancelledWhileArchived: cancelledWhileArchived.length,
       };
     })
     .sort((a, b) => a.classId.localeCompare(b.classId));

@@ -14,10 +14,27 @@ import { DOW_SHORT, DOW_FULL } from "@/lib/constants";
 
 type ClassStatus = Klass["status"];
 
-/** Soft/solid colour pair per status, drawn from the design's semantic tokens. */
+/** Soft/solid colour pair per status, drawn from the design's semantic tokens.
+ *
+ * Typed as a total Record on purpose: adding a status to `ClassStatus` without a
+ * pair here is a compile error, so no status can reach a screen with no badge.
+ * `Ended` reuses the design's existing amber pair — the same tokens the comp
+ * already uses for "finished, not a problem" — rather than introducing a colour.
+ * Active stays green and Archived stays the muted grey; Ended sits between them
+ * and must not look like either. */
 const STATUS_COLORS: Record<ClassStatus, { soft: string; color: string }> = {
   Active: { soft: "var(--green-soft)", color: "var(--green)" },
+  Ended: { soft: "var(--amber-soft)", color: "var(--amber)" },
   Archived: { soft: "var(--card-2)", color: "var(--muted)" },
+};
+
+/** The toast a completed status change announces. Total over ClassStatus for the
+ * same reason STATUS_COLORS is, and shared by the list and the detail so the two
+ * cannot report the same transition differently. Values are dictionary keys. */
+export const STATUS_TOAST: Record<ClassStatus, string> = {
+  Active: "Class restored",
+  Ended: "Class ended",
+  Archived: "Class archived",
 };
 
 export function classBadgeStyle(status: ClassStatus): React.CSSProperties {

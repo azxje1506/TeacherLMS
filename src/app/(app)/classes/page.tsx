@@ -19,16 +19,19 @@ import { ClassDrawer } from "@/components/classes/class-drawer";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   cardStyle, chipStyle, classBadgeStyle, typeLabel, scheduleDaysLabel, studentText, feeLabel,
-  conflictMessage,
+  conflictMessage, STATUS_TOAST,
 } from "@/components/classes/class-ui";
 import {
   createClass, deleteClass, fetchClasses, classKeys, updateClass, setClassStatus,
   ClassConflictError, type ListParams, type ClassRow,
 } from "@/components/classes/api";
 import { lessonKeys } from "@/components/lessons/api";
-import type { ClassInput } from "@/lib/schemas";
+import { CLASS_STATUSES, type ClassInput } from "@/lib/schemas";
 
-const STATUS_CHIPS = ["All", "Active", "Archived"];
+/* Derived from the one status list, so a lifecycle status can never exist without
+ * a way to filter for it. No new control: the same chip row the comp draws, with
+ * the value set it has always rendered from. */
+const STATUS_CHIPS = ["All", ...CLASS_STATUSES];
 
 export default function ClassesPage() {
   const { t, fmt, lang } = useSettings();
@@ -86,7 +89,7 @@ export default function ClassesPage() {
     onSuccess: (_res, vars) => {
       invalidate();
       setDrawerFor(undefined);
-      toast(t(vars.status === "Archived" ? "Class archived" : "Class restored"));
+      toast(t(STATUS_TOAST[vars.status]));
     },
     onError: (e: Error) => toast(saveErrorText(e), "error"),
   });

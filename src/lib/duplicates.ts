@@ -30,8 +30,12 @@
 import { TODAY_ISO } from "./constants";
 import type { Klass, Lesson, ScheduleSlot } from "./types";
 
-/** How a lesson sharing a class+date with another is classified. */
-export type Verdict = "KEEP" | "CANDIDATE" | "RESCHEDULED" | "ARCHIVED";
+/** How a lesson sharing a class+date with another is classified.
+ *
+ * `ARCHIVED` and `ENDED` are separate verdicts because they mean opposite things
+ * about the class's future, and collapsing them would make the report lie about
+ * one of the two. See `judgeDate`. */
+export type Verdict = "KEEP" | "CANDIDATE" | "RESCHEDULED" | "ARCHIVED" | "ENDED";
 
 export interface Judged {
   lesson: Lesson;
@@ -79,6 +83,9 @@ export function wasMoved(l: Lesson): boolean {
  *  1. **Archived class** → nothing here is a reconciliation candidate at all
  *     (§5.8, ADR-002). A fossil schedule is not intent, so it is not compared
  *     against.
+ *  1a. **Ended class** → also not a candidate, for the opposite reason: it WAS
+ *     reconciled, against an empty schedule, so anything still stored survived
+ *     that pass because it was protected or past.
  *  2. **Build capacity** — one consumable entry per schedule slot the class
  *     teaches that weekday. Two identical slots therefore support two lessons.
  *  3. **Rescheduled lessons first**, and they CONSUME the slot they landed on.
@@ -117,6 +124,29 @@ export function judgeDate(input: JudgeInput): Judged[] {
     .filter((l) => l.type === "regular")
     .slice()
     .sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
+
+  // ---- 1a. ENDED: reconciled already, and reconciled to nothing ----
+  // The opposite case to Archived, and the reason the two need separate verdicts.
+  // An Ended class IS in scope for the reconciler, planned against an empty
+  // schedule, so its future reconcilable lessons were retired when it ended.
+  // Whatever is still stored is therefore either past (a fact that drives a closed
+  // month's revenue) or protected — never a duplicate anyone should act on. Calling
+  // these CANDIDATE would invite deleting exactly the lessons the engine kept on
+  // purpose; calling them ARCHIVED would claim the class still holds a future it
+  // does not.
+  //
+  // The status literals here duplicate `isReconcilableClass` in the planner, and
+  // deliberately so: this detector is diffed AGAINST the planner (§6 Phase 3), so
+  // it re-derives its rules from the design rather than importing them. A shared
+  // helper would make the two agree by construction and the cross-check worthless.
+  if (klass.status === "Ended") {
+    return ordered.map((lesson) => ({
+      lesson,
+      verdict: "ENDED" as const,
+      reason: "the class has Ended — its future lessons were retired when it ended",
+      protections: [...protectionsOf(lesson), "its class has Ended — what remains was kept on purpose"],
+    }));
+  }
 
   if (klass.status === "Archived") {
     return ordered.map((lesson) => ({
@@ -182,8 +212,12 @@ export function judgeDate(input: JudgeInput): Judged[] {
 }
 
 /** True when nothing on this date occupies a slot the class still teaches — the
- * "review by hand" signal. A reschedule or an Archived class counts as occupied:
- * in neither case is the date unexplained. */
+ * "review by hand" signal. A reschedule, an Archived class or an Ended one counts
+ * as occupied: in none of the three is the date unexplained, and raising a manual
+ * review for every date of every finished class would bury the ones that need it. */
 export function noKeep(judged: readonly Judged[]): boolean {
-  return !judged.some((j) => j.verdict === "KEEP" || j.verdict === "RESCHEDULED" || j.verdict === "ARCHIVED");
+  return !judged.some(
+    (j) => j.verdict === "KEEP" || j.verdict === "RESCHEDULED" ||
+      j.verdict === "ARCHIVED" || j.verdict === "ENDED"
+  );
 }

@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ClassDrawer } from "@/components/classes/class-drawer";
 import {
   cardStyle, classBadgeStyle, typeLabel, feeLabel, conflictMessage, RecurringSchedule,
+  STATUS_TOAST,
 } from "@/components/classes/class-ui";
 import { lessonKeys } from "@/components/lessons/api";
 import {
@@ -29,6 +30,7 @@ import {
 } from "@/components/classes/api";
 import { CURRENT_MONTH } from "@/lib/constants";
 import type { ClassInput } from "@/lib/schemas";
+import type { ClassStatus } from "@/lib/types";
 
 const headBtn: React.CSSProperties = {
   height: 36, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 9,
@@ -70,15 +72,21 @@ export default function ClassDetailPage() {
     ),
   });
 
-  /** Archive / restore — a status change through the same update path, from the
-   * header or from the edit drawer's footer. It rebuilds the validated payload
-   * from the stored record and swaps only `status`. */
+  /** Any lifecycle status change, through the same update path, from the header or
+   * from the edit drawer's footer. It rebuilds the validated payload from the
+   * stored record and swaps only `status`.
+   *
+   * Typed on `ClassStatus` rather than the pair the header's two buttons happen to
+   * send, so the whole lifecycle is reachable through this one mutation. The
+   * imported design has no three-state control, so no button offers Ended yet
+   * (PROJECT_RULES, "Missing UI Specification") — the API is the way in until a
+   * design exists. */
   const statusMutation = useMutation({
-    mutationFn: (vars: { status: "Active" | "Archived" }) => setClassStatus(klass!, vars.status),
+    mutationFn: (vars: { status: ClassStatus }) => setClassStatus(klass!, vars.status),
     onSuccess: (_res, vars) => {
       invalidate();
       setEditing(false);
-      toast(t(vars.status === "Archived" ? "Class archived" : "Class restored"));
+      toast(t(STATUS_TOAST[vars.status]));
     },
     onError: (e: Error) => toast(
       e instanceof ClassConflictError ? conflictMessage(e.conflict, lang, fmt) : t(e.message),
@@ -98,7 +106,7 @@ export default function ClassDetailPage() {
     onError: (e: Error) => { setConfirm(false); toast(t(e.message), "error"); },
   });
 
-  function setStatus(next: "Active" | "Archived") {
+  function setStatus(next: ClassStatus) {
     if (klass) statusMutation.mutate({ status: next });
   }
 

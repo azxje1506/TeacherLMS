@@ -177,8 +177,9 @@ function report(forks: Group[], collisions: Group[]) {
     console.log("NOTHING SURPLUS — listed for completeness, no candidate here");
     console.log("These dates hold more than one lesson, but every one of them is");
     console.log("accounted for: a reschedule the teacher placed deliberately, an");
-    console.log("Archived class outside reconciliation, or a slot the schedule");
-    console.log("genuinely still teaches. Not a migration candidate.");
+    console.log("Archived class outside reconciliation, an Ended class whose future");
+    console.log("was already retired, or a slot the schedule genuinely still");
+    console.log("teaches. Not a migration candidate.");
     console.log(rule);
     for (const g of collisions) {
       console.log(`\n  ${g.klass.name} — ${g.date}`);
@@ -206,6 +207,7 @@ function report(forks: Group[], collisions: Group[]) {
   console.log(`    ...of which safely removable ........... ${removable.length}`);
   console.log(`  Lessons marked RESCHEDULED (never touch) . ${every.filter((j) => j.verdict === "RESCHEDULED").length}`);
   console.log(`  Lessons on an Archived class (§5.8) ...... ${every.filter((j) => j.verdict === "ARCHIVED").length}`);
+  console.log(`  Lessons on an Ended class (retired already) ${every.filter((j) => j.verdict === "ENDED").length}`);
   console.log(`  Groups with nothing surplus .............. ${collisions.length}`);
   console.log("");
   console.log("  Per affected class:");

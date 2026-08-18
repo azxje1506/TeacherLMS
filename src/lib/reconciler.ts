@@ -40,7 +40,7 @@ import {
   type Phase0Equivalence, type Phase0Item, type Phase0Verification,
 } from "./migration";
 import {
-  freezeReasons, isManuallyEdited, planClass, reconcileContext,
+  freezeReasons, isManuallyEdited, isReconcilableClass, planClass, reconcileContext,
   statusForDate, summarizePlan, windowMonths,
   type PlanAction, type PlanSummary, type ReconcileContext,
 } from "./recurrence";
@@ -67,7 +67,13 @@ const clean = "-_id -__v";
  *
  * Typed `boolean` rather than inferred deliberately: the executor's retire branch
  * must stay live code, type-checked and lintable, not something the compiler folds
- * away and nobody notices when the flag turns over. */
+ * away and nobody notices when the flag turns over.
+ *
+ * THE ENDED TRANSITION DEPENDS ON THIS FLAG. Setting a class to Ended plans a
+ * retirement for each of its future reconcilable lessons; with the flag off those
+ * retirements would be reported and not executed, and the class would end without
+ * its future clearing. Turning it back off is therefore no longer a safe way to
+ * make reconciliation read-only — it silently changes what Ended means. */
 export const RETIRE_ENABLED: boolean = true;
 
 /* ============================================================================
@@ -262,7 +268,7 @@ export type ViolationCode =
 export const VIOLATION_LABEL: Record<ViolationCode, string> = {
   "past-date": "action dated before the app clock — the past is a fact (§4)",
   "class-mismatch": "action belongs to a different class than the one being reconciled",
-  "class-not-reconcilable": "the class is Archived or missing and has no live intent (§5.8)",
+  "class-not-reconcilable": "the class is Archived, missing, or of an unrecognised status (§5.8)",
   "lesson-missing": "the target lesson no longer exists",
   "lesson-not-regular": "the target lesson is not a Regular lesson (§2)",
   "lesson-frozen": "the target lesson is protected by a §6 Phase 4 filter",
@@ -300,11 +306,15 @@ export function auditPlan(
   const writes = actions.filter((a) => a.verb === "update" || a.verb === "insert" || a.verb === "retire");
   if (writes.length === 0) return out;
 
-  if (!klass || klass.status !== "Active") {
+  // Membership in the reconcilable set, not "is it Archived?": an Ended class is
+  // reconcilable (it retires its future), an Archived one is not, and anything the
+  // engine does not recognise is not either. Written as an allow-list so a status
+  // added later cannot be written to until someone decides it may be.
+  if (!klass || !isReconcilableClass(klass.status)) {
     const a = writes[0];
     add("class-not-reconcilable", a.lessonId, a.date,
       klass ? `class ${klass.id} is ${klass.status}` : "class no longer exists");
-    return out; // nothing below can be meaningful without a live schedule
+    return out; // nothing below can be meaningful without a class in scope
   }
 
   const byId = new Map(input.lessons.map((l) => [l.id, l]));
@@ -432,17 +442,32 @@ async function readReconcileState(classId: string): Promise<ReconcileState> {
 /** Reconcile ONE class's future Regular lessons against its current schedule.
  *
  * The whole pipeline, in the order §6 puts it: read → plan → report → audit →
- * (abort | apply). An Archived class, a missing class, a Makeup and an Extra are
- * excluded before the algorithm begins (§5.8, §2) rather than filtered out
- * inside it.
+ * (abort | apply). An Archived class, a missing class, a class of an unrecognised
+ * status, a Makeup and an Extra are excluded before the algorithm begins (§5.8,
+ * §2) rather than filtered out inside it.
  *
- * Applies UPDATE and INSERT. Retirements are reported only (see RETIRE_ENABLED),
- * and a stranded lesson is by definition untouched (§5.9). */
+ * AN ENDED CLASS IS IN SCOPE, and this is where "Active → Ended retires the
+ * future" actually happens. `updateClass` writes the new status and then calls
+ * this exactly as it does for a schedule edit; `planClass` sees Ended, plans
+ * against an empty schedule, and every future reconcilable Regular lesson comes
+ * back as a retire. No separate transition hook, no second delete path, and no
+ * relaxation of a single protection — the retirement is audited before it is
+ * applied like any other write, and one violation aborts the whole run.
+ *
+ * It is also IDEMPOTENT rather than strictly one-shot, which is the more useful
+ * property: reconciling an already-Ended class plans nothing because there is
+ * nothing left to retire, so a run that was interrupted or aborted is simply
+ * completed by the next update instead of leaving the class half-ended.
+ *
+ * Applies UPDATE, INSERT and RETIRE (see RETIRE_ENABLED); a stranded lesson is by
+ * definition untouched (§5.9). */
 export async function reconcileClass(classId: string): Promise<ReconcileReport> {
   const planned = await readReconcileState(classId);
   const { klass, ctx } = planned;
 
-  if (!klass || klass.status === "Archived") return emptyReport(classId, klass?.name ?? "—", ctx);
+  if (!klass || !isReconcilableClass(klass.status)) {
+    return emptyReport(classId, klass?.name ?? "—", ctx);
+  }
 
   // ---- plan, then REPORT, then audit — all before any write ----
   const actions = planClass(klass, planned.lessons, ctx);
@@ -517,9 +542,11 @@ export async function reconcileClass(classId: string): Promise<ReconcileReport> 
       });
       tally.inserted++;
     } else if (a.verb === "retire" && RETIRE_ENABLED) {
-      // Hard delete (§5.3). Reached only once 5.6.4 flips the flag, and only for
-      // a lesson the plan and the audit have both proved is future, Upcoming,
-      // unattended, unmoved, un-homeworked and un-noted.
+      // Hard delete (§5.3), reached for exactly two reasons: the class's schedule
+      // no longer supports this lesson, or the class has Ended and supports none.
+      // Both arrive here only for a lesson the plan and the audit have BOTH proved
+      // is future, Upcoming, unattended, unmoved, un-homeworked and un-noted — the
+      // Ended path relaxes nothing, it just empties the desired set.
       ops.push({ deleteOne: { filter: { id: a.lessonId } } });
       tally.retired++;
     }

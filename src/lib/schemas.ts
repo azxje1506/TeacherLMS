@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { minutesBetween, overlappingSlotIndexes } from "./calc";
+import type { ClassStatus } from "./types";
 
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -60,6 +61,16 @@ export type StudentInput = z.output<typeof studentSchema>;
 /** The profile's Notes card saves on its own, without the full form. */
 export const studentNotesSchema = z.object({ notes: z.string().default("") });
 
+/* The class lifecycle's fixed option set, kept here for the same reason
+ * RELATIONSHIP_OPTIONS is: one source for the schema's enum and for every screen
+ * that has to enumerate a status, so the two can never drift. `satisfies` ties it
+ * to ClassStatus, so adding a status to the type without adding it here is a
+ * compile error rather than a filter that silently hides records.
+ *
+ * Order is lifecycle order (teaching -> finished -> filed away), which is the
+ * order the list's status chips read in. */
+export const CLASS_STATUSES = ["Active", "Ended", "Archived"] as const satisfies readonly ClassStatus[];
+
 /** Bounds a weekly slot's length must satisfy. One source for the stored shape
  * below and the drawer's From / To form schema. */
 export const SLOT_MIN_MINUTES = 15;
@@ -99,7 +110,7 @@ export const classSchema = z.object({
   level: z.string().optional().default(""),
   fee: z.coerce.number().min(0, "Enter a valid fee"),
   classroom: z.string().optional().default(""),
-  status: z.enum(["Active", "Archived"]).default("Active"),
+  status: z.enum(CLASS_STATUSES).default("Active"),
   studentIds: z.array(z.string()).default([]),
   notes: z.string().optional().default(""),
   schedule: z

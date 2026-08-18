@@ -31,7 +31,14 @@
  *    reconcilable — in-place update is how its notes survive a slot move — and
  *    is reported as `strand` when no slot survives for it at all.
  *  - A class with no live intent is never presented to the algorithm (§5.8,
- *    ADR-002): an Archived class produces no actions of any verb.
+ *    ADR-002): an Archived class produces no actions of any verb, and so does any
+ *    status the engine does not recognise.
+ *  - An Ended class is planned against an EMPTY schedule, so it can only retire,
+ *    strand or skip — never insert, never update. Ending a class clears its future
+ *    through the same protections every other plan passes, not through a separate
+ *    delete path. Its scope starts at NEXT month: the current calendar month is
+ *    excluded so retirement cannot shrink the denominator `computeRevenue` bills
+ *    that month against (see `planClass`).
  *
  * The window/id/status helpers at the top were lifted verbatim out of
  * `src/lib/lessons.ts` so the planner and the live generator cannot drift apart.
@@ -41,7 +48,60 @@ import { toMinutes } from "./calc";
 import {
   CURRENT_MONTH, LESSON_WINDOW_NEXT_MONTHS, LESSON_WINDOW_PREVIOUS_MONTHS, TODAY_ISO,
 } from "./constants";
-import type { Klass, Lesson, LessonStatus, ScheduleSlot } from "./types";
+import type { ClassStatus, Klass, Lesson, LessonStatus, ScheduleSlot } from "./types";
+
+/* ----------------------------------------------------- class lifecycle rules */
+
+/* The two questions every guard in the app is really asking about a class's
+ * status, answered once, here, rather than re-derived as an inline comparison in
+ * a dozen modules. They are separate questions with separate answers, which is
+ * exactly why `status === "Archived"` was never a safe thing to search-and-replace
+ * once a third status existed. */
+
+/** Classes that are TEACHING RIGHT NOW.
+ *
+ * Only these generate Regular lessons (`ensureRegularLessons`), and only these
+ * occupy a weekly slot for the single-teacher overlap rule
+ * (`assertNoScheduleConflict` / `scheduleAvailability`).
+ *
+ * Ended and Archived are both absent, for the same reason and with the same
+ * effect: neither will teach in its current state, so neither may hold the
+ * teacher's time against a class that will. What separates them is what happens
+ * to the lessons already generated — see RECONCILABLE_CLASS_STATUSES. */
+export const TEACHING_CLASS_STATUSES = ["Active"] as const satisfies readonly ClassStatus[];
+
+/** Classes the reconciler may act on, and what each is reconciled TOWARD:
+ *
+ *  - `Active` — toward its own schedule. Insert what is missing, correct what
+ *    moved, retire what no slot supports.
+ *  - `Ended`  — toward NOTHING. Its desired set is empty by construction (see
+ *    `planClass`), so the only verbs it can produce are retire, strand and skip:
+ *    no insert and no update is representable for an Ended class. That is what
+ *    lets "ending a class clears its future" reuse the ordinary reconciliation
+ *    machinery — every §6 Phase 4 protection, the audit, the strand rule for
+ *    teacher's notes — instead of adding a second, unguarded delete path.
+ *
+ * `Archived` is deliberately absent (§5.8, ADR-002). An archived class has
+ * withdrawn its intent without saying its teaching is over, so comparing its
+ * fossil schedule against its lessons would turn one reversible list decision
+ * into hundreds of irreversible hard deletes. Archive is not a quiet Ended. */
+export const RECONCILABLE_CLASS_STATUSES = ["Active", "Ended"] as const satisfies readonly ClassStatus[];
+
+/* Both predicates take a plain `string` and test for MEMBERSHIP of an allow-list
+ * rather than for the statuses they exclude. An unrecognised value — a
+ * hand-edited document, a status a later sprint adds and forgets to wire up — is
+ * therefore neither teaching nor reconcilable: it generates nothing, occupies
+ * nothing, and is never written to. That is §6 Phase 4's "excluded unless it
+ * positively proves it is safe" applied to class status, and it is the reason
+ * these are not written as `!== "Archived"`. */
+
+export function isTeachingClass(status: string): boolean {
+  return (TEACHING_CLASS_STATUSES as readonly string[]).includes(status);
+}
+
+export function isReconcilableClass(status: string): boolean {
+  return (RECONCILABLE_CLASS_STATUSES as readonly string[]).includes(status);
+}
 
 /* ------------------------------------------------------- rolling-window utils */
 
@@ -88,6 +148,17 @@ export function regularId(classId: string, date: string, start: string): string 
  * otherwise Upcoming. Cancellation is only ever a user action. */
 export function statusForDate(date: string, appClock: string = TODAY_ISO): LessonStatus {
   return date < appClock ? "Completed" : "Upcoming";
+}
+
+/** Is this date behind the app clock?
+ *
+ * `date === appClock` is NOT past. Today's lesson is still to be taught, which is
+ * the convention `statusForDate` above encodes (today generates as `Upcoming`) and
+ * the one `planDate` applies (it returns no actions for `date < ctx.appClock`, so
+ * today is in scope). Stated once, here, so a third caller cannot invent a
+ * different edge — the reason this module holds the window helpers at all. */
+export function isPastDate(date: string, appClock: string = TODAY_ISO): boolean {
+  return date < appClock;
 }
 
 /** Weekday of an ISO date, in local time (matches how the app reads dates). */
@@ -173,29 +244,59 @@ export function findOrphanedLessons(
   return lessons.filter((l) => !known.has(l.classId));
 }
 
-/** An Archived class and the future lessons it still holds.
+/** What an Archived class still holds, split by whether it is still recoverable.
  *
  * ADR-002 removes these from reconciliation, and §5.8 requires them to stay
  * VISIBLE: generation already stopped at archive, so the set never grows, but the
  * lessons keep appearing on the Calendar and Lesson List until they age out of
  * the rolling window. Being visible is not the same as being in scope — nothing
- * here is ever planned, and retiring them is a separate one-shot action belonging
- * to the archive transition (ADR-002 decision 4).
+ * here is ever planned.
+ *
+ * TWO SETS, BECAUSE THE LIFECYCLE GIVES THEM DIFFERENT MEANINGS. Once a lesson's
+ * date passes under an Archived class it is settled as `Cancelled`
+ * (src/lib/lifecycle.ts), which is precisely when a single `Upcoming`-only filter
+ * would have dropped it — the report would have emptied itself at the exact moment
+ * archiving started having an effect. So:
+ *
+ *  - `remaining` — still in the future and still `Upcoming`. What a Restore would
+ *    recover: these resume as scheduled and are never regenerated on top of.
+ *  - `cancelledWhileArchived` — already settled. What the archive has cost so far,
+ *    and the audit trail behind a reduced month.
+ *
+ * `cancelledWhileArchived` IS APPROXIMATE, and deliberately so. The lifecycle and
+ * `cancelLesson` write the same document, so a lesson the teacher cancelled before
+ * the archive appears here too; the data model has no historical attribution and
+ * this gate does not add one. The one discriminator the data does support:
+ * `chargeable === true` can only be a teacher's cancellation, since the lifecycle
+ * always writes `false`. Nothing depends on telling them apart — revenue, restore
+ * and reconciliation all treat `Cancelled` as `Cancelled` — so the imprecision is
+ * confined to this report.
+ *
+ * ARCHIVED ONLY, and that is the whole point of the function. An Ended class has
+ * no lingering set to report: ending is reconciled (`planClass` plans it toward an
+ * empty schedule), so its future reconcilable lessons are retired on the
+ * transition rather than left behind. What survives an Ended transition survives
+ * because it is PROTECTED — cancelled, attended, homeworked, deliberately
+ * rescheduled or carrying teacher's notes — and a protected lesson is not
+ * lingering, it is being kept on purpose. Reporting those here would read as a
+ * backlog when it is the correct outcome.
  *
  * Not window-filtered: a lingering lesson is lingering whether or not the current
- * window reaches it. */
+ * window reaches it. A class is reported when EITHER set is non-empty. */
 export function findArchivedClassLessons(
   classes: readonly Klass[],
   lessons: readonly Lesson[],
   appClock: string = TODAY_ISO
-): Array<{ klass: Klass; lessons: Lesson[] }> {
-  const out: Array<{ klass: Klass; lessons: Lesson[] }> = [];
+): Array<{ klass: Klass; remaining: Lesson[]; cancelledWhileArchived: Lesson[] }> {
+  const out: Array<{ klass: Klass; remaining: Lesson[]; cancelledWhileArchived: Lesson[] }> = [];
   for (const c of classes) {
     if (c.status !== "Archived") continue;
-    const lingering = lessons.filter(
-      (l) => l.classId === c.id && l.type === "regular" && l.date >= appClock && l.status === "Upcoming"
-    );
-    if (lingering.length > 0) out.push({ klass: c, lessons: lingering });
+    const mine = lessons.filter((l) => l.classId === c.id && l.type === "regular");
+    const remaining = mine.filter((l) => l.date >= appClock && l.status === "Upcoming");
+    const cancelledWhileArchived = mine.filter((l) => l.date < appClock && l.status === "Cancelled");
+    if (remaining.length > 0 || cancelledWhileArchived.length > 0) {
+      out.push({ klass: c, remaining, cancelledWhileArchived });
+    }
   }
   return out;
 }
@@ -481,13 +582,20 @@ export interface DateReconcileInput {
   classId: string;
   date: string;
   /** Slots from `Class.schedule` matching this date's weekday. Empty when the
-   * class no longer teaches that weekday, or is Archived. */
+   * class no longer teaches that weekday, or when it has Ended (an Ended class is
+   * planned against an empty schedule — see `planClass`). An Archived class never
+   * reaches this function at all. */
   desired: readonly DesiredSlot[];
   /** The Regular lessons stored for this `(classId, date)`. */
   actual: readonly Lesson[];
   /** Slots this date lost to reschedules — the origin of a lesson that has been
    * moved to ANOTHER date. They are still occupied (§5.6). */
   vacated?: readonly DesiredSlot[];
+  /** Overrides the sentence a retire/strand action explains itself with. The
+   * default is derived from `desired`, which reads correctly for a schedule edit
+   * ("no slot has this start") but not for an Ended class, whose empty desired set
+   * means something else entirely. Presentation only — it changes no decision. */
+  retireReason?: string;
 }
 
 const byStart = (a: DesiredSlot, b: DesiredSlot) => a.start.localeCompare(b.start);
@@ -639,9 +747,9 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
   // ...unless a teacher has written on it, which is never deleted (§5.9). The
   // note exists nowhere else and retire is a hard delete, so the lesson is left
   // exactly where it is and reported as stranded for a human to resolve.
-  const reason = input.desired.length === 0
+  const reason = input.retireReason ?? (input.desired.length === 0
     ? "the class no longer teaches on this weekday"
-    : "no slot in the class's current schedule has this start/duration";
+    : "no slot in the class's current schedule has this start/duration");
   for (const l of dropped) {
     out.push(
       isManuallyEdited(l)
@@ -671,15 +779,71 @@ export function planDate(input: DateReconcileInput, ctx: ReconcileContext): Plan
  * an orphan BY DEFINITION rather than by evidence — one class-level decision
  * re-expressed as hundreds of independent hard deletes. Class status is not a
  * second, hidden input capable of mass deletion. Those lessons are reported
- * instead, by `findArchivedClassLessons`. */
+ * instead, by `findArchivedClassLessons`. Anything that is not a recognised
+ * reconcilable status returns the same way, so an unknown value fails closed.
+ *
+ * AN ENDED CLASS IS PLANNED AGAINST AN EMPTY SCHEDULE, and that single line is
+ * the entire "retire the future on Ended" feature. It is not the same move ADR-002
+ * rejected for Archived, and the difference is evidence: a teacher setting a class
+ * to Ended has SAID the teaching is over, so `desired = []` is that statement
+ * expressed in the planner's own vocabulary, not an accident of reading a fossil.
+ * Everything else follows from machinery that already exists and is already
+ * proven — a frozen lesson is still skipped, a noted lesson is still stranded
+ * rather than deleted, the past is still untouchable, and `auditPlan` still
+ * re-checks every action against freshly read data before a byte is written.
+ * Because the desired set is empty, no insert and no update is even representable
+ * here: the only verbs an Ended class can produce are skip, strand and retire.
+ *
+ * An Ended class's scope starts at NEXT month, never this one — see the comment on
+ * `inWindow` below for why, and for what that leaves behind.
+ *
+ * The stored `schedule` is deliberately left alone on the record — it is what a
+ * restore to Active reconciles from, and what Class Detail still displays. */
 export function planClass(klass: Klass, lessons: readonly Lesson[], ctx: ReconcileContext): PlanAction[] {
-  if (klass.status === "Archived") return [];
+  if (!isReconcilableClass(klass.status)) return [];
+  const ended = klass.status === "Ended";
 
   const months = new Set(ctx.months);
-  const inWindow = (date: string) => months.has(monthOf(date)) && date >= ctx.appClock;
+
+  // THE CURRENT CALENDAR MONTH IS OUT OF SCOPE FOR AN ENDED CLASS (stopgap).
+  //
+  // Retiring a lesson DELETES the document (§5.3), and `computeRevenue`
+  // (src/lib/finance.ts) derives its per-lesson value from `c.fee ÷ the Regular
+  // lessons still STORED for that month`. Deleting this month's remaining lessons
+  // therefore shrinks that denominator and inflates what the month reports for the
+  // lessons already taught: a class ended halfway through a month would bill the
+  // FULL monthly fee for half a month's teaching, because the surviving lessons
+  // are exactly the completed ones.
+  //
+  // The month containing the app clock is the only month where that can happen —
+  // revenue counts `Completed` lessons, retirement only reaches dates on or after
+  // the clock, and `statusForDate` makes a lesson Completed only when its date is
+  // already behind the clock. So excluding this one month closes the whole
+  // exposure without touching the finance engine.
+  //
+  // This is a STOPGAP for a defect that is really in the denominator, not in
+  // retirement. It is applied here because this is the only place that can close
+  // it without changing how revenue is calculated, and the alternatives all
+  // require deciding what "scheduled at the time" means — a business question that
+  // is deliberately still open. Accepted cost: an Ended class's remaining lessons
+  // for THIS month stay stored and stay Upcoming, so they keep appearing on the
+  // Calendar and the Lesson List until the month passes and they age out of the
+  // window. They are never added to (generation excludes Ended) and never grow.
+  //
+  // ENDED ONLY, deliberately. An Active class's schedule edit still reconciles the
+  // current month exactly as it always has: moving or dropping a slot changes when
+  // lessons happen, and the month's billed lesson count moves with it by design.
+  // Archived is untouched — it is not reconciled at all.
+  const currentMonth = monthOf(ctx.appClock);
+  const inWindow = (date: string) =>
+    months.has(monthOf(date)) &&
+    date >= ctx.appClock &&
+    (!ended || monthOf(date) > currentMonth);
 
   const regulars = lessons.filter((l) => l.classId === klass.id && l.type === "regular");
-  const schedule: ScheduleSlot[] = klass.schedule ?? [];
+  // Ended: no desired slots on any weekday, so every reconcilable future lesson
+  // IN SCOPE falls through to step 7 and is retired (or stranded, if it has notes).
+  const schedule: ScheduleSlot[] = ended ? [] : (klass.schedule ?? []);
 
   const byDate = new Map<string, Lesson[]>();
   const vacatedByDate = new Map<string, DesiredSlot[]>();
@@ -718,6 +882,9 @@ export function planClass(klass: Klass, lessons: readonly Lesson[], ctx: Reconci
           desired: schedule.filter((s) => s.day === weekday).map((s) => ({ start: s.start, duration: s.duration })),
           actual: byDate.get(date) ?? [],
           vacated: vacatedByDate.get(date) ?? [],
+          retireReason: ended
+            ? "the class has Ended — it teaches no further lessons"
+            : undefined,
         },
         ctx
       )

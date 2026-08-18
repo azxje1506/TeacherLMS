@@ -198,6 +198,19 @@ describe("scope and identity", () => {
     assert.equal(noKeep(j), false);
   });
 
+  it("an Ended class yields no candidates either, under its own verdict", () => {
+    // Not folded into ARCHIVED: the two say opposite things about the class's
+    // future, and the detector is read by a person deciding what to delete. An
+    // Ended class's future was already retired by the reconciler, so anything
+    // still stored survived that pass because it was past or protected.
+    const j = judge(klass([SUN_SLOT], { status: "Ended" }), [
+      lesson("L-c2-2026-07-12-1000"), lesson("L-c2-2026-07-12-2200"),
+    ]);
+    assert.deepEqual(j.map((x) => x.verdict), ["ENDED", "ENDED"]);
+    assert.deepEqual(removable(j), []);
+    assert.equal(noKeep(j), false, "an ended class's date is explained, not unexplained");
+  });
+
   it("a legacy move with no stored origin is still RESCHEDULED", () => {
     const legacy = lesson("L-c2-2026-07-10-1000"); // id encodes the 10th, sits on the 12th
     assert.equal(wasMoved(legacy), true);

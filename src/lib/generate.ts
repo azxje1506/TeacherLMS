@@ -50,7 +50,13 @@ export function deriveData(classes: Klass[], students: Student[]): DerivedData {
   const studentById = new Map(students.map((s) => [s.id, s]));
 
   for (const c of classes) {
-    if (c.status === "Archived") continue;
+    // ACTIVE ONLY, matching the runtime generator (`ensureRegularLessons`) rather
+    // than the old `=== "Archived"` test, which would have derived a full timetable
+    // — future Upcoming lessons included, since MONTHS runs to the end of the
+    // current month — for a class the seed had marked as finished. No seeded class
+    // is Ended today, so this changes nothing about the data `npm run seed`
+    // produces; it decides the question before the first one exists.
+    if (c.status !== "Active") continue;
 
     for (const month of MONTHS) {
       // ---- Regular lessons for the month ----

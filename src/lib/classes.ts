@@ -30,6 +30,8 @@ import {
   formatReconcileReport, hasTeachingHistory, readTeachingHistory, reconcileClass,
   type ReconcileReport, type TeachingHistory,
 } from "./reconciler";
+import { isTeachingClass, TEACHING_CLASS_STATUSES } from "./recurrence";
+import { advanceLessonLifecycle } from "./lifecycle";
 import type { Klass, ScheduleAvailability, ScheduleConflict, Student } from "./types";
 import { SLOT_MAX_MINUTES, SLOT_MIN_MINUTES, type ClassInput } from "./schemas";
 
@@ -142,7 +144,9 @@ export async function listClasses(query: ClassQuery = {}): Promise<ClassListResu
     );
   }
 
-  // ---- filter: status chip (All / Active / Archived) ----
+  // ---- filter: status chip (All / Active / Ended / Archived) ----
+  // Compared as data against whatever the chip sent, so the set of statuses lives
+  // in CLASS_STATUSES alone and this line never needed changing to gain one.
   const status = query.status ?? "";
   if (status && status !== "All") rows = rows.filter((c) => c.status === status);
 
@@ -215,21 +219,26 @@ export class ScheduleConflictError extends Error {
   }
 }
 
-/** Single-teacher rule: no two **Active** classes may share an overlapping
+/** Single-teacher rule: no two **teaching** classes may share an overlapping
  * weekly slot (same weekday + overlapping time range). Rejects the create/update
- * when the incoming schedule clashes with any OTHER Active class.
+ * when the incoming schedule clashes with any OTHER teaching class.
  *
- * - Only Active classes participate — archiving a class never conflicts, and
- *   archived classes are ignored as candidates.
+ * - Only classes that are TEACHING participate (`TEACHING_CLASS_STATUSES` —
+ *   Active alone). Ending or archiving a class therefore RELEASES its slots: it
+ *   can no longer conflict with anything, and nothing conflicts with it. That is
+ *   deliberate for both, and for the same reason — a class that is not teaching
+ *   has no claim on the teacher's Tuesday evening — but the consequence is worth
+ *   naming: reopening an Ended class, or restoring an Archived one, is re-checked
+ *   against everything that moved in meanwhile and can be rejected with 409.
  * - The class being updated is excluded by id.
  * - Overlap reuses calc.overlaps (the interval test `startA < endB && endA >
  *   startB`), so back-to-back slots (end === next start) do NOT conflict.
- * - O(other Active classes × slots); per-class slot counts are tiny. */
+ * - O(other teaching classes × slots); per-class slot counts are tiny. */
 async function assertNoScheduleConflict(id: string | null, input: ClassInput): Promise<void> {
-  if (input.status !== "Active") return; // an archived class can't conflict
+  if (!isTeachingClass(input.status)) return; // a class that isn't teaching can't conflict
   await dbConnect();
   const others = await ClassModel.find({
-    status: "Active",
+    status: { $in: [...TEACHING_CLASS_STATUSES] },
     ...(id ? { id: { $ne: id } } : {}),
   })
     .select("id name level schedule -_id")
@@ -278,9 +287,11 @@ export interface AvailabilityQuery {
 /** Read-only scheduling aid for the create/edit drawer. Answers two questions
  * for a proposed set of weekdays at one time range:
  *
- * - `conflicts` — which OTHER Active classes already occupy that range. This is
- *   a preview of assertNoScheduleConflict (same `overlaps` test, same Active-only
- *   rule), never a replacement: the API still rejects a clashing save with 409.
+ * - `conflicts` — which OTHER teaching classes already occupy that range. This is
+ *   a preview of assertNoScheduleConflict (same `overlaps` test, same
+ *   teaching-only rule), never a replacement: the API still rejects a clashing
+ *   save with 409. An Ended or Archived class is not shown as a conflict because
+ *   it does not hold its slot.
  * - `suggestions` — free windows of the same length, shared by EVERY requested
  *   weekday, inside the teaching-day window. Candidates are the earliest and the
  *   latest start of each free run, ranked by nearness to what the teacher typed. */
@@ -301,7 +312,7 @@ export async function scheduleAvailability(q: AvailabilityQuery = {}): Promise<S
 
   await dbConnect();
   const others = await ClassModel.find({
-    status: "Active",
+    status: { $in: [...TEACHING_CLASS_STATUSES] },
     ...(q.excludeId ? { id: { $ne: q.excludeId } } : {}),
   })
     .select("id name level schedule -_id")
@@ -392,11 +403,39 @@ export async function createClass(input: ClassInput): Promise<Klass> {
  * from that intent are corrected. Before this existed, a schedule edit forked the
  * series and the old one was never reachable again (§1.4).
  *
- * Archive and restore are NOT separate triggers. They arrive here as ordinary
- * updates with `status` swapped, and the reconciler's own rules settle both: an
- * Archived class is outside reconciliation entirely, so archiving plans nothing
- * and destroys nothing; a restored class is Active again, so the same pass that
- * corrects a schedule edit refills its window.
+ * NO STATUS CHANGE IS A SEPARATE TRIGGER — archive, restore, end and reopen all
+ * arrive here as ordinary updates with `status` swapped, and the reconciler's own
+ * rules settle every one of them:
+ *
+ *  - **Archive** plans nothing and destroys nothing: an Archived class is outside
+ *    reconciliation entirely (§5.8, ADR-002), so its future lessons stay put.
+ *  - **Restore** makes the class Active again, so the same pass that corrects a
+ *    schedule edit refills its window.
+ *  - **End** (Active → Ended) is planned against an empty schedule, so every
+ *    future reconcilable Regular lesson FROM NEXT MONTH ON comes back as a retire
+ *    and is executed here — the one-shot clearing of the class's future, done by
+ *    the reconciler rather than by a second delete path bolted onto this function.
+ *    The current calendar month is out of scope on purpose (see `planClass`):
+ *    deleting its lessons would inflate what that month reports as revenue.
+ *    Nothing already taught is in scope either — the past cannot enter a plan
+ *    (§4), and cancelled, attended, homeworked and rescheduled lessons are frozen.
+ *    A lesson carrying teacher's notes is STRANDED rather than retired (§5.9) — it
+ *    survives the transition on purpose, and is reported for a person to resolve.
+ *  - **Reopen** (Ended → Active) restores live intent; the next read-side top-up
+ *    and this same pass regenerate the window from the current schedule. Retired
+ *    lessons are not resurrected individually — they are re-derived, which is what
+ *    makes the round trip work without storing a tombstone for every deletion.
+ *
+ * This is why the transition needs no dedicated endpoint: the status is data, and
+ * the consequences of changing it are already expressed as reconciliation.
+ *
+ * SEPARATELY FROM RECONCILIATION, and BEFORE the new status is written, this
+ * function resolves the lesson lifecycle (`advanceLessonLifecycle`,
+ * src/lib/lifecycle.ts). That is what makes Archive → Restore deterministic: a
+ * lesson whose date passed while the class was Archived is settled as `Cancelled`
+ * while that status is still stored, so restoring can never turn it into
+ * recognised revenue. See the comment at the call site for why the order is
+ * load-bearing.
  *
  * The class write is authoritative and already committed when reconciliation
  * runs. A reconciliation that ABORTS (§6 Phase 4 — the plan disagreed with the
@@ -410,6 +449,37 @@ export async function updateClass(id: string, input: ClassInput): Promise<Klass 
   if (!existing) return null;
   await assertNoScheduleConflict(id, input);
   const doc = applyInput(input, id, existing.color, existing);
+
+  // RESOLVE THE LESSON LIFECYCLE FIRST, WHILE THE OLD STATUS IS STILL STORED.
+  //
+  // `advanceLessonLifecycle` reads the class's status when it RUNS, not when the
+  // lesson's date passed. Archive a class, let one of its lesson dates go by, and
+  // open the app for the first time only after a Restore: that lesson would be
+  // judged against an Active class and become `Completed`, recognising revenue for
+  // a session nobody taught. Resolving here — before the status is overwritten —
+  // removes the window without needing an `archivedAt` field, because the only
+  // thing that can change the answer is a status change and every status change
+  // resolves first. This function is the sole writer of `Class.status`, so the one
+  // hook is total.
+  //
+  // It runs on every update, not only on a status change: an update that leaves
+  // the status alone resolves the same lessons to the same values, so the extra
+  // pass is a no-op rather than a special case someone has to remember to trigger.
+  //
+  // Failure is logged and the update proceeds, matching how a failed
+  // reconciliation is handled below: the class write is what the teacher asked for
+  // and is authoritative, and refusing it would report a lost edit that was not
+  // lost. The log names the consequence so the failure is never silent.
+  try {
+    await advanceLessonLifecycle(id);
+  } catch (e) {
+    console.error(
+      `[lifecycle] failed for class ${id} before a ${existing.status} -> ${input.status} change;` +
+      " past Upcoming lessons will be resolved against the NEW status on the next pass",
+      e
+    );
+  }
+
   await ClassModel.updateOne({ id }, { $set: doc });
 
   let report: ReconcileReport | null = null;
@@ -445,8 +515,9 @@ export type ClassDeleteResult =
 /** Delete the Class record only — and only when the class has never taught.
  *
  * BLOCKED whenever the class holds any past lesson, attendance record or billing
- * record (RECURRENCE_DESIGN §2, "Delete entire class"). **Archive is the only
- * supported way to retire a class that has taught anything.**
+ * record (RECURRENCE_DESIGN §2, "Delete entire class"). **Ending or archiving is
+ * the only supported way to retire a class that has taught anything** — End when
+ * the teaching is genuinely over, Archive to get it out of the working list.
  *
  * The reason is that this delete has no cascade and never will: it removes the
  * Class row and leaves every lesson behind, orphaned. Those lessons then render

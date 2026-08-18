@@ -4,7 +4,10 @@
  * (a fixed baseline that does NOT shrink when lessons are cancelled). A student's
  * contribution for a completed lesson is added unless they were Absent. Cancelled
  * lessons are excluded unless flagged chargeable. Extra lessons add on top.
- * Makeup and Extra count toward revenue; Upcoming lessons never do. */
+ * Makeup and Extra count toward revenue; Upcoming lessons never do.
+ *
+ * Revenue never reads a class's CURRENT status — see the note in computeRevenue.
+ * Ending or archiving a class changes what it will teach, not what it taught. */
 
 import type { AllData, } from "./repo";
 import type { RevenueResult, AttendanceStatus } from "./types";
@@ -17,13 +20,38 @@ const inMonth = (iso: string, month: string) => iso.startsWith(month);
 export function computeRevenue(month: string, data: FinanceInput): RevenueResult {
   const { classes, students, lessons, attendance } = data;
   const attByLesson = new Map(attendance.map((a) => [a.lessonId, a.entries]));
+  // NOTE: the same "current status hides past facts" shape as §9.1 survives here
+  // on the STUDENT side — archiving a student removes their contribution from
+  // every past month too. Left exactly as it was: it is a different entity with a
+  // different status model (Trial / Paused as well as Archived) and its own
+  // enrolment questions, and changing it was not part of the class-lifecycle work.
+  // Recorded so it is not mistaken for something this change already covered.
   const activeStudentIds = new Set(students.filter((s) => s.status !== "Archived").map((s) => s.id));
 
   const byType = { regular: 0, makeup: 0, extra: 0 };
   const perClass: { classId: string; name: string; amount: number }[] = [];
 
+  // EVERY class is visited, whatever its current status.
+  //
+  // This loop used to open with `if (c.status === "Archived") continue;`, which
+  // meant archiving a class erased its revenue from every month — including months
+  // already closed, already reported and already shown to a parent (the defect
+  // recorded as RECURRENCE_DESIGN §9.1). It also made the three headline figures
+  // disagree with one another, because `teachingHours` and `attendanceRate` below
+  // iterate lessons and never saw the filter.
+  //
+  // Revenue is a fact about lessons that were taught, so it is derived from
+  // lessons and never from the class's status TODAY. A class that taught through
+  // June and Ended in July keeps its June revenue, and keeps it again when it is
+  // Archived in August; nothing about a status change in one month can reach back
+  // into another. That also removes the need to know "was this class Active at the
+  // time?" — a question the data cannot answer, since status is a single mutable
+  // field with no history (§9.1's stated obstacle).
+  //
+  // Nothing leaks forward, either: the only lessons that count are Completed ones
+  // (plus chargeable Cancelled), and neither Ending nor Archiving a class can turn
+  // a future lesson into a Completed one.
   for (const c of classes) {
-    if (c.status === "Archived") continue;
     const monthLessons = lessons.filter((l) => l.classId === c.id && inMonth(l.date, month));
     const regularScheduled = monthLessons.filter((l) => l.type === "regular").length;
     if (regularScheduled === 0) continue;

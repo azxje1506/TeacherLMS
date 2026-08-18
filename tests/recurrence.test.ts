@@ -24,9 +24,10 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  effectiveOrigin, findArchivedClassLessons, findLegacyReschedules, findOrphanedLessons,
-  isManuallyEdited, originClaim, originFromId, planClass, planWouldWrite, reconcileContext,
-  satisfiedRegularSlots, slotKey, summarizePlan,
+  datesForWeekday, effectiveOrigin, findArchivedClassLessons, findLegacyReschedules,
+  findOrphanedLessons, isManuallyEdited, isPastDate, originClaim, originFromId, planClass,
+  planWouldWrite, reconcileContext, satisfiedRegularSlots, slotKey, statusForDate,
+  summarizePlan,
   type PlanAction, type ReconcileContext,
 } from "../src/lib/recurrence";
 import type { Klass, Lesson, ScheduleSlot } from "../src/lib/types";
@@ -178,6 +179,118 @@ describe("§5.7 read-side top-up — which slots still need generating", () => {
       slotKey("c2", "2026-07-12", "10:00"),
       slotKey("c2", "2026-07-12", "22:00"),
     ].sort());
+  });
+});
+
+/* ------------- §5.7 — the read-side top-up never generates into the past */
+
+describe("§5.7 read-side top-up — generation is forward-only", () => {
+  /* The defect: `ensureRegularLessons` looped every window month × slot × matching
+   * date with no comparison against the app clock. The window reaches back a month
+   * (LESSON_WINDOW_PREVIOUS_MONTHS) so the occupancy read can SEE stored lessons
+   * there — but that was being read as permission to CREATE them, and
+   * `statusForDate` stamped every back-filled row `Completed`.
+   *
+   * `ensureRegularLessons` is `server-only` and DB-bound, so the DECISION is
+   * exercised here through a faithful model of its inner loop — the same helpers,
+   * in the same order — and the WIRING is asserted by the source scan at the end. */
+
+  const JUNE_TUE = ["2026-06-02", "2026-06-09", "2026-06-16", "2026-06-23", "2026-06-30"];
+  const TUE_SLOT: ScheduleSlot = { day: 2, start: "14:30", duration: 45 };
+
+  /** The dates `ensureRegularLessons` would insert for one class. */
+  function wouldGenerate(
+    schedule: ScheduleSlot[],
+    months: string[],
+    stored: Lesson[] = [],
+    appClock: string = APP_CLOCK
+  ): string[] {
+    const satisfied = satisfiedRegularSlots(stored);
+    const out: string[] = [];
+    for (const month of months) {
+      for (const slot of schedule) {
+        for (const date of datesForWeekday(month, slot.day)) {
+          if (isPastDate(date, appClock)) continue;
+          if (satisfied.has(slotKey("c1", date, slot.start))) continue;
+          out.push(date);
+        }
+      }
+    }
+    return out.sort();
+  }
+
+  /** A generated Regular lesson for c1, as the loop would have written it. */
+  const generated = (date: string): Lesson => lesson(date, "14:30", 45);
+
+  it("1. a past date in the current month is never inserted", () => {
+    const out = wouldGenerate([TUE_SLOT], ["2026-07"]);
+
+    assert.equal(out.includes(PAST_TUE), false, `${PAST_TUE} is behind the app clock`);
+    assert.deepEqual(out, TUE);
+  });
+
+  it("2. current and future dates still generate normally", () => {
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-07"]), TUE);
+  });
+
+  it("2b. the window's PREVIOUS month generates nothing at all", () => {
+    // The back-fill scenario in full: a class created today, or a weekday added to
+    // an existing one, used to mint a lesson for every elapsed June Tuesday and
+    // stamp each `Completed`. Every one of those earned revenue for a session that
+    // never happened, in a month that was already closed.
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-06"]), []);
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-06", "2026-07"]), TUE);
+  });
+
+  it("3. the boundary follows the existing convention, not a new one", () => {
+    // Identical to `statusForDate`'s edge (today generates Upcoming, so today is
+    // generated) and to `planDate`'s (`date < appClock` returns no actions).
+    assert.equal(isPastDate("2026-07-09", APP_CLOCK), true, "yesterday is past");
+    assert.equal(isPastDate(APP_CLOCK, APP_CLOCK), false, "TODAY IS NOT PAST — it still generates");
+    assert.equal(isPastDate("2026-07-11", APP_CLOCK), false, "tomorrow is not past");
+
+    // …and the guard agrees with the status the same date would be given.
+    assert.equal(statusForDate(APP_CLOCK, APP_CLOCK), "Upcoming");
+    assert.equal(statusForDate("2026-07-09", APP_CLOCK), "Completed");
+  });
+
+  it("3b. a lesson dated exactly on the app clock is generated", () => {
+    // 2026-07-10 is a Friday; a Friday class must still get its lesson today.
+    const friday: ScheduleSlot = { day: 5, start: "14:30", duration: 45 };
+    assert.equal(wouldGenerate([friday], ["2026-07"]).includes(APP_CLOCK), true);
+  });
+
+  it("4. running generation twice inserts nothing the second time", () => {
+    const first = wouldGenerate([TUE_SLOT], ["2026-06", "2026-07"]);
+    const stored = first.map(generated);
+
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-06", "2026-07"], stored), []);
+    // …and a third pass over the same stored set is still empty.
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-06", "2026-07"], stored), []);
+  });
+
+  it("5. the guard removes nothing — past lessons already stored are untouched", () => {
+    // It is an insert-time filter, not a cleanup. A June lesson that legitimately
+    // exists (generated when June was still ahead) stays exactly where it is; the
+    // occupancy read still sees it, so nothing duplicates it either.
+    const june = JUNE_TUE.map(generated);
+    const satisfied = satisfiedRegularSlots(june);
+
+    assert.equal(satisfied.has(slotKey("c1", "2026-06-02", "14:30")), true);
+    assert.deepEqual(wouldGenerate([TUE_SLOT], ["2026-06", "2026-07"], june), TUE);
+  });
+
+  it("6. the guard is actually wired into ensureRegularLessons", () => {
+    // The model above proves the decision; this proves the service applies it, and
+    // applies it BEFORE the upsert is queued.
+    const src = readFileSync(path.join(process.cwd(), "src", "lib", "lessons.ts"), "utf8");
+    const guard = src.indexOf("if (isPastDate(date)) continue;");
+    // `$setOnInsert: {` is the code; the bare token also appears in two comments
+    // above it, so the search has to be for the opening brace form.
+    const upsert = src.indexOf("$setOnInsert: {");
+
+    assert.ok(guard > 0, "ensureRegularLessons must skip past dates");
+    assert.ok(upsert > guard, "the guard must precede the insert it is guarding");
   });
 });
 
@@ -387,7 +500,35 @@ describe("§2 schedule edits", () => {
     const found = findArchivedClassLessons([archived], lingering, APP_CLOCK);
 
     assert.equal(found.length, 1);
-    assert.deepEqual(found[0].lessons.map((l) => l.date), TUE);
+    assert.deepEqual(found[0].remaining.map((l) => l.date), TUE);
+    assert.deepEqual(found[0].cancelledWhileArchived, []);
+  });
+
+  it("…and reports what the lifecycle already settled, in its own set", () => {
+    // The report must not empty itself at the moment archiving starts to bite: a
+    // lesson whose date passed under an Archived class is Cancelled by the
+    // lifecycle, which is exactly when an Upcoming-only filter would drop it.
+    const archived = klass([{ day: 2, start: "14:30", duration: 45 }], { status: "Archived" });
+    const lessons = [
+      lesson(PAST_TUE, "14:30", 45, { status: "Cancelled", chargeable: false }),
+      lesson(TUE[0], "14:30", 45),
+    ];
+
+    const found = findArchivedClassLessons([archived], lessons, APP_CLOCK);
+
+    assert.deepEqual(found[0].remaining.map((l) => l.date), [TUE[0]]);
+    assert.deepEqual(found[0].cancelledWhileArchived.map((l) => l.date), [PAST_TUE]);
+  });
+
+  it("an archived class holding ONLY settled cancellations is still reported", () => {
+    const archived = klass([{ day: 2, start: "14:30", duration: 45 }], { status: "Archived" });
+    const lessons = [lesson(PAST_TUE, "14:30", 45, { status: "Cancelled", chargeable: false })];
+
+    const found = findArchivedClassLessons([archived], lessons, APP_CLOCK);
+
+    assert.equal(found.length, 1, "the old filter would have returned nothing here");
+    assert.deepEqual(found[0].remaining, []);
+    assert.equal(found[0].cancelledWhileArchived.length, 1);
   });
 
   it("restore class — regenerates the future from the current schedule", () => {

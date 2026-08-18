@@ -92,12 +92,13 @@ async function main() {
         id: lesson.id, classId: lesson.classId, date: lesson.date, start: lesson.start, inferred,
       })),
       orphanedLessons: orphans.map((l) => ({ id: l.id, classId: l.classId, date: l.date, status: l.status })),
-      archivedClasses: archived.map(({ klass, lessons: lingering }) => ({
+      archivedClasses: archived.map(({ klass, remaining, cancelledWhileArchived }) => ({
         classId: klass.id,
         name: klass.name,
-        lingeringFutureLessons: lingering.length,
-        from: lingering.map((l) => l.date).sort()[0],
-        to: lingering.map((l) => l.date).sort().at(-1),
+        lingeringFutureLessons: remaining.length,
+        from: remaining.map((l) => l.date).sort()[0],
+        to: remaining.map((l) => l.date).sort().at(-1),
+        cancelledWhileArchived: cancelledWhileArchived.length,
       })),
     }, null, 2));
     return;
@@ -182,10 +183,22 @@ async function main() {
     console.log("lessons below simply stay put until they age out of the rolling window.");
     console.log("Retiring them is a one-shot archive-transition action, not reconciliation.");
     console.log(rule);
-    for (const { klass, lessons: lingering } of archived) {
-      const dates = lingering.map((l) => l.date).sort();
+    for (const { klass, remaining, cancelledWhileArchived } of archived) {
       console.log(`  ${klass.name}  (${klass.id})`);
-      console.log(`    ${lingering.length} future Upcoming regular lesson(s)  ${dates[0]} .. ${dates[dates.length - 1]}`);
+      if (remaining.length > 0) {
+        const dates = remaining.map((l) => l.date).sort();
+        console.log(`    REMAINING:  ${remaining.length} future Upcoming regular lesson(s)` +
+          `  ${dates[0]} .. ${dates[dates.length - 1]}`);
+        console.log(`                these resume as scheduled if the class is restored`);
+      }
+      if (cancelledWhileArchived.length > 0) {
+        const dates = cancelledWhileArchived.map((l) => l.date).sort();
+        console.log(`    CANCELLED:  ${cancelledWhileArchived.length} regular lesson(s) settled` +
+          ` while archived  ${dates[0]} .. ${dates[dates.length - 1]}`);
+        console.log(`                already resolved by the lesson lifecycle; a restore does`);
+        console.log(`                not bring them back (count is approximate — a teacher's`);
+        console.log(`                own cancellation is indistinguishable in the stored data)`);
+      }
     }
   }
 
@@ -217,8 +230,10 @@ async function main() {
   console.log(`  Frozen, left alone (skip) ................ ${s.skip}`);
   console.log(`  Legacy reschedules needing Phase 0 ....... ${legacy.length}`);
   console.log(`  Orphaned lessons (class deleted) ......... ${orphans.length}`);
-  console.log(`  Archived classes holding future lessons .. ${archived.length}` +
-    ` (${archived.reduce((n, a) => n + a.lessons.length, 0)} lesson(s), never reconciled)`);
+  console.log(`  Archived classes with lessons ............ ${archived.length}` +
+    ` (${archived.reduce((n, a) => n + a.remaining.length, 0)} remaining,` +
+    ` ${archived.reduce((n, a) => n + a.cancelledWhileArchived.length, 0)} cancelled while archived;` +
+    ` never reconciled)`);
   console.log("");
   console.log("  This is a report. Nothing has been written.");
   console.log("");

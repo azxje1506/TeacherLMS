@@ -40,6 +40,9 @@ export function buildDashboard(data: AllData): DashboardPayload {
   const { classes, students, lessons, homework, reviews, activity } = data;
   const classById = new Map(classes.map((c) => [c.id, c]));
   const activeStudents = students.filter((s) => s.status !== "Archived");
+  // ACTIVE ONLY — the widget is labelled "Active classes" and counts what is being
+  // taught right now, so Ended and Archived are both excluded. Unchanged by the
+  // Ended work: it already asked the right question, and asked it as an equality.
   const activeClasses = classes.filter((c) => c.status === "Active");
 
   const revenue = computeRevenue(CURRENT_MONTH, data);

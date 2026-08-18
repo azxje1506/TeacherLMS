@@ -26,9 +26,11 @@ import { ClassModel, LessonModel, StudentModel, mongoose } from "./models";
 // this service and the (report-only) reconciliation planner cannot drift apart.
 // Behaviour is unchanged — they were moved verbatim (see src/lib/recurrence.ts).
 import {
-  datesForWeekday, regularId, satisfiedRegularSlots, slotKey, statusForDate, windowMonths,
+  datesForWeekday, isPastDate, regularId, satisfiedRegularSlots, slotKey, statusForDate,
+  windowMonths, TEACHING_CLASS_STATUSES,
 } from "./recurrence";
 import type { OccupancyLesson } from "./recurrence";
+import { advanceLessonLifecycle } from "./lifecycle";
 import type { Klass, Lesson, ScheduleSlot } from "./types";
 import type {
   ExtraLessonInput, MakeupLessonInput, LessonRescheduleInput, LessonUpdateInput,
@@ -45,8 +47,10 @@ export const MAX_PAGE_SIZE = 500; // the calendar pulls a whole month/week in on
  * Idempotent: `$setOnInsert` keyed by the stable id inserts only what's missing
  * and never touches an existing lesson. Cheap enough to run on every read.
  *
- * INSERT-ONLY, deliberately (RECURRENCE_DESIGN §5.7). This is the read side's
- * only job: extend the rolling window forward as time passes. Correcting a lesson
+ * INSERT-ONLY AND FORWARD-ONLY, deliberately (RECURRENCE_DESIGN §5.7). This is the
+ * read side's only job: extend the rolling window forward as time passes. Nothing
+ * dated before the app clock is ever created — see the guard in the loop below.
+ * Correcting a lesson
  * whose slot MOVED, and removing one whose slot is GONE, belong to the write side
  * — `updateClass` -> `reconcileClass` (src/lib/reconciler.ts) — where the intent
  * actually changes. Keeping the two verbs off this path keeps list reads cheap
@@ -63,7 +67,14 @@ export async function ensureRegularLessons(): Promise<void> {
   const range = { $gte: from, $lte: to };
 
   const [classes, existing] = await Promise.all([
-    ClassModel.find({ status: { $ne: "Archived" } }).select(clean).lean<Klass[]>(),
+    // ACTIVE ONLY, as an allow-list. This used to read `{ $ne: "Archived" }`,
+    // which was the same set while Archived was the only other status — and would
+    // have quietly generated for an Ended class the moment a third one existed,
+    // re-creating on the next list read exactly the future lessons the Ended
+    // transition had just retired. The rule is "generate for classes that are
+    // teaching", so it is written that way and derived from the one list that
+    // says which those are.
+    ClassModel.find({ status: { $in: [...TEACHING_CLASS_STATUSES] } }).select(clean).lean<Klass[]>(),
     LessonModel.find({ type: "regular", $or: [{ date: range }, { originalDate: range }] })
       .select("id classId type date start originalDate originalStart -_id")
       .lean<OccupancyLesson[]>(),
@@ -82,6 +93,29 @@ export async function ensureRegularLessons(): Promise<void> {
     for (const month of months) {
       for (const slot of c.schedule ?? []) {
         for (const date of datesForWeekday(month, slot.day)) {
+          // NEVER GENERATE INTO THE PAST.
+          //
+          // The window deliberately reaches back a month
+          // (LESSON_WINDOW_PREVIOUS_MONTHS) so the occupancy read above can SEE the
+          // lessons already stored there. That is not an instruction to CREATE
+          // lessons there, and without this line it was read as one: every call
+          // considered ~1.3 months of elapsed dates, so creating a class — or
+          // adding a weekday to an existing one — back-filled them on the next list
+          // read with lessons that `statusForDate` stamps `Completed`. Those then
+          // earned revenue for sessions that were never taught, in months that were
+          // already closed.
+          //
+          // This adds no new policy. It is the rule the write side already enforces
+          // twice — `planDate` returns no actions for a past date, and `auditPlan`
+          // aborts the whole run if one reaches it — so the guard makes the read
+          // side agree with the reconciler instead of quietly disagreeing with it.
+          // RECURRENCE_DESIGN §5.7: the read side's one job is to extend the window
+          // FORWARD as time passes.
+          //
+          // Consequence worth naming: past this line `statusForDate(date)` below can
+          // only ever return `Upcoming`. It is left as the call rather than folded
+          // into the literal, so a generated lesson's status keeps one definition.
+          if (isPastDate(date)) continue;
           if (satisfied.has(slotKey(c.id, date, slot.start))) continue;
           const id = regularId(c.id, date, slot.start);
           ops.push({
@@ -246,8 +280,17 @@ function orderRows(dir?: string): (a: LessonRow, b: LessonRow) => number {
 }
 
 /** Read the lesson list, reconciling Regular lessons first, then filtering /
- * sorting / paginating. Enriches each row with class name + colour only. */
+ * sorting / paginating. Enriches each row with class name + colour only.
+ *
+ * LIFECYCLE RUNS BEFORE GENERATION. `advanceLessonLifecycle` resolves lessons
+ * whose date has passed (`Upcoming` -> `Completed`, or `Cancelled` on an Archived
+ * class); `ensureRegularLessons` extends the window forward. Advancing first means
+ * a lesson resolved on this pass cannot also be considered by generation on the
+ * same request, and the list and Calendar render the resolved status immediately
+ * rather than one request late. The two are independent — the lifecycle never
+ * creates a lesson and generation never changes one's status. */
 export async function listLessons(query: LessonQuery = {}): Promise<LessonListResult> {
+  await advanceLessonLifecycle();
   await ensureRegularLessons();
 
   const filter: Record<string, unknown> = {};

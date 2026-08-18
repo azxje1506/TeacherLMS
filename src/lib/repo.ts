@@ -43,6 +43,10 @@ export async function getAll(): Promise<AllData> {
 
 export async function getCounts(): Promise<{ students: number; classes: number }> {
   await dbConnect();
+  // The sidebar badge counts what the teacher is currently working in, so the
+  // class side is ACTIVE ONLY — an Ended class is finished and an Archived one is
+  // filed away, and neither belongs in a "how much is on" number. Already an
+  // equality test, so a third status needed no change here.
   const [students, classes] = await Promise.all([
     StudentModel.countDocuments({ status: { $ne: "Archived" } }),
     ClassModel.countDocuments({ status: "Active" }),
