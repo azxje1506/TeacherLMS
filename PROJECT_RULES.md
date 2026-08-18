@@ -103,6 +103,22 @@ Optional
 - Classroom
 - Notes
 
+## Class Status
+
+Every Class has a status: **Active**, **Ended** or **Archived**. Status governs future scheduling only — it never changes what a class has already taught.
+
+- **Active** — teaching now. Generates Regular lessons and holds its weekly slots against other classes.
+- **Ended** — the teaching is over. Generation stops, the weekly slots are released, and the not-yet-taught Regular lessons the class still held are cleared once, on the transition, from next month onward. The current month is deliberately left alone so that month's revenue baseline does not move. Everything already taught is untouched.
+- **Archived** — filed away, and reversible. Generation stops and the weekly slots are released, but existing lessons stay exactly where they are. The class can be restored at any time.
+
+Ended and Archived are never interchangeable: **Ended is a statement about the teaching, Archived is a statement about the working list.**
+
+**Changing a class's status settles its due lessons first.** Applicable lessons are resolved while the old status is still in effect, and only then does the status change. This is what makes Archive → Restore deterministic (see Lesson Lifecycle).
+
+**Restore** returns a class to Active and resumes forward scheduling. It never reverses a lesson that was already settled: a lesson Cancelled while the class was Archived stays Cancelled, because that session did not take place. Lessons that had not yet fallen due are unaffected and resume as scheduled. Lessons are never re-created for dates that passed while the class was Archived.
+
+Revenue is derived from lessons, never from a class's current status. Ending or archiving a class does not change any month's reported revenue.
+
 ## Lesson Types
 Three types, each supports attendance (Present / Absent / Late / Excused). Attendance always belongs to a **Lesson**, never directly to a Class.
 1. **Regular** — auto-generated from the class's recurring weekly schedule.
@@ -112,6 +128,40 @@ Three types, each supports attendance (Present / Absent / Late / Excused). Atten
 Rules by class type:
 - **Group**: fixed recurring schedule, students share it. No Extra lessons. Makeup allowed (only when a regular lesson is cancelled).
 - **One-on-One**: flexible. Extra lessons allowed anytime. No Makeup concept needed (reschedule instead).
+
+## Lesson Lifecycle
+
+A lesson's status is **Upcoming**, **Completed** or **Cancelled**.
+
+**Delivery.** A scheduled lesson is considered delivered once its scheduled date has passed. Delivery does not require an attendance record; where none exists, every enrolled student is treated as present. Attendance refines the amount, it does not gate delivery. Cancelling is the only way to withhold revenue from a scheduled lesson (see Tuition & Revenue).
+
+**Resolution.** When a Regular lesson's date passes, its outcome is settled once and stored:
+
+- class **Active** → **Completed**
+- class **Archived** → **Cancelled**, not chargeable
+- class **Ended**, unrecognised, or no longer present → nothing is written
+
+**Eligibility.** Only Regular lessons that are still Upcoming and whose date is before the app clock are ever resolved.
+
+- A lesson dated exactly on the app clock is not past; it stays Upcoming.
+- Future lessons are untouched.
+- **Makeup** and **Extra** lessons are outside this transition entirely.
+- Existing Completed and Cancelled lessons are never reprocessed or reclassified. An existing chargeable Cancelled lesson keeps its chargeable status.
+
+**What resolution may change.** The lesson's status, plus `chargeable` when cancelling — nothing else. Date, time, duration, classroom, notes, links and reschedule origin are never touched. No lesson is created or deleted, so a month's Regular lesson count — the per-lesson revenue baseline — never moves.
+
+**Repeatable.** Resolution is idempotent. A lesson is settled once and is no longer eligible afterwards, so running it again changes nothing.
+
+**Rescheduling does not change status.** Moving a lesson moves the lesson; the rules above settle it afterwards, according to the class's status at the time it is settled.
+
+**Generation is forward-only.** Regular lessons are only ever created for the app clock's date or later. Nothing is generated into the past, so a date that passed while a class was Archived is never back-filled.
+
+Two items are deliberately **not** settled by these rules and remain open decisions:
+
+- Moving an already Completed, or chargeable Cancelled, lesson across a month boundary shifts a closed month's reported figures.
+- Historical lesson records known to be inaccurate are intentionally outside this mechanism, which only ever touches Upcoming lessons. Their cleanup is a separate decision.
+
+Engine detail and rationale: `RECURRENCE_DESIGN.md`.
 
 ## Calendar
 Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendance status indicator for past lessons. Clicking a lesson opens the drawer (never navigates away). Drag-and-drop reschedules.
