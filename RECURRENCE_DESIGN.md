@@ -12,12 +12,17 @@ delivered: the pure planner is `src/lib/recurrence.ts`, the dry run is
 **§6 Phase 0 was applied and verified on 2026-08-10** (Sprint 5.6.4 Phase 0) — the
 only database write this design has authorised so far, and a strictly additive one:
 eleven origin triples, nothing else touched, every reported figure unmoved. See
-`MIGRATION_PHASE0.md`. `legacyOriginFallback` went with it. **`RETIRE_ENABLED` is
-still `false`: retirement is not implemented, and the 142 planned retirements and
-the orphan lessons are all still in place.**
+`MIGRATION_PHASE0.md`. `legacyOriginFallback` went with it.
+
+**`RETIRE_ENABLED` is now `true`** (Sprint 5.6.4B). Retirement is implemented and
+has run: the 12 obsolete `c4` lessons on the retired Tuesday 14:30 slot are gone,
+the development classes and classless lessons were cleared by hand, and the
+reconciliation plan is now a no-op (keep 136, every write verb 0). The 142 figure
+quoted below belongs to the 5.6.1 dry run and is history, not a backlog.
 
 **Approved scope for Sprint 5.6** is §1–§8, ADR-001 and ADR-002. §9 (technical debt)
-and §10 (future improvements) are explicitly **outside** it.
+and §10 (future improvements) were explicitly outside it — **both §9 items have
+since been closed by later gates; see the notes on each.**
 
 **Companion documents:** `LESSON_DUPLICATES.md` (the defect and the detection tool),
 `PROJECT_RULES.md` (business rules — authoritative on conflict).
@@ -755,10 +760,17 @@ Scope held exactly: **`RETIRE_ENABLED` stays `false`**, retirement is unimplemen
 no orphan was cleaned up, no schema field was added and no business rule outside
 Phase 0 was touched. Digests and counts are in `MIGRATION_PHASE0.md`.
 
-### 5.6.4B — Enable + Regression (~1 day)
+### 5.6.4B — Enable + Regression — **delivered**
 
 Flip the reconciler from report-only to enforcing. Blast radius is small because
 5.6.3 has already cleared the backlog.
+
+**Done.** `RETIRE_ENABLED` is `true`, the 12 obsolete `c4` lessons were retired, and
+the reconciliation plan is now a no-op (keep 136, every write verb 0). Work beyond
+this section's original scope followed it and is recorded elsewhere: the class
+lifecycle and the `Ended` status, the §9.1 revenue fix, the §9.2 lesson lifecycle,
+and the removal of 32 fabricated historical lessons. `PROJECT_RULES.md` carries the
+business rules for all of it.
 
 **Scenario tests** — every row of §2's table: change start / change duration / change
 weekday / delete a weekday / add a weekday / archive / restore /
@@ -793,9 +805,15 @@ Both items below live in the same engine as the fork defect and were surfaced by
 investigation. Neither is caused by it, neither blocks it, and neither is in scope.
 They are recorded here so they are not rediscovered later as new bugs.
 
-### 9.1 Archived classes erase historical revenue — recommend **Sprint 5.5.3**
+### 9.1 Archived classes erase historical revenue — **FIXED**
 
-`computeRevenue` (`src/lib/finance.ts`) opens with:
+> **Closed.** `computeRevenue` no longer reads a class's status at all: every class
+> is visited whatever its status, and revenue is derived from lessons alone. A test
+> in `tests/class-lifecycle.test.ts` scans `finance.ts` for `c.status` and fails if
+> it comes back, so the filter cannot return by accident. The description below is
+> kept as the record of what the defect was.
+
+`computeRevenue` (`src/lib/finance.ts`) **used to open** with:
 
 ```
 for (const c of classes) {
@@ -823,12 +841,24 @@ with no history.
 Lesson List pagination + duplicate-detection sprint. Renumber if that collision
 matters — the sequencing intent is "before 5.6, independent of it".)*
 
-### 9.2 Lesson status never advances with time — not scheduled
+### 9.2 Lesson status never advances with time — **IMPLEMENTED**
 
-`statusForDate()` is evaluated once, at insert, and stored. Nothing in the codebase
-transitions a lesson from `Upcoming` to `Completed` as its date passes: `cancelLesson`
-writes `Cancelled`, `updateLesson` touches only notes and classroom, and the
-reconciler designed here deliberately never writes status.
+> **Closed.** `src/lib/lifecycle.ts` is the transition this section asked for, and
+> it took the stored-write shape rather than the read-time derivation: a derivation
+> would consult class status at read time, and status is a single mutable field
+> with no history, so archiving in October would rewrite July — §9.1 by another
+> route. A regular `Upcoming` lesson whose date is behind the app clock resolves to
+> `Completed` on an Active class and to `Cancelled`, not chargeable, on an Archived
+> one; `Ended`, unrecognised and missing classes resolve to nothing. It runs from
+> three call sites — `listLessons`, the dashboard route, and `updateClass` (before
+> the status write, which is what makes Archive → Restore deterministic). Applied
+> to production and verified. The description below is kept as the record of what
+> the gap was; `PROJECT_RULES.md` now carries the business rules.
+
+`statusForDate()` **used to be** evaluated once, at insert, and stored. Nothing in
+the codebase transitioned a lesson from `Upcoming` to `Completed` as its date
+passed: `cancelLesson` writes `Cancelled`, `updateLesson` touches only notes and
+classroom, and the reconciler designed here deliberately never writes status.
 
 This is invisible today solely because the app clock is frozen at `2026-07-10`
 (`TODAY_ISO`). Against a real clock every lesson would remain `Upcoming` for ever,
@@ -908,7 +938,9 @@ other.
 
 ## ADR-001 — Reconcile on `(classId, date)` with in-place update; the lesson id becomes opaque
 
-**Status:** proposed
+**Status:** **accepted** — implemented and verified in production (Sprint 5.6.2 …
+5.6.4B). Reconciliation keys on `(classId, date)`, the id is opaque, update-in-place
+preserves notes and homework links, and `RETIRE_ENABLED` is on.
 **Date:** 2026-08-04
 **Context:** editing a class's recurring schedule forks the lesson series, leaving an
 orphan series that never retires. 366 orphaned Regular lessons exist across 5 classes.
@@ -995,7 +1027,12 @@ manual.
 
 ## ADR-002 — A class without live intent is outside reconciliation
 
-**Status:** proposed
+**Status:** **accepted** — implemented and verified in production. An Archived class
+is excluded before the algorithm begins and produces no action of any verb. Later
+gates confirmed the decision from a second direction: Archive stays reversible, and
+a lesson whose date passes while the class is Archived is settled as `Cancelled` by
+`src/lib/lifecycle.ts` rather than by reconciliation, so class status still cannot
+mass-delete.
 **Date:** 2026-08-06
 **Supersedes:** the `Archive class` row of §2 and the "or is Archived" clause of §5.2
 step 1, both as originally written.

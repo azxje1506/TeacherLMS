@@ -1,10 +1,16 @@
 ﻿# Migration — Phase 0 checklist (Sprint 5.6.3)
 
 **Status:** **APPLIED and verified 2026-08-10** (Sprint 5.6.4 Phase 0). The 11
-legacy reschedules carry stored origins, `legacyOriginFallback` has been removed
-from the live write path and the report scripts, and `RETIRE_ENABLED` is still
-`false`. Retirement is **not** implemented and no orphan was cleaned up. See
-"What was applied" below for the digests and counts.
+legacy reschedules carry stored origins and `legacyOriginFallback` has been removed
+from the live write path and the report scripts. See "What was applied" below for
+the digests and counts.
+
+> **Superseded in one respect.** This file describes Phase 0 as it ran, when
+> `RETIRE_ENABLED` was `false`. It has since been set to `true` (Sprint 5.6.4B) and
+> retirement has run; two further production writes followed, neither of them part
+> of Phase 0 — the lesson lifecycle transition and the removal of 32 fabricated
+> historical lessons. The checklist below is the record of the Phase 0 operation
+> and is deliberately left as it was; it is not a description of the current state.
 
 Authoritative design: `RECURRENCE_DESIGN.md` §6. This file is the operating
 procedure for it — what to run, in what order, what must be true before each
@@ -92,8 +98,9 @@ npm test && npx tsc --noEmit && npm run lint && npm run build
 ```
 
 - [x] All four pass.
-- [x] `RETIRE_ENABLED` is `false` in `src/lib/reconciler.ts`. Phase 0 does not
-      change it and neither does this checklist.
+- [x] `RETIRE_ENABLED` was `false` in `src/lib/reconciler.ts` when Phase 0 ran.
+      Phase 0 did not change it and neither did this checklist. *(It was set to
+      `true` later, in Sprint 5.6.4B — see the note at the top of this file.)*
 
 ### 1. Read the report and keep it
 
