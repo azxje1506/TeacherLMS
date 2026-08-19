@@ -13,7 +13,10 @@
     "lessons:reconcile": "tsx --env-file=.env.local scripts/recurrence-report.ts",
     "lessons:backfill-origins": "tsx --env-file=.env.local scripts/backfill-lesson-origins.ts",
     "lessons:snapshot": "tsx --env-file=.env.local scripts/snapshot-lessons.ts",
-    "lessons:migration-report": "tsx --env-file=.env.local scripts/migration-report.ts"
+    "lessons:migration-report": "tsx --env-file=.env.local scripts/migration-report.ts",
+    "attendance:scratch-proof": "tsx --env-file=.env.local scripts/attendance-scratch-proof.ts",
+    "attendance:live-audit": "tsx --env-file=.env.local scripts/attendance-live-audit.ts",
+    "attendance:rollout-phase1": "tsx --env-file=.env.local scripts/attendance-rollout-phase1.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
