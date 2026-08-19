@@ -676,5 +676,11 @@
   "Conflict": "Trùng lịch",
   "Search lessons…": "Tìm buổi học…",
   "All classrooms": "Tất cả phòng học",
-  "No lessons match these filters.": "Không có buổi học nào khớp với bộ lọc."
+  "No lessons match these filters.": "Không có buổi học nào khớp với bộ lọc.",
+  "Couldn't load attendance": "Không tải được điểm danh",
+  "Couldn't save attendance": "Không lưu được điểm danh",
+  "Unsaved changes": "Thay đổi chưa lưu",
+  "Lesson not found": "Không tìm thấy buổi học",
+  "Attendance isn't available for this lesson": "Buổi học này chưa thể điểm danh",
+  "That student isn't on this lesson's register": "Học sinh đó không có trong danh sách điểm danh của buổi học này"
 }

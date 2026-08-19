@@ -156,10 +156,28 @@ export interface AttendanceEntry {
   note?: string;
 }
 
-/** Per-student attendance for one lesson. Attendance always belongs to a Lesson. */
+/** Per-student attendance for one lesson. Attendance always belongs to a Lesson.
+ *
+ * `entries` may contain keys for students whose documents no longer exist. Those
+ * hidden entries are the only surviving record that the lesson was taught to
+ * those people; they are never rendered and never erased (see lib/attendance). */
 export interface AttendanceRecord {
   lessonId: string; // -> Lesson.id
-  date: string; // ISO, mirrors the lesson
+  /** @deprecated LEGACY. The Lesson owns the authoritative date — read
+   * `Lesson.date` and nothing else.
+   *
+   * This field was a mirror of the lesson's date, and a mirror is a second copy
+   * that can disagree: some historical records already carry a date that differs
+   * from their lesson's, because rescheduling moves the Lesson and never touched
+   * the register. It survives for backward compatibility with those stored
+   * documents and is therefore optional — new records do not have it.
+   *
+   * Readers must resolve the date through the Lesson. Writers must never write or
+   * update it: the Attendance write planner emits `lessonId` alone on insert, and
+   * there is a test asserting `date` appears in neither `$set` nor `$setOnInsert`.
+   * The Mongoose field stays on the schema so existing documents round-trip
+   * unchanged; migrating or back-filling them is a separate, deliberate decision. */
+  date?: string; // ISO — legacy only
   entries: Record<string, AttendanceEntry>; // keyed by Student.id
 }
 

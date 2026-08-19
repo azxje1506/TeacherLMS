@@ -3,7 +3,7 @@
 
 import { z } from "zod";
 import { minutesBetween, overlappingSlotIndexes } from "./calc";
-import type { ClassStatus } from "./types";
+import type { AttendanceStatus, ClassStatus } from "./types";
 
 export const loginSchema = z.object({
   email: z.string().email("Enter a valid email"),
@@ -258,3 +258,57 @@ export const makeupLessonSchema = z.object({
   notes: z.string().optional().default(""),
 });
 export type MakeupLessonInput = z.infer<typeof makeupLessonSchema>;
+
+/* --------------------------------------------------------------- Attendance */
+
+/* THE runtime list of attendance statuses, kept here for the same reason
+ * CLASS_STATUSES is: one source for the save schema's enum and for every screen
+ * that enumerates a status, so a second, drifting copy cannot appear.
+ *
+ * Order is VALIDATION order, not display order. The register's segmented control
+ * reads Present / Late / Absent / Excused — the order the imported design draws
+ * the summary tiles in — and that order lives with the UI. A validation list has
+ * no visual meaning, so the two are deliberately allowed to differ rather than
+ * one being bent to the other. */
+export const ATTENDANCE_STATUSES = ["Present", "Absent", "Late", "Excused"] as const satisfies readonly AttendanceStatus[];
+
+/* `satisfies` above proves every listed value IS an AttendanceStatus. It does NOT
+ * prove the reverse — that every AttendanceStatus is listed — and the reverse is
+ * the dangerous direction: a fifth status added to the type but not to this list
+ * would be rejected at the API as invalid input, silently, with the form offering
+ * no way to send it.
+ *
+ * So the gap is closed here. `UncoveredAttendanceStatus` is `never` while the list
+ * is complete, which makes the annotation below `true` and the assignment legal.
+ * Add a status to the type without adding it here and the type resolves to
+ * `never`, `true` no longer satisfies it, and TypeScript fails the build with this
+ * line pointing at the omission. Exported so it is a fact about the module rather
+ * than an unused local. */
+export type UncoveredAttendanceStatus = Exclude<AttendanceStatus, (typeof ATTENDANCE_STATUSES)[number]>;
+export const ATTENDANCE_STATUSES_ARE_EXHAUSTIVE: UncoveredAttendanceStatus extends never ? true : never = true;
+
+/** One student's mark. `note` follows the project's existing optional-text
+ * convention, so an omitted note arrives as "" rather than undefined and the
+ * service has one shape to reason about.
+ *
+ * NO max length and NO trimming. Both would be invented rules: PROJECT_RULES sets
+ * neither, the design's input sets neither, and a silently truncated or trimmed
+ * note is a teacher's words being edited by the system. Unicode passes through
+ * untouched — these notes are written in Vietnamese. */
+export const attendanceEntrySchema = z.object({
+  status: z.enum(ATTENDANCE_STATUSES),
+  note: z.string().optional().default(""),
+});
+export type AttendanceEntryInput = z.output<typeof attendanceEntrySchema>;
+
+/** POST /api/attendance/:lessonId — the visible register, keyed by Student id.
+ *
+ * SHAPE ONLY. Whether a key is actually on this lesson's roster is a question
+ * about the database, not about the payload, so it is answered in the service
+ * (`planAttendanceWrite` rejects the whole request on an unknown id). Zod checks
+ * that keys are non-empty strings and that each value is a well-formed entry; it
+ * deliberately does not try to be a membership test it cannot perform. */
+export const attendanceSaveSchema = z.object({
+  entries: z.record(z.string().min(1, "Invalid student"), attendanceEntrySchema),
+});
+export type AttendanceSaveInput = z.output<typeof attendanceSaveSchema>;
