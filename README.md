@@ -99,10 +99,11 @@ scripts/seed.ts             Atlas seeder
 models, deterministic seed + derived lessons/attendance/billing, JWT auth
 (login/logout/session + route protection), Settings state (theme/accent/surface/
 density + language + regional formats), the app shell (sidebar + header), the
-Login screen, and the **Dashboard** (revenue engine, KPIs, today's classes,
-upcoming lessons, activity) — all pixel-faithful and wired to live data.
+Login screen, the **Dashboard** (revenue engine, KPIs, today's classes,
+upcoming lessons, activity), and **Attendance** (register index, take/edit
+attendance, and its API) — all pixel-faithful and wired to live data.
 
-**In progress (incremental):** Students, Parents, Classes, Lessons, Attendance,
+**In progress (incremental):** Students, Parents, Classes, Lessons,
 Homework, Reviews, Finance, Reports, Calendar and Settings screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.

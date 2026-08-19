@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased — Attendance MVP (Sprint 6)
+- Attendance index: this month's rate and status counts, attendance by class,
+  today's lessons and the most recent past ones, each showing whether a register
+  has been taken yet.
+- Take attendance: the visible roster with Present / Late / Absent / Excused,
+  optional per-student notes, "Mark all present", a live summary and an explicit
+  Save.
+- API: `GET /api/attendance`, `GET /api/attendance/:lessonId` and
+  `POST /api/attendance/:lessonId`. Creating and updating a register are the same
+  request.
+- Eligibility: a Completed lesson of any type — including one in a closed month —
+  plus a lesson dated today that is still Upcoming. Future and Cancelled lessons
+  are refused by the API, not merely by hiding a button.
+- Where no register is stored, every resolvable roster student reads as Present.
+  Opening a register writes nothing at all; only an explicit Save does.
+- Historical registers may be corrected through the same endpoint, with no month
+  lock — so a correction may move a closed month's revenue and attendance rate.
+  That is intended: a correction says the record was wrong.
+- Stored entries for students whose documents no longer exist are preserved. A
+  save writes only the students it was given, one key each, and leaves every other
+  stored entry exactly as it was.
+- A request naming a student outside the visible roster is rejected in full, with
+  nothing written — never a partial save.
+- Notes are optional and descriptive only; clearing one removes the stored note
+  rather than keeping an empty value.
+- The Lesson owns the date. The legacy `AttendanceRecord.date` mirror is never
+  read, written or updated, and new records do not carry it.
+- No attendance timestamps in the MVP, so no "last updated" is shown anywhere; a
+  derived one would be a guess presented as a fact.
+- Rolled out against the deployed application and validated in production: first
+  register creation, repeated identical saves, editing an existing register,
+  preservation of hidden entries, note write and clear, and invalid-student
+  rejection — each with no collateral write and no reporting drift.
+
 ## Unreleased — Lesson & Class Lifecycle (Sprint 5.6.4B onward)
 - Class lifecycle: added the `Ended` status alongside `Active` and `Archived`.
   Only `Active` generates lessons and holds weekly slots; `Active` and `Ended` are

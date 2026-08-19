@@ -185,6 +185,8 @@ Everything else is refused, by the API and not merely by hiding a button:
 
 **Status semantics.** **Present**, **Late** and **Excused** all count as attended and are all fully chargeable. **Absent** is the only status that withholds a student's contribution. These are the semantics revenue and the monthly attendance rate already use, and Attendance does not restate or redefine them.
 
+**Notes.** Each student's entry may carry an optional note. A note is descriptive only — it has no bearing on the entry's status, on revenue, or on the lesson lifecycle, and nothing is ever required to have one. Clearing a note removes the stored note rather than keeping an empty one: a note the teacher has deleted is gone, not preserved as an empty historical value.
+
 **Historical correction is allowed.** Past registers, including those in closed calendar months, may be reopened and edited through the same endpoint — no separate path, no month lock, no warning. An explicit teacher correction MAY therefore change a closed month's reported revenue and attendance rate. That is intended: a correction is a statement that the record was wrong.
 
 The permission is for explicit corrections only. Automatic processes — lifecycle resolution, reconciliation, generation — still may not rewrite a historical fact.
