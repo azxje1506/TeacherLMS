@@ -163,6 +163,42 @@ Two items are deliberately **not** settled by these rules and remain open decisi
 
 Engine detail and rationale: `RECURRENCE_DESIGN.md`.
 
+## Attendance
+
+**Attendance belongs to a Lesson.** Regular, Makeup and Extra lessons all support it. A register refines the value of a lesson that was delivered; it never decides whether it was delivered (see Lesson Lifecycle) and it never changes a lesson's status.
+
+**Eligibility.** A register may be taken for:
+
+- a **Completed** lesson, of any of the three types — including one in a closed month;
+- a lesson dated **today** that is still **Upcoming**, because today is not past and the lesson is being taught right now.
+
+Everything else is refused, by the API and not merely by hiding a button:
+
+- a **future** lesson — including one somehow already marked Completed, which is a data fault and not permission;
+- a **Cancelled** lesson, chargeable or not — outside the current scope;
+- a lesson whose type or status is unrecognised;
+- a **past lesson still Upcoming**, which is unresolved: the lifecycle has not yet said whether it was delivered, and marking a register for it would be inventing history. It becomes eligible the moment the lifecycle resolves it.
+
+**The default is a read.** Where no register is stored, every currently resolvable roster student shows as Present with no note — the same assumption revenue already makes. Opening a register writes nothing at all: a teacher who opens a lesson and leaves it changes no data.
+
+**Saving is explicit, and always writes.** A first save whose register is entirely Present still creates the record. It is financially identical to no record, but it is historically different — it is the teacher saying they checked — and the index has to be able to tell "not taken yet" from "taken, everyone was here".
+
+**Status semantics.** **Present**, **Late** and **Excused** all count as attended and are all fully chargeable. **Absent** is the only status that withholds a student's contribution. These are the semantics revenue and the monthly attendance rate already use, and Attendance does not restate or redefine them.
+
+**Historical correction is allowed.** Past registers, including those in closed calendar months, may be reopened and edited through the same endpoint — no separate path, no month lock, no warning. An explicit teacher correction MAY therefore change a closed month's reported revenue and attendance rate. That is intended: a correction is a statement that the record was wrong.
+
+The permission is for explicit corrections only. Automatic processes — lifecycle resolution, reconciliation, generation — still may not rewrite a historical fact.
+
+**Membership.** The register is the class's current roster ids resolved against existing Student documents, in the class's own order.
+
+- A student appears if their document **exists**. Student status is not consulted, so Trial, Paused and Archived students still appear — they are enrolled and they are in the room. (Finance's separate rule about Archived students is a different question and is deliberately not copied here.)
+- A roster id with no Student document is simply omitted. It is not repaired, reported or written back.
+- Stored entries for students who no longer exist are **preserved**. They are never shown, never counted in a register's own summary, and never erased: a save writes only the students it was given, one key each, and leaves every other stored entry exactly as it was. A request naming an id outside the visible roster fails entirely, with nothing written.
+
+**Date ownership.** The **Lesson** owns the date. `AttendanceRecord.date` is a legacy mirror kept only for backward compatibility with existing documents; it is never read, never written and never updated. Some stored records carry a date that disagrees with their lesson's — the lesson wins.
+
+**No timestamps.** Nothing records when a register was written, so no "last updated" is shown anywhere. A derived one would be a guess presented as a fact.
+
 ## Calendar
 Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendance status indicator for past lessons. Clicking a lesson opens the drawer (never navigates away). Drag-and-drop reschedules.
 
