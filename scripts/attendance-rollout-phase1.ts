@@ -82,6 +82,15 @@ const PHANTOM_IDS: readonly string[] = [
   "L-c2-2026-06-28-1000", "L-c2-2026-07-05-1000",
 ];
 
+/** Every month the data actually touches, plus the finance window.
+ *
+ * Derived rather than hard-coded: a rollout has to prove it moves NO month, and
+ * a fixed six-month list cannot do that once lessons exist outside it — the
+ * collection already runs past the finance window into future months. */
+function monthsInPlay(lessons: readonly Lesson[]): string[] {
+  return [...new Set([...FINANCE_MONTHS, ...lessons.map((l) => l.date.slice(0, 7))])].sort();
+}
+
 /** `attendanceRate`'s numerator and denominator, spelled out for the report.
  *
  * NOT a second formula: the rate itself is always read from the real
@@ -269,7 +278,31 @@ async function main() {
     console.log(`    missing ids      [${c.missing.join(", ")}]`);
     console.log(`    record exists    ${c.hasRecord}${c.hasRecord ? ` (${c.entries} entries)` : ""}`);
     const moved = l.originalDate ? `moved from ${l.originalDate} ${l.originalStart ?? ""}` : "never moved";
+    const flags = [
+      c.missing.length > 0 ? `DANGLING ROSTER IDS [${c.missing.join(", ")}]` : "",
+      l.originalDate ? "RESCHEDULED" : "",
+      l.date === TODAY_ISO && l.status === "Upcoming" ? "TODAY-UPCOMING" : "",
+      c.hasRecord ? "ALREADY HAS A REGISTER" : "",
+    ].filter(Boolean);
     console.log(`    peculiarities    ${moved}${l.fromId ? `, fromId ${l.fromId}` : ""}${l.chargeable ? ", chargeable" : ""}`);
+    if (flags.length > 0) console.log(`    FLAGS            ${flags.join(" · ")}`);
+
+    // What this candidate would do if it were the one chosen — computed per
+    // candidate, not only for the winner, so the selection is a comparison
+    // rather than an assertion about the one that happened to be picked.
+    const m = l.date.slice(0, 7);
+    const sim: AttendanceRecord = {
+      lessonId: l.id,
+      entries: Object.fromEntries(c.resolvable.map((id) => [id, { status: "Present" as const }])),
+    };
+    const withSim = [...attendance, sim];
+    const revBefore = computeRevenue(m, { classes, students, lessons, attendance }).total;
+    const revAfter = computeRevenue(m, { classes, students, lessons, attendance: withSim }).total;
+    const rBefore = rateParts(m, lessons, attendance);
+    const rAfter = rateParts(m, lessons, withSim);
+    console.log(`    month            ${m}`);
+    console.log(`    revenue          ${revBefore} -> ${revAfter}   delta ${revAfter - revBefore}`);
+    console.log(`    attendance rate  ${rBefore.rate}% -> ${rAfter.rate}%   (${rBefore.attended}/${rBefore.total} -> ${rAfter.attended}/${rAfter.total})`);
   };
 
   console.log("\n--- fully clean candidates (no record, roster fully resolvable) ---");
@@ -350,7 +383,7 @@ async function main() {
   };
   const afterAttendance = [...attendance, simulated];
 
-  const months = [...new Set([...FINANCE_MONTHS, targetMonth])].sort();
+  const months = monthsInPlay(lessons);
   const revenueRows: Array<{ month: string; before: number; after: number; delta: number }> = [];
   console.log("month     before          after           delta");
   for (const m of months) {
