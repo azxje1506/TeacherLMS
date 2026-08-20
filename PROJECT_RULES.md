@@ -201,6 +201,36 @@ The permission is for explicit corrections only. Automatic processes — lifecyc
 
 **No timestamps.** Nothing records when a register was written, so no "last updated" is shown anywhere. A derived one would be a guess presented as a fact.
 
+## Homework
+
+**Homework belongs to a Class.** An assignment is addressed either to the whole class or to one student in it, and it is never attached to a lesson — moving, cancelling or regenerating a lesson has no effect on any homework, and setting homework never freezes a lesson.
+
+**Only an Active class may be given new homework.** An Ended class's teaching is over and an Archived class is filed away; homework is an instruction for work not yet done, so neither may receive more of it. This governs NEW work only. A class's status never changes what it has already been set: existing homework stays listed, editable and counted whatever its class later becomes.
+
+**Scope is fixed at creation.** A **class-scoped** assignment is addressed to the class and records one outcome per student. A **student-scoped** assignment is addressed to one named student, who must exist and must be on that class's roster, and its single outcome is the assignment's own status.
+
+**Membership is a snapshot.** A class-scoped assignment records the class's roster as it stood when the work was set — the ids that resolve to existing Student documents, in the class's own order. Student status is not consulted, so Trial, Paused and Archived students are still given the work: they are enrolled. A roster id with no Student document is simply omitted; it is not repaired, reported or written back, and it is never copied into new work. A class whose roster resolves to nobody may still be given class-scoped work — it simply addresses nobody. Later changes to the roster do not reach back into homework already set.
+
+**Status vocabulary.** An assignment, and each student's outcome within one, is **Assigned**, **Completed**, **Late** or **Missing**. New homework is always **Assigned**, which means no outcome has been recorded — not that the work has failed.
+
+**The due date is not a lifecycle.** A date passing changes no stored data: nothing becomes Late, Missing or overdue on its own, and an assignment stays Assigned until somebody says otherwise. A past due date may be set deliberately — back-dating work that was set last week is a correction, not an error.
+
+**Completion counts Completed and Late as done.** Work submitted late was submitted. **Missing** — never done — is the opposite of done, and **Assigned** counts as neither: it is excluded from the measure entirely rather than counted as a failure. Late stays separately labelled everywhere it is shown, so nothing is lost by counting it. An assignment contributes to the month of its **due date**.
+
+**Ghost outcomes are preserved and still counted.** Stored outcomes belonging to students whose documents no longer exist are the only record that those people ever did that work. They are never erased and never restated: they keep counting in monthly reporting exactly as stored. They are also never shown — the roster cannot resolve them — and they are never disclosed to a client. A student's later deletion must not move a closed month's reported figures.
+
+**A student-scoped assignment whose student is gone is preserved, still counted, and not listed.** The card is addressed to somebody and there is no name to render, so the record is omitted from the screen rather than shown with an invented placeholder. Not being listed is also not being reachable: what the index omits, the system refuses to edit or delete. Being unseen is not being forgotten.
+
+**Only what a teacher authored may be edited:** title, description, due date and teacher notes. **Ownership is immutable** — an assignment's class, scope, assignee, status and recorded outcomes are fixed when it is created. Homework addressed to the wrong class is deleted, if it is still pending, and set again.
+
+**Historical correction is allowed**, with no month lock and no warning. Changing a due date may move an assignment between months and may therefore change a closed month's reported completion. That is intended: a correction is a statement that the record was wrong.
+
+**Only pending homework may be deleted.** While an assignment is **Assigned** no outcome has been recorded against it, so removing it destroys no history. Completed, Late and Missing assignments are historical records and are refused — by the rule itself, not merely by hiding a button. An overdue assignment that is still Assigned is still pending and stays deletable; a date passing settles nothing. Because Assigned work is excluded from completion, deleting it can never move a month's reported figure.
+
+**Duplicating homework writes nothing.** It opens a new assignment prefilled with the teacher's own words — title, description, class, scope, assignee and notes — with the **due date deliberately blank**, so the teacher states a date rather than inheriting one that is already past. No outcome is ever copied: a duplicate is new work, born Assigned. If the original's class may no longer be assigned to, or its student is no longer on that roster, the prefill leaves the field unset rather than carrying a value that would be refused.
+
+**No timestamps.** Nothing records when an assignment was last changed, so no "last updated" is shown anywhere. A derived one would be a guess presented as a fact.
+
 ## Calendar
 Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendance status indicator for past lessons. Clicking a lesson opens the drawer (never navigates away). Drag-and-drop reschedules.
 

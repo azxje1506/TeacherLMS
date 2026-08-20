@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased — Homework MVP (Sprint 7)
+- Homework index: the assignment cards with their class colour, status badge,
+  scope and assignee, due date and per-card Edit / Duplicate / Delete, plus a
+  class filter and the loading / error / empty states.
+- Assign and Edit drawer: title, description, class, scope (entire class or one
+  student), student, due date and teacher notes. An edit sends only the four
+  fields a teacher authored.
+- Duplicate opens a new assignment prefilled with the teacher's own words and a
+  blank due date, and writes nothing until it is saved. No outcome is copied — a
+  duplicate is new work, born Assigned.
+- Delete is offered only for homework that is still Assigned. Settled work is a
+  historical record, and the API refuses it with no write at all, not merely by
+  disabling a button.
+- API: `GET /api/homework`, `POST /api/homework`, `PATCH /api/homework/:id` and
+  `DELETE /api/homework/:id`, each behind the session. Requests are validated
+  strictly: a payload naming a field the server owns is refused rather than
+  quietly ignored.
+- Homework is class-owned and never attached to a lesson, so setting, editing or
+  deleting it never touches lesson generation or reconciliation.
+- Only an Active class may be given new homework. Class-scoped work snapshots the
+  roster ids that resolve to real students, in the class's own order; a class
+  whose roster resolves to nobody may still be given class-scoped work.
+- Homework completion now counts **Late as done** alongside Completed. Work
+  submitted late was submitted; Missing is the opposite of done, and Assigned is
+  excluded rather than counted as a failure. This restates existing months: June
+  2026 reads 77% and July 2026 reads 56%.
+- Stored outcomes for students whose documents no longer exist are preserved and
+  still counted, and are never sent to a client. A student-scoped assignment whose
+  student is gone is preserved and still counted, but is not listed — and what the
+  index omits, the API refuses to edit or delete.
+- Historical editing is permitted with no month lock and no warning, so changing a
+  due date may move an assignment between months and change a closed month's
+  reported completion. That is intended.
+- Scope note: the design comp's KPI row and status-chip row are omitted. Every
+  binding in both is computed, no literal copy survives for them, and "Assigned"
+  exists nowhere in the design — a chip row that could not filter to Assigned
+  would hide every pending assignment. Both are left out whole rather than
+  approximated, and no placeholder or invented value stands in for them.
+- No submission-recording surface in this MVP: there is no designed screen that
+  records a student's outcome, so there is no endpoint that writes one.
+- No homework timestamps, so no "last updated" is shown anywhere.
+
 ## Unreleased — Attendance MVP (Sprint 6)
 - Attendance index: this month's rate and status counts, attendance by class,
   today's lessons and the most recent past ones, each showing whether a register

@@ -103,8 +103,13 @@ Login screen, the **Dashboard** (revenue engine, KPIs, today's classes,
 upcoming lessons, activity), and **Attendance** (register index, take/edit
 attendance, and its API) — all pixel-faithful and wired to live data.
 
+**Implemented in source, pending production rollout:** **Homework** — the
+assignment index with its class filter, the assign/edit drawer, duplicate, and
+pending-only delete, plus its API. Not yet deployed, and not yet validated
+against production data.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons,
-Homework, Reviews, Finance, Reports, Calendar and Settings screens — each ported
+Reviews, Finance, Reports, Calendar and Settings screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.
 
