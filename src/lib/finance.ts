@@ -121,22 +121,36 @@ export function attendanceRate(month: string, data: Pick<AllData, "lessons" | "a
   return total === 0 ? 0 : Math.round((present / total) * 100);
 }
 
-/** Homework completion (%) for a month, over class-scoped submissions + student-scoped items. */
+/** Homework completion (%) for a month, over class-scoped submissions + student-scoped items.
+ *
+ * DONE MEANS COMPLETED **OR LATE**. Work submitted late was submitted; `Missing`
+ * — never done — is the opposite of done. Late stays separately labelled
+ * everywhere it is shown, so nothing is lost by counting it here. (Attendance's
+ * unrelated use of the word is not the reason: this is what "completion" means.)
+ *
+ * `Assigned` counts as NEITHER. It means no outcome has been recorded, which is
+ * not a failure, and it stays true whether or not the due date has passed —
+ * Homework has no lifecycle and a date passing settles nothing.
+ *
+ * Reads `homework` and nothing else, deliberately: a student's later deletion,
+ * or a class becoming Ended or Archived, must never restate a closed month. So
+ * stored entries for students who no longer exist are still counted, and a
+ * class's current status is not consulted — it cannot be, from this signature. */
 export function homeworkCompletion(month: string, data: Pick<AllData, "homework">): number {
   let done = 0, total = 0;
   for (const hw of data.homework) {
     if (!inMonth(hw.dueDate, month)) continue;
-    if (hw.status === "Assigned") continue; // future/not yet due
+    if (hw.status === "Assigned") continue; // no outcome recorded
     if (hw.scope === "class") {
       for (const sid of Object.keys(hw.submissions)) {
         const s = hw.submissions[sid];
         if (s === "Assigned") continue;
         total++;
-        if (s === "Completed") done++;
+        if (s === "Completed" || s === "Late") done++;
       }
     } else {
       total++;
-      if (hw.status === "Completed") done++;
+      if (hw.status === "Completed" || hw.status === "Late") done++;
     }
   }
   return total === 0 ? 0 : Math.round((done / total) * 100);

@@ -173,15 +173,77 @@ export type ClassFormValues = z.input<typeof classFormSchema>;
 /** The detail's Teacher notes card saves on its own, without the full form. */
 export const classNotesSchema = z.object({ notes: z.string().default("") });
 
-export const homeworkSchema = z.object({
-  title: z.string().min(1, "Title is required"),
-  description: z.string().optional().default(""),
-  classId: z.string().min(1, "Select a class"),
-  scope: z.enum(["class", "student"]).default("class"),
-  studentId: z.string().nullable().optional().default(null),
-  dueDate: z.string().min(1, "Pick a due date"),
-});
-export type HomeworkInput = z.infer<typeof homeworkSchema>;
+/* -------------------------------------------------------------- Homework */
+
+/* These two schemas REPLACE the earlier `homeworkSchema`, which was written
+ * ahead of the module, imported by nothing, and stated no rule about `studentId`
+ * or about which fields an edit may carry. Two validation authorities for one
+ * collection is exactly the duplicate utility the coding rules warn against, so
+ * there is one create schema and one update schema and no third.
+ *
+ * SHAPE ONLY, at both ends. Whether a class is Active, whether a student exists,
+ * and whether they are on that class's roster are questions about the database;
+ * they are answered in the service, against the database, and Zod deliberately
+ * does not pretend to answer them here.
+ *
+ * BOTH ARE STRICT. An unknown key is rejected rather than stripped. That is what
+ * refuses a payload carrying `status`, `submissions`, `lessonId`, `createdAt` or
+ * `id` — the fields the server owns — instead of quietly dropping them and
+ * reporting success for a write that ignored half the request. The pure planners
+ * enforce the same boundary a second time, on purpose: this one keeps a bad
+ * request out, that one keeps a bad write in. */
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+export const HOMEWORK_SCOPES = ["class", "student"] as const;
+
+/** POST /api/homework — everything a teacher supplies when setting homework.
+ *
+ * `studentId` is required when the scope is `student` and ignored otherwise: a
+ * form that switches from student to class scope may still be holding the last
+ * selection, which is a benign client state rather than an attack, and the create
+ * planner stores `null` for it. What cannot be tolerated is the reverse — a
+ * student-scoped assignment addressed to nobody — so only that is refused here.
+ *
+ * NO DUE-DATE LIFECYCLE. The format is checked and nothing else: a past due date
+ * is permitted, because back-dating an assignment that was set last week is a
+ * correction, not an error. */
+export const homeworkCreateSchema = z
+  .object({
+    title: z.string().min(1, "Title is required"),
+    description: z.string().optional().default(""),
+    classId: z.string().min(1, "Select a class"),
+    scope: z.enum(HOMEWORK_SCOPES).default("class"),
+    studentId: z.string().nullable().optional().default(null),
+    dueDate: z.string().regex(ISO_DATE, "Pick a due date"),
+    teacherNotes: z.string().optional().default(""),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.scope === "student" && !v.studentId) {
+      ctx.addIssue({ code: "custom", path: ["studentId"], message: "Select a student" });
+    }
+  });
+export type HomeworkCreateBody = z.output<typeof homeworkCreateSchema>;
+
+/** PATCH /api/homework/:id — a correction to the fields a teacher authored.
+ *
+ * PARTIAL: an absent key is a key that is not being changed. An empty string IS
+ * a value — clearing the teacher's notes stores "" — so `.optional()` marks
+ * "omitted", never "blank".
+ *
+ * The class, scope, assignee, status and submissions of an assignment are fixed
+ * at creation and are not listed here, so `.strict()` refuses a request naming
+ * any of them rather than silently ignoring it. */
+export const homeworkUpdateSchema = z
+  .object({
+    title: z.string().min(1, "Title is required").optional(),
+    description: z.string().optional(),
+    dueDate: z.string().regex(ISO_DATE, "Pick a due date").optional(),
+    teacherNotes: z.string().optional(),
+  })
+  .strict();
+export type HomeworkUpdateBody = z.output<typeof homeworkUpdateSchema>;
 
 export const reviewSchema = z.object({
   studentId: z.string().min(1, "Select a student"),
