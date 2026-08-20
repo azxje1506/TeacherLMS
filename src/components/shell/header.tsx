@@ -40,7 +40,7 @@ export function Header({ onToggleSidebar, user }: { onToggleSidebar: () => void;
         <TooltipContent>{t("Toggle sidebar")}</TooltipContent>
       </Tooltip>
 
-      <div style={{ position: "relative", flex: 1, minWidth: 170, maxWidth: 420 }}>
+      <div className="hdr-search" style={{ position: "relative", flex: 1, minWidth: 170, maxWidth: 420 }}>
         <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted-2)", display: "flex" }}><IconSearch size={16} /></span>
         <input
           aria-label={t("Search students, classes and lessons")}
@@ -49,13 +49,13 @@ export function Header({ onToggleSidebar, user }: { onToggleSidebar: () => void;
           className="ring"
           style={{ width: "100%", height: 38, padding: "0 46px 0 36px", border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg)", fontSize: 13.5, fontFamily: "inherit", outline: "none", cursor: "pointer", textAlign: "left" }}
         />
-        <span style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono-stack)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 5px" }}>⌘K</span>
+        <span className="hdr-kbd" style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--muted-2)", fontFamily: "var(--font-mono-stack)", border: "1px solid var(--border)", borderRadius: 5, padding: "1px 5px" }}>⌘K</span>
       </div>
 
-      <div style={{ flex: 1 }} />
+      <div className="hdr-spacer" style={{ flex: 1 }} />
 
-      <button className="btn-primary" style={{ height: 38, padding: "0 14px", border: "none", borderRadius: 9, background: "var(--primary)", color: "var(--primary-fg)", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap", flexShrink: 0 }}>
-        <IconPlus size={16} />{t("Quick add")}
+      <button className="btn-primary hdr-quickadd" aria-label={t("Quick add")} style={{ height: 38, padding: "0 14px", border: "none", borderRadius: 9, background: "var(--primary)", color: "var(--primary-fg)", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap", flexShrink: 0 }}>
+        <IconPlus size={16} /><span className="hdr-quickadd-label">{t("Quick add")}</span>
       </button>
 
       <Tooltip>

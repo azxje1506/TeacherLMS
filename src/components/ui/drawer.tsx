@@ -67,6 +67,7 @@ export function Drawer({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        className="app-drawer"
         style={{
           position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 81, width: "min(460px,94vw)",
           background: "var(--bg)", borderLeft: "1px solid var(--border)", boxShadow: "-12px 0 40px rgba(0,0,0,.16)",
@@ -94,9 +95,9 @@ export function Drawer({
         {/* data-drawer-body marks the scroll container: a form section whose
           * height changes can find it and hold the scroll position steady, so
           * the fields above it never jump. */}
-        <div data-drawer-body="1" style={{ flex: 1, overflowY: "auto", padding: 22 }}>{children}</div>
+        <div className="app-drawer-body" data-drawer-body="1" style={{ flex: 1, overflowY: "auto", padding: 22 }}>{children}</div>
 
-        <div style={{ display: "flex", gap: 10, padding: "16px 22px", borderTop: "1px solid var(--border)" }}>
+        <div className="app-drawer-foot" style={{ display: "flex", gap: 10, padding: "16px 22px", borderTop: "1px solid var(--border)" }}>
           <button
             type="button" onClick={onClose} className="btn-ghost"
             style={{ flex: 1, height: 42, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg)", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}

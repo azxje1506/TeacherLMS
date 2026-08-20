@@ -119,7 +119,10 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
   .main-grid{grid-template-columns:minmax(0,1fr) !important}
 }
-@media (max-width:860px){
+/* Tablet: the sidebar narrows to an icon rail but stays in the layout. Bounded
+   below by the mobile breakpoint, where it leaves the layout altogether and gets
+   its labels back — see the 620px block. */
+@media (max-width:860px) and (min-width:621px){
   .app-main{padding:20px 18px 40px !important}
   .app-sidebar{width:64px !important;min-width:64px !important}
   .app-sidebar .sb-label{display:none !important}
@@ -127,11 +130,66 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
   .app-sidebar nav button>span:not(:first-child){display:none !important}
   .app-sidebar nav button{justify-content:center}
 }
+/* ---- Mobile shell (Sprint 7 Gate 5 Phase 0 remediation) -------------------
+   THE PAGE MUST NOT BE WIDER THAN THE PHONE. Two shell elements DEFINED a width
+   the phone had to meet rather than adapting to the width it had, and between
+   them they set the document's minimum size:
+
+   1. The header row could not shrink. Its search box carried a 170px floor and
+      Quick add was nowrap + flex-shrink:0, so the row had an intrinsic minimum
+      near 520px and pushed the document out to reach it — which is why Quick
+      add was the control seen clipped off the right edge.
+   2. The sidebar held a 64px rail on every screen. On a 375px phone that is a
+      fifth of the width spent on navigation, and it left a 275px content column
+      — too narrow for the design's own 320px cards, so every card grid
+      overflowed as well.
+
+   Both are fixed here rather than hidden behind overflow-x: the row may shrink,
+   and the sidebar leaves the layout entirely and slides over the page. That
+   returns the full viewport to the content column, which is what lets the
+   design's existing card tracks fit without per-module patches.
+
+   Everything else reported followed from that overflow. The "drawer compresses
+   the page" fault was the drawer's scroll lock setting body{overflow:hidden},
+   clipping the overflow and forcing a re-layout at the true viewport width — so
+   with nothing overflowing, there is nothing left to clip. */
 @media (max-width:620px){
   .ov-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
   .kpi-grid{grid-template-columns:minmax(0,1fr) !important}
   .app-header{gap:8px !important;padding:0 12px !important}
   .app-header .hdr-user-meta{display:none !important}
+
+  /* The sidebar becomes an overlay: out of flow, so it contributes no layout
+     width at all, and full-labelled because there is room for labels again. */
+  .app-sidebar{
+    position:fixed !important;left:0;top:0;
+    width:248px !important;min-width:248px !important;
+    height:100dvh !important;z-index:90;
+    transform:translateX(-100%);transition:transform .2s ease;
+  }
+  .app-sidebar[data-mobile-open="1"]{transform:translateX(0)}
+  .app-nav-scrim{position:fixed;inset:0;z-index:89;background:rgba(9,9,11,.42);animation:overlayFade .2s ease both}
+
+  .app-main{padding:16px 14px 40px !important}
+
+  /* Header: let the row fit the phone rather than defining its width. */
+  .hdr-search{min-width:0 !important}
+  .hdr-kbd{display:none !important}
+  .hdr-spacer{display:none !important}
+  .hdr-quickadd{padding:0 11px !important}
+  .hdr-quickadd-label{display:none !important}
+
+  /* Drawers become full-screen sheets: fixed header, scrolling body, footer
+     clear of the home indicator. The panel itself never moves horizontally. */
+  .app-drawer{
+    inset:0 !important;width:100% !important;max-width:100% !important;
+    border-left:none !important;box-shadow:none !important;overflow-x:hidden;
+  }
+  .app-drawer-body{overscroll-behavior:contain}
+  .app-drawer-foot{padding-bottom:calc(16px + env(safe-area-inset-bottom)) !important}
+}
+@media (prefers-reduced-motion:reduce){
+  .app-sidebar{transition:none !important}
 }
 @media print{
   @page{margin:12mm}

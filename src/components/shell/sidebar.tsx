@@ -21,9 +21,17 @@ interface NavItem {
 }
 
 export function Sidebar({
-  collapsed, counts, onLogout,
+  collapsed, mobileOpen = false, onNavigate, counts, onLogout,
 }: {
   collapsed: boolean;
+  /** Below the mobile breakpoint the sidebar leaves the layout entirely and
+   * slides over the page instead; this is whether it is currently slid in.
+   * Ignored on desktop, where the stylesheet never takes it out of flow. */
+  mobileOpen?: boolean;
+  /** Called when a nav row is chosen, so the mobile overlay can close itself.
+   * Absent on desktop, where the sidebar is part of the page and never covers
+   * what the teacher is about to look at. */
+  onNavigate?: () => void;
   counts: { students: number; classes: number };
   onLogout: () => void;
 }) {
@@ -65,6 +73,7 @@ export function Sidebar({
         <TooltipTrigger asChild>
           <Link
             href={href}
+            onClick={onNavigate}
             style={{
               display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px",
               border: "none", borderRadius: 9, fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", marginBottom: 2,
@@ -90,6 +99,7 @@ export function Sidebar({
   return (
     <aside
       className="app-sidebar"
+      data-mobile-open={mobileOpen ? "1" : "0"}
       style={{
         width: sbw, minWidth: sbw, background: "var(--sidebar)", borderRight: "1px solid var(--border)",
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",

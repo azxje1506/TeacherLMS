@@ -193,6 +193,7 @@ export function LessonDrawer({ lessonId, onClose }: { lessonId: string | null; o
         role="dialog"
         aria-modal="true"
         aria-label={t("Lesson details")}
+        className="app-drawer"
         style={{
           position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 81, width: "min(440px,94vw)",
           background: "var(--bg)", borderLeft: "1px solid var(--border)", boxShadow: "-12px 0 40px rgba(0,0,0,.16)",
