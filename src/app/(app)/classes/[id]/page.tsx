@@ -36,6 +36,9 @@ const headBtn: React.CSSProperties = {
   height: 36, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 9,
   background: "var(--card)", color: "var(--fg)", fontSize: 13, fontWeight: 500,
   fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 7,
+  // A label never wraps: when the row runs out of width it is the ROW that
+  // breaks (globals.css P5), not the words inside a button.
+  whiteSpace: "nowrap",
 };
 
 export default function ClassDetailPage() {
@@ -148,7 +151,7 @@ export default function ClassDetailPage() {
             </div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 5 }}>{infoLine}</div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="act-row" style={{ display: "flex", gap: 8 }}>
             {/* Extra lesson belongs to the Lessons/Attendance sprint — shown for
                 one-on-one classes per the design, inert until then. */}
             {isOneOnOne && (
@@ -158,10 +161,10 @@ export default function ClassDetailPage() {
                     workaround: make a wrapper the trigger, and let the button go
                     pointer-events:none (it stays disabled and inert either way). */}
                 <TooltipTrigger asChild>
-                  <span style={{ display: "inline-flex", cursor: "not-allowed" }}>
+                  <span className="act-primary" style={{ display: "inline-flex", cursor: "not-allowed" }}>
                     <button
                       type="button" disabled
-                      style={{ height: 36, padding: "0 13px", border: "1px solid #7c3aed", borderRadius: 9, background: "color-mix(in srgb, #7c3aed 13%, var(--card))", color: "#7c3aed", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", pointerEvents: "none", display: "flex", alignItems: "center", gap: 6 }}
+                      style={{ height: 36, padding: "0 13px", border: "1px solid #7c3aed", borderRadius: 9, background: "color-mix(in srgb, #7c3aed 13%, var(--card))", color: "#7c3aed", fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "not-allowed", pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, whiteSpace: "nowrap" }}
                     >
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
                       {t("Extra lesson")}
@@ -171,14 +174,14 @@ export default function ClassDetailPage() {
                 <TooltipContent>{t("Available in a later sprint")}</TooltipContent>
               </Tooltip>
             )}
-            <button type="button" onClick={() => setEditing(true)} className="btn-ghost" style={headBtn}>
+            <button type="button" onClick={() => setEditing(true)} className="btn-ghost act-secondary" style={headBtn}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
               {t("Edit")}
             </button>
             {!isArchived ? (
-              <button type="button" onClick={() => setStatus("Archived")} className="btn-ghost" style={{ ...headBtn, gap: 0 }}>{t("Archive")}</button>
+              <button type="button" onClick={() => setStatus("Archived")} className="btn-ghost act-secondary" style={{ ...headBtn, gap: 0 }}>{t("Archive")}</button>
             ) : (
-              <button type="button" onClick={() => setStatus("Active")} className="btn-ghost" style={{ ...headBtn, gap: 0 }}>{t("Restore")}</button>
+              <button type="button" onClick={() => setStatus("Active")} className="btn-ghost act-secondary" style={{ ...headBtn, gap: 0 }}>{t("Restore")}</button>
             )}
             <Tooltip>
               <TooltipTrigger asChild>

@@ -38,7 +38,7 @@ import { ScheduleEditor } from "./schedule-editor";
 import type { Klass } from "@/lib/types";
 
 const field = (invalid: boolean): React.CSSProperties => ({
-  width: "100%", height: 38, padding: "0 11px",
+  width: "100%", minWidth: 0, maxWidth: "100%", height: 38, padding: "0 11px",
   border: `1px solid ${invalid ? "var(--accent)" : "var(--border)"}`, borderRadius: 9,
   background: "var(--card)", color: "var(--fg)", fontSize: 13, fontFamily: "inherit", outline: "none",
 });

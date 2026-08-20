@@ -75,7 +75,7 @@ export default function AttendancePage() {
         <>
           {/* ---- Attendance statistics ---- */}
           {hasStats && summary && (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)", marginBottom: "var(--gap)" }}>
+            <div className="att-stats" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)", marginBottom: "var(--gap)" }}>
               <div style={{ ...cardStyle, padding: "18px 20px" }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 12 }}>{t("This month")}</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
@@ -93,7 +93,7 @@ export default function AttendancePage() {
                       <span style={{ fontSize: 8.5, color: "var(--muted-2)" }}>{t("attended")}</span>
                     </div>
                   </div>
-                  <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
                     {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                       const c = ATTENDANCE_COLORS[status];
                       const count = status === "Present" ? summary.present
@@ -163,7 +163,7 @@ export default function AttendancePage() {
                     <div
                       key={a.lessonId}
                       onClick={() => open(a.lessonId)}
-                      className="row-hover"
+                      className="row-hover meta-row"
                       style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px", borderTop: "1px solid var(--border-2)", cursor: "pointer" }}
                     >
                       <div style={{ minWidth: 46, height: 46, borderRadius: 10, background: "var(--card-2)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
@@ -178,13 +178,17 @@ export default function AttendancePage() {
                           {timeRange(a, fmt)} · {studentText(a.studentCount, lang)}
                         </div>
                       </div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 600, color: ind.color, whiteSpace: "nowrap" }}>
-                        <span style={{ minWidth: 8, width: 8, height: 8, borderRadius: "50%", background: ind.color }} />
-                        {ind.label}
+                      <div className="meta-trail" style={{ display: "contents" }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 600, color: ind.color, whiteSpace: "nowrap" }}>
+                          <span style={{ minWidth: 8, width: 8, height: 8, borderRadius: "50%", background: ind.color }} />
+                          {ind.label}
+                        </div>
+                        {/* On its own line the chevron keeps the trailing edge it
+                          * holds in the desktop row. */}
+                        <span style={{ display: "flex", color: "var(--muted-2)", marginLeft: "auto" }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
+                        </span>
                       </div>
-                      <span style={{ display: "flex", color: "var(--muted-2)" }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6" /></svg>
-                      </span>
                     </div>
                   );
                 })}
@@ -233,7 +237,7 @@ function TodayCard({ card, onOpen }: { card: AttendanceLessonCard; onOpen: () =>
 function SkeletonIndex() {
   return (
     <div style={{ display: "grid", gap: "var(--gap)" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)" }}>
+      <div className="att-stats" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)" }}>
         <div style={{ ...cardStyle, height: 160 }} />
         <div style={{ ...cardStyle, height: 160 }} />
       </div>

@@ -118,7 +118,7 @@ export default function LessonsPage() {
                 <div
                   key={l.id}
                   onClick={() => setOpenId(l.id)}
-                  className="row-hover"
+                  className="row-hover meta-row"
                   style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 18px", borderTop: "1px solid var(--border-2)", cursor: "pointer" }}
                 >
                   <div style={{ minWidth: 46, height: 46, borderRadius: 10, background: "var(--card-2)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>
@@ -133,12 +133,17 @@ export default function LessonsPage() {
                       {t(lessonTypeLabel(l.type))}{l.classroom ? ` · ${l.classroom}` : ""}
                     </div>
                   </div>
-                  {/* The full lesson time, through the one shared range
-                    * formatter — the duration itself is no longer spelled out. */}
-                  <div style={{ fontSize: 12.5, color: "var(--fg-2)", fontFamily: "'Geist Mono',monospace", whiteSpace: "nowrap" }}>
-                    {timeRange(l, fmt)}
+                  {/* The shared metadata trail — see the Dashboard's Today's
+                    * classes row and globals.css P1. Time and status are the
+                    * same nowrap pair there, and they get the same line here. */}
+                  <div className="meta-trail" style={{ display: "contents" }}>
+                    {/* The full lesson time, through the one shared range
+                      * formatter — the duration itself is no longer spelled out. */}
+                    <div style={{ fontSize: 12.5, color: "var(--fg-2)", fontFamily: "'Geist Mono',monospace", whiteSpace: "nowrap" }}>
+                      {timeRange(l, fmt)}
+                    </div>
+                    <span style={{ ...lessonStatusBadgeStyle(l.status), marginLeft: "auto" }}>{t(l.status)}</span>
                   </div>
-                  <span style={lessonStatusBadgeStyle(l.status)}>{t(l.status)}</span>
                 </div>
               );
             })

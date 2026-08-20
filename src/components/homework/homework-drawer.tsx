@@ -46,14 +46,17 @@ import type { HomeworkAssignableClass, HomeworkListItem } from "@/lib/homework";
 import type { HomeworkCreateBody, HomeworkUpdateBody } from "@/lib/schemas";
 
 const field = (invalid: boolean): React.CSSProperties => ({
-  width: "100%", height: 38, padding: "0 12px",
+  // min/max-width are the drawer contract, not decoration: a control that
+  // reports an intrinsic width wider than the panel makes the panel scroll
+  // sideways. See globals.css, "Native date field".
+  width: "100%", minWidth: 0, maxWidth: "100%", height: 38, padding: "0 12px",
   border: `1px solid ${invalid ? "var(--accent)" : "var(--border)"}`,
   borderRadius: 9, background: "var(--card)", color: "var(--fg)",
   fontSize: 13.5, fontFamily: "inherit", outline: "none",
 });
 
 const areaStyle: React.CSSProperties = {
-  width: "100%", minHeight: 84, padding: "10px 12px",
+  width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 84, padding: "10px 12px",
   border: "1px solid var(--border)", borderRadius: 9,
   background: "var(--card)", color: "var(--fg)",
   fontSize: 13.5, fontFamily: "inherit", outline: "none", resize: "vertical",
@@ -134,7 +137,7 @@ export function HomeworkDrawer({
       onClose={onClose}
       onSave={submit}
     >
-      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", minWidth: 0, gap: 16 }}>
         {/* Title */}
         <div>
           <label style={labelStyle} htmlFor="hw-title">{t("Title")}<Required /></label>

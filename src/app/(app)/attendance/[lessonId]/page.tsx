@@ -160,7 +160,7 @@ export default function TakeAttendancePage() {
               type="button"
               onClick={markAllPresent}
               className="btn-ghost"
-              style={{ height: 34, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+              style={{ height: 34, padding: "0 13px", border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
               {t("Mark all present")}
@@ -169,7 +169,7 @@ export default function TakeAttendancePage() {
         </div>
 
         {/* ---- summary ---- */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10, marginBottom: "var(--gap)" }}>
+        <div className="att-summary" style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 10, marginBottom: "var(--gap)" }}>
           {ATTENDANCE_DISPLAY_ORDER.map((status) => (
             <div key={status} style={{ ...cardStyle, borderRadius: 12, padding: "13px 15px" }}>
               <div style={{ fontSize: 22, fontWeight: 700, color: ATTENDANCE_COLORS[status].color, fontFamily: "'Geist Mono',monospace" }}>
@@ -203,7 +203,7 @@ export default function TakeAttendancePage() {
                     <div style={{ fontSize: 13.5, fontWeight: 600 }}>{r.name}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{t(r.gradeLabel)}</div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, minWidth: 280 }}>
+                  <div className="att-seg" style={{ display: "flex", gap: 6, minWidth: 280 }}>
                     {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                       const active = entry.status === status;
                       return (
@@ -223,7 +223,7 @@ export default function TakeAttendancePage() {
                     value={entry.note}
                     onChange={(e) => setNote(r.id, e.target.value)}
                     placeholder={t("Add note (optional)…")}
-                    className="ring"
+                    className="ring att-note"
                     style={{ flex: 1, minWidth: 160, height: 34, padding: "0 11px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontFamily: "inherit", outline: "none" }}
                   />
                 </div>
@@ -238,15 +238,15 @@ export default function TakeAttendancePage() {
         * this app's <main> pads 32px/48px, so the negative margins match THIS
         * container. Same treatment, same result — a bar flush to the content
         * area — rather than the same literal numbers leaving a seam. */}
-      <div style={{ position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 20, margin: "0 -32px -48px", padding: "14px 32px", background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(8px)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
-        <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
+      <div className="act-bar" style={{ position: "sticky", bottom: 0, left: 0, right: 0, zIndex: 20, margin: "0 -32px -48px", padding: "14px 32px", background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(8px)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+        <div className="act-bar-meta" style={{ fontSize: 12.5, color: "var(--muted)" }}>
           {dirty && <span style={{ color: "var(--amber)", fontWeight: 600 }}>● {t("Unsaved changes")}</span>}
         </div>
         <button
           type="button"
           onClick={() => save.mutate()}
           disabled={save.isPending}
-          className="btn-primary"
+          className="btn-primary act-bar-cta"
           style={{ height: 42, padding: "0 22px", border: "none", borderRadius: 10, background: "var(--primary)", color: "var(--primary-fg)", fontSize: 14, fontWeight: 600, fontFamily: "inherit", cursor: save.isPending ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8 }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><path d="M17 21v-8H7v8M7 3v5h8" /></svg>

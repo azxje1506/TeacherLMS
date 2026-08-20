@@ -169,7 +169,7 @@ export default function DashboardPage() {
               const { clock, meridiem } = fmt.clockParts(c.start);
               const done = c.status === "Completed";
               return (
-                <div key={c.lessonId} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderTop: "1px solid var(--border-2)" }}>
+                <div key={c.lessonId} className="meta-row" style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 20px", borderTop: "1px solid var(--border-2)" }}>
                   <div style={{ textAlign: "center", minWidth: 56 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "var(--font-mono-stack)" }}>{clock}</div>
                     {meridiem && <div style={{ fontSize: 11, color: "var(--muted-2)" }}>{meridiem}</div>}
@@ -179,8 +179,15 @@ export default function DashboardPage() {
                     <div style={{ fontSize: 13.5, fontWeight: 600 }}>{c.name}</div>
                     <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 1 }}>{c.meta}</div>
                   </div>
-                  <span style={{ fontSize: 11.5, fontWeight: 600, padding: "3px 9px", borderRadius: 99, background: done ? "var(--green-soft)" : "var(--sky-soft)", color: done ? "var(--green)" : "var(--sky)" }}>{t(done ? "Completed" : "Upcoming")}</span>
-                  <Link href="/attendance" className="btn-ghost" style={{ height: 30, padding: "0 11px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 500, display: "flex", alignItems: "center", textDecoration: "none" }}>{t("Start")}</Link>
+                  {/* display:contents above the mobile breakpoint: the desktop
+                    * row is still the same flat flex row, the wrapper draws no
+                    * box at all. Below it (globals.css P1) this becomes the line
+                    * the status and the action move to, so the class name and
+                    * its room stop competing with them for the same inches. */}
+                  <div className="meta-trail" style={{ display: "contents" }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 600, padding: "3px 9px", borderRadius: 99, background: done ? "var(--green-soft)" : "var(--sky-soft)", color: done ? "var(--green)" : "var(--sky)", whiteSpace: "nowrap" }}>{t(done ? "Completed" : "Upcoming")}</span>
+                    <Link href="/attendance" className="btn-ghost" style={{ height: 30, padding: "0 11px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)", color: "var(--fg)", fontSize: 12.5, fontWeight: 500, display: "flex", alignItems: "center", textDecoration: "none", whiteSpace: "nowrap", marginLeft: "auto" }}>{t("Start")}</Link>
+                  </div>
                 </div>
               );
             })}

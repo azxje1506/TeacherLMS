@@ -113,6 +113,42 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
+/* ---- Native date field: geometry and state (Gate 5 Phase 0 v3) ------------
+   A `<input type="date">` is the one control in this app's forms that STATES ITS
+   OWN WIDTH. The UA lays out its internal date fields plus the picker indicator
+   and reports that as the control's intrinsic size; `width:100%` cannot take it
+   below that floor, and on iOS the width is ignored outright unless the UA
+   appearance is switched off. In a drawer whose body is a column flex container
+   that intrinsic width becomes the FORM's width, the body scroller gains a
+   horizontal axis, and the panel can be dragged sideways — which is exactly what
+   Due date did while every sibling input, sized purely by its container, sat
+   correctly at 100%.
+
+   So the control is made to take its width FROM its container like the rest of
+   the form. `min-width:0` removes the floor, `max-width:100%` caps it, and
+   `appearance:none` is what makes iOS honour either.
+
+   The focus treatment is the same argument. The field's border and ring already
+   come from `.ring:focus`, but the SEGMENT the caret sits in is painted by the
+   UA in its own system highlight — a blue block inside a form whose entire
+   active language is `--accent`. It is repainted in the form's own tokens here
+   rather than left to disagree with every other field on the screen.
+
+   Both date fields in the app — Homework due date and Student birthday — are
+   covered by this one rule; neither carries a screen-specific exception. */
+input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%}
+/* iOS right-aligns the value once appearance is off; every other field in these
+   forms reads from the left. */
+input[type="date"]::-webkit-date-and-time-value{text-align:left;margin:0}
+input[type="date"]::-webkit-datetime-edit{padding:0}
+/* The indicator keeps its place at the trailing edge, in the muted tone the
+   Select chevron already uses, so the two read as one field family. */
+input[type="date"]::-webkit-calendar-picker-indicator{display:block;margin-left:auto;padding:0;opacity:.5;cursor:pointer}
+input[type="date"]:hover::-webkit-calendar-picker-indicator{opacity:.85}
+input[type="date"]::-webkit-datetime-edit-day-field:focus,
+input[type="date"]::-webkit-datetime-edit-month-field:focus,
+input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--accent-soft);color:var(--accent);border-radius:3px;outline:none}
+
 /* ---- Responsive (Sprint 6 review fix) ---- */
 @media (max-width:1100px){
   .ov-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important}
@@ -187,6 +223,106 @@ button:not(:disabled):active,[role="button"]:not([aria-disabled="true"]):active,
   }
   .app-drawer-body{overscroll-behavior:contain}
   .app-drawer-foot{padding-bottom:calc(16px + env(safe-area-inset-bottom)) !important}
+  /* A drawer form is a column flex container, so its children are stretched to
+     the panel's width and nothing inside may state a width of its own. The date
+     field's floor is removed above, OUTSIDE this breakpoint, because a control
+     that defines its own width is wrong at every size — not only on a phone. */
+  .app-drawer-body form{min-width:0}
+
+  /* ==== COMPONENT-LEVEL RESPONSIVE CONTRACT (Gate 5 Phase 0 v3) ============
+     The shell remediation gave the content column the whole phone. What manual
+     verification then exposed was one layer down: components that still state a
+     DESKTOP shape inside that column. Five shapes account for every reported
+     failure, so five rules are stated here rather than six screen patches.
+
+     Nothing below reduces a font size, nudges a pixel or clips an overflow.
+     Each rule changes the same one thing: what a layout is allowed to put on a
+     single line when there is only a phone's width to put it on. Every rule
+     lives inside this breakpoint, so desktop geometry is untouched by all of it. */
+
+  /* ---- P1. Metadata rows -------------------------------------------------
+     Dashboard "Today's classes", the Lessons list and the Attendance "Recent
+     lessons" list are the same row: a fixed date/time tile, a colour rule, a
+     title + supporting line, then a trailing group of time, status and action.
+     On a desktop the trailing group costs nothing. On a 375px phone it takes
+     more than half the row and the class name is left wrapping in what remains
+     — the "name and room compete with the status tag and Start" report, filed
+     twice because it is one layout used twice.
+
+     The trailing group moves to its own line. It is marked up as a wrapper that
+     is display:contents above this breakpoint, so a desktop row still lays out
+     as the flat flex row it always was — the wrapper contributes no box at all
+     — and only here does it become a box that can wrap. */
+  .meta-row{flex-wrap:wrap !important}
+  .meta-row>.meta-trail{
+    display:flex !important;flex:1 0 100% !important;min-width:0 !important;
+    align-items:center;flex-wrap:wrap;gap:10px;
+  }
+
+  /* ---- P2. KPI grids -----------------------------------------------------
+     Both Attendance screens hard-code a desktop column count inline, so the
+     count never changed on a phone: the index kept a 2-up statistics pair, which
+     left the "This month" card ~145px in which to fit a 96px ring beside a
+     2-column tile grid, and the register kept repeat(5,1fr) for its five KPI
+     cards, giving each about 63px. This is the same escape .kpi-grid and
+     .ov-grid above already use — a mobile column count, stated once, here. */
+  .att-stats{grid-template-columns:minmax(0,1fr) !important}
+  .att-summary{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+  /* Five cards in two columns leave one alone on the last row. The odd card is
+     the Attendance rate — the only one carrying --card-2, the design's own
+     "this is the total" surface — so it spans the row rather than sitting at
+     half width beside a gap. The convention is the design's, not a new one. */
+  .att-summary>:last-child{grid-column:1 / -1}
+
+  /* ---- P3. Register rows -------------------------------------------------
+     A student row is avatar + name + a four-way status control + a note field.
+     The control's segments are nowrap and its group carried a 280px floor, the
+     note field a 160px one; together they cannot share a phone's row with the
+     name. Each takes a full line, which is also the order a teacher works in:
+     read the name, set the status, add the note.
+
+     The control then goes 2x2 rather than staying 4-across. Four equal segments
+     across one phone line give each about 70px, and the longest label — Excused
+     — needs about 75 before it starts to clip; a nowrap label in a box too small
+     for it is exactly the failure this remediation is fixing elsewhere. Two
+     columns give each segment ~145px at the narrowest supported width. The
+     alternative was trimming the segment's padding to buy five pixels, which is
+     the kind of nudge that works on the device it was measured on and no other. */
+  .att-seg{
+    display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;
+    flex:1 0 100% !important;min-width:0 !important;
+  }
+  .att-note{flex:1 0 100% !important;min-width:0 !important}
+
+  /* ---- P4. Sticky action bars -------------------------------------------
+     The register's save bar bleeds to the edges of the content area with
+     negative margins that matched <main>'s DESKTOP padding (-32/-48). Against
+     mobile padding (14/40) the bar was 36px wider than the viewport — a page
+     that scrolled sideways because of its own footer. The margins are restated
+     against the padding actually in force here, and the button takes the content
+     width instead of sitting in a far corner. The bar is sticky, not fixed, so
+     it stays in flow and can never cover the content above it; the safe-area
+     inset keeps it clear of the home indicator. */
+  .act-bar{
+    margin:0 -14px -40px !important;
+    padding:14px 14px calc(14px + env(safe-area-inset-bottom)) !important;
+    flex-wrap:wrap;
+  }
+  .act-bar>.act-bar-meta{flex:1 0 100%}
+  .act-bar>.act-bar-cta{flex:1 0 100% !important;justify-content:center}
+
+  /* ---- P5. Action rows ---------------------------------------------------
+     A class header offers four actions in one row. On a phone they cannot share
+     it, and the row's own answer — shrink the buttons — wrapped their labels.
+     Instead the row wraps at the BUTTON boundary and the actions take their
+     designed hierarchy: the primary action owns a line, the secondary pair
+     shares the next, and the destructive icon action stays the fixed-size icon
+     it already is. Labels are nowrap at every size, so a label is never the
+     thing that wraps. */
+  .act-row{flex-wrap:wrap !important}
+  .act-row>.act-primary{flex:1 0 100% !important}
+  .act-row>.act-primary>button{flex:1}
+  .act-row>.act-secondary{flex:1 1 auto !important;justify-content:center}
 }
 @media (prefers-reduced-motion:reduce){
   .app-sidebar{transition:none !important}
