@@ -16,7 +16,8 @@
     "lessons:migration-report": "tsx --env-file=.env.local scripts/migration-report.ts",
     "attendance:scratch-proof": "tsx --env-file=.env.local scripts/attendance-scratch-proof.ts",
     "attendance:live-audit": "tsx --env-file=.env.local scripts/attendance-live-audit.ts",
-    "attendance:rollout-phase1": "tsx --env-file=.env.local scripts/attendance-rollout-phase1.ts"
+    "attendance:rollout-phase1": "tsx --env-file=.env.local scripts/attendance-rollout-phase1.ts",
+    "homework:integrity": "node scripts/homework-integrity.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

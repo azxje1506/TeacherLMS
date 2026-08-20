@@ -1,0 +1,94 @@
+/* Homework production integrity check — READ ONLY.
+ *
+ * Run with:  npm run homework:integrity
+ *
+ * WHY THIS EXISTS. Sprint 7 gates every Homework rollout step on two facts: the
+ * collection still holds 15 assignments, and its digest is still
+ * aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f. Both were
+ * being carried between sessions as bare numbers, and the CONSTRUCTION behind
+ * the digest was never committed — so a digest that failed to match could not be
+ * told apart from a digest computed a different way. That is the worst possible
+ * ambiguity for a check whose entire job is to say whether production was
+ * written to. It is written down here once, so the answer is reproducible.
+ *
+ * THE CONSTRUCTION. SHA-256 over `JSON.stringify` of every document in the
+ * `homeworks` collection, sorted by the domain's own `id` — the natural key,
+ * not `_id` — with the storage-only keys `_id` and `__v` removed. Sorting by
+ * the natural key is what makes the digest independent of insertion order, and
+ * stripping `_id`/`__v` is what makes it independent of a re-seed.
+ *
+ * READ ONLY BY CONSTRUCTION. The only driver calls below are `countDocuments`
+ * and `find`. There is no code path here that can insert, update or delete, and
+ * there must never be one: this script's output is only trustworthy because it
+ * cannot be the thing that changed what it is measuring.
+ */
+
+import { MongoClient } from "mongodb";
+import { createHash } from "node:crypto";
+import dotenv from "dotenv";
+
+dotenv.config({ path: ".env.local" });
+
+/** The Sprint 7 baseline. Both are facts about production, not defaults. */
+const EXPECTED_COUNT = 15;
+const EXPECTED_DIGEST = "aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f";
+
+/* Mongoose pluralises the `Homework` model to `homeworks`. Naming it explicitly
+ * is not pedantry: querying `homework` returns an empty collection rather than
+ * an error, so a typo here reads as "every assignment was deleted". */
+const COLLECTION = "homeworks";
+
+/** Storage-only keys, excluded so the digest survives a re-seed. */
+const STORAGE_KEYS = new Set(["_id", "__v"]);
+
+const uri = process.env.MONGODB_URI;
+if (!uri) throw new Error("MONGODB_URI is not set — see .env.example");
+
+const client = new MongoClient(uri);
+let failed = false;
+
+try {
+  await client.connect();
+  const db = client.db(process.env.MONGODB_DB || "etlms");
+
+  console.log("cluster :", uri.replace(/^(mongodb(?:\+srv)?:\/\/)([^:]+):([^@]+)@/, "$1$2:****@"));
+  console.log("database:", db.databaseName);
+  console.log("collection:", COLLECTION, "\n");
+
+  const col = db.collection(COLLECTION);
+
+  const count = await col.countDocuments();
+  const countOk = count === EXPECTED_COUNT;
+  console.log(`count  : ${count} (expected ${EXPECTED_COUNT}) ${countOk ? "OK" : "MISMATCH"}`);
+  if (!countOk) failed = true;
+
+  const docs = await col.find({}).sort({ id: 1 }).toArray();
+  /* Key order is preserved minus the omitted keys, which is what keeps this
+   * byte-identical to the stringify the baseline was taken from. */
+  const stripped = docs.map((d) =>
+    Object.fromEntries(Object.entries(d).filter(([k]) => !STORAGE_KEYS.has(k)))
+  );
+  const digest = createHash("sha256").update(JSON.stringify(stripped)).digest("hex");
+  const digestOk = digest === EXPECTED_DIGEST;
+  console.log(`digest : ${digest}`);
+  console.log(`         ${digestOk ? "OK — matches the Sprint 7 baseline" : `MISMATCH — expected ${EXPECTED_DIGEST}`}`);
+  if (!digestOk) failed = true;
+
+  /* A digest that matches says nothing changed; a digest that does not says
+   * only THAT something did. The histogram is what makes a mismatch legible
+   * without a second trip to the database. */
+  const byStatus = {};
+  const byScope = {};
+  for (const d of docs) {
+    byStatus[d.status ?? "—"] = (byStatus[d.status ?? "—"] ?? 0) + 1;
+    byScope[d.scope ?? "—"] = (byScope[d.scope ?? "—"] ?? 0) + 1;
+  }
+  console.log("\nstatus :", JSON.stringify(byStatus));
+  console.log("scope  :", JSON.stringify(byScope));
+
+  console.log(`\n${failed ? "INTEGRITY FAILED — production differs from the Sprint 7 baseline" : "INTEGRITY OK — no Homework write has occurred"}`);
+} finally {
+  await client.close();
+}
+
+process.exit(failed ? 1 : 0);
