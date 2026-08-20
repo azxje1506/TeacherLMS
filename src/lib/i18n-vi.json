@@ -682,5 +682,15 @@
   "Unsaved changes": "Thay đổi chưa lưu",
   "Lesson not found": "Không tìm thấy buổi học",
   "Attendance isn't available for this lesson": "Buổi học này chưa thể điểm danh",
-  "That student isn't on this lesson's register": "Học sinh đó không có trong danh sách điểm danh của buổi học này"
+  "That student isn't on this lesson's register": "Học sinh đó không có trong danh sách điểm danh của buổi học này",
+  "Due": "Hạn nộp",
+  "Assigned": "Đã giao",
+  "Couldn't load homework": "Không tải được bài tập",
+  "Couldn't save homework": "Không lưu được bài tập",
+  "Couldn't delete homework": "Không xóa được bài tập",
+  "Homework not found": "Không tìm thấy bài tập",
+  "Student not found": "Không tìm thấy học sinh",
+  "That student isn't in this class": "Học sinh đó không có trong lớp học này",
+  "Only an active class can be assigned homework": "Chỉ lớp đang hoạt động mới được giao bài tập",
+  "Only homework that's still assigned can be deleted": "Chỉ có thể xóa bài tập còn ở trạng thái Đã giao"
 }
