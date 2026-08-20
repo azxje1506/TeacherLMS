@@ -13,6 +13,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { studentSchema, type StudentFormInput, type StudentInput } from "@/lib/schemas";
 import { useSettings } from "@/lib/settings-context";
 import { MODULE_AVAILABLE } from "@/lib/constants";
+import { DateField } from "@/components/ui/date-field";
 import { Drawer } from "@/components/ui/drawer";
 import { Select } from "@/components/ui/select";
 import { GRADE_OPTIONS, STATUS_OPTIONS } from "./student-ui";
@@ -137,8 +138,18 @@ export function StudentDrawer({
 
         {/* Birthday */}
         <div>
-          <label style={labelStyle}>{t("Birthday")} <span style={{ color: "var(--accent)" }}>*</span></label>
-          <input className="ring" type="date" style={field(!!errors.birthday)} {...register("birthday")} />
+          <label style={labelStyle} htmlFor="st-birthday">{t("Birthday")} <span style={{ color: "var(--accent)" }}>*</span></label>
+          {/* The same shared primitive as Homework's due date: a native date
+            * input draws nothing when it is empty, so the app draws the
+            * guidance. `birthday` is already watched, just below, for the
+            * formatted hint — the same value answers "is it empty". */}
+          <DateField
+            id="st-birthday"
+            placeholder={t("Pick a birthday")}
+            empty={!birthday}
+            style={field(!!errors.birthday)}
+            {...register("birthday")}
+          />
           {birthday && !errors.birthday && <div style={hintStyle}>{fmt.dateLabel(birthday)}</div>}
           {errors.birthday && <div role="alert" style={errStyle}>{t(errors.birthday.message ?? "")}</div>}
         </div>

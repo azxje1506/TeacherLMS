@@ -103,12 +103,20 @@ describe("Drawer forms — every control takes its width from the panel", () => 
   });
 
   it("4. the fix is shared, not a Homework exception", () => {
-    // Both date fields in the app are reached by the one element selector, and
-    // neither screen carries a rule of its own.
-    const withDates = ["homework/homework-drawer.tsx", "students/student-drawer.tsx"];
-    for (const rel of withDates) {
+    /* Both date fields in the app are reached by the one element selector, and
+     * neither screen carries a rule of its own.
+     *
+     * v4 moved the input itself behind a shared primitive (ui/date-field.tsx),
+     * so the two consumers no longer hold a bare `type="date"` — which is a
+     * STRONGER version of what this test was asserting, not a weaker one: there
+     * is now exactly one date input in the app to be reached at all. The
+     * per-consumer contract moved with it, to form-controls.test.ts. */
+    const DATE_FIELD = read("src", "components", "ui", "date-field.tsx");
+    assert.ok(DATE_FIELD.includes('type="date"'), "the shared primitive holds the date input");
+    for (const rel of ["homework/homework-drawer.tsx", "students/student-drawer.tsx"]) {
       const src = read("src", "components", ...rel.split("/"));
-      assert.ok(src.includes('type="date"'), `${rel} should hold a date field`);
+      assert.ok(src.includes("<DateField"), `${rel} should use the shared date field`);
+      assert.ok(!src.includes('type="date"'), `${rel} should not hold a date input of its own`);
     }
     assert.ok(!/#hw-due/.test(CSS), "no Homework-only selector may exist");
   });

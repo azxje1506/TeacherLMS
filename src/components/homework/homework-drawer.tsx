@@ -34,6 +34,7 @@ import { useEffect } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useT } from "@/lib/settings-context";
+import { DateField } from "@/components/ui/date-field";
 import { Drawer } from "@/components/ui/drawer";
 import { Select } from "@/components/ui/select";
 import {
@@ -49,17 +50,18 @@ const field = (invalid: boolean): React.CSSProperties => ({
   // min/max-width are the drawer contract, not decoration: a control that
   // reports an intrinsic width wider than the panel makes the panel scroll
   // sideways. See globals.css, "Native date field".
-  width: "100%", minWidth: 0, maxWidth: "100%", height: 38, padding: "0 12px",
+  width: "100%", minWidth: 0, maxWidth: "100%", height: 38, padding: "0 11px",
   border: `1px solid ${invalid ? "var(--accent)" : "var(--border)"}`,
   borderRadius: 9, background: "var(--card)", color: "var(--fg)",
-  fontSize: 13.5, fontFamily: "inherit", outline: "none",
+  fontSize: 13, fontFamily: "inherit", outline: "none",
 });
 
+/* Derived from `field`, exactly as student-, parent- and class-drawer derive
+ * theirs, so a change to the family reaches the textarea too. Only what a
+ * multi-line control must change is changed. */
 const areaStyle: React.CSSProperties = {
-  width: "100%", minWidth: 0, maxWidth: "100%", minHeight: 84, padding: "10px 12px",
-  border: "1px solid var(--border)", borderRadius: 9,
-  background: "var(--card)", color: "var(--fg)",
-  fontSize: 13.5, fontFamily: "inherit", outline: "none", resize: "vertical",
+  ...field(false), height: "auto", minHeight: 76, padding: "10px 12px",
+  lineHeight: 1.5, resize: "vertical",
 };
 
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6 };
@@ -105,6 +107,9 @@ export function HomeworkDrawer({
 
   const scope = useWatch({ control, name: "scope" });
   const classId = useWatch({ control, name: "classId" });
+  /* The date field cannot tell whether it is empty — a reset() changes the value
+   * with no event to observe — so the form says so. See ui/date-field.tsx. */
+  const dueDate = useWatch({ control, name: "dueDate" });
 
   const classOptions = assignableClasses.map((c) => ({ value: c.id, label: c.name }));
   const students = studentOptions(classId ?? "", assignableClasses);
@@ -218,7 +223,16 @@ export function HomeworkDrawer({
         {/* Due date */}
         <div>
           <label style={labelStyle} htmlFor="hw-due">{t("Due date")}<Required /></label>
-          <input id="hw-due" className="ring" type="date" style={field(!!errors.dueDate)} {...register("dueDate")} />
+          {/* "Pick a due date" is the design's own string for this field — it
+            * has been in the dictionary since S1 and had nowhere to be shown,
+            * because a native date input has no placeholder to put it in. */}
+          <DateField
+            id="hw-due"
+            placeholder={t("Pick a due date")}
+            empty={!dueDate}
+            style={field(!!errors.dueDate)}
+            {...register("dueDate")}
+          />
           {errors.dueDate && <div role="alert" style={errStyle}>{t(errors.dueDate.message ?? "")}</div>}
         </div>
 

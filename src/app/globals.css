@@ -57,7 +57,17 @@ svg{display:block}
 @keyframes overlayFade{from{opacity:0}to{opacity:1}}
 @keyframes selIn{from{opacity:0}to{opacity:1}}
 input:not([type=range]):hover:not(:focus), textarea:hover:not(:focus), select:hover:not(:focus){border-color:var(--muted-2) !important}
-[data-cs-trigger]:hover{border-color:var(--muted-2) !important;background:var(--hover) !important}
+/* :not(:focus) mirrors the input rule directly above. It is the difference
+   between a control that is being hovered and one that is being USED, and the
+   trigger was missing it — so an open Select kept its hover fill, and on a touch
+   device, where :hover sticks after the tap that opened it, it kept that fill for
+   as long as the listbox was open. Focus now owns the state, in both. */
+[data-cs-trigger]:hover:not(:focus){border-color:var(--muted-2) !important;background:var(--hover) !important}
+/* The placeholder tone is the Select trigger's, which takes --muted-2 from the
+   design. Text inputs were falling through to the UA default — a different grey
+   at a different opacity — so the same empty field read differently depending on
+   which control the design happened to use. One token, one family. */
+::placeholder{color:var(--muted-2);opacity:1}
 nav button:hover{background:var(--hover) !important;color:var(--fg) !important}
 /* Consistent keyboard focus ring across all interactive elements (mouse clicks stay clean via :focus-visible) */
 button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [data-cs-trigger]:focus-visible, [tabindex]:focus-visible, label:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -148,6 +158,37 @@ input[type="date"]:hover::-webkit-calendar-picker-indicator{opacity:.85}
 input[type="date"]::-webkit-datetime-edit-day-field:focus,
 input[type="date"]::-webkit-datetime-edit-month-field:focus,
 input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--accent-soft);color:var(--accent);border-radius:3px;outline:none}
+
+/* ---- Date field: the placeholder a native date input does not have --------
+   A `<input type="date">` has no usable empty state. It does not support the
+   `placeholder` attribute at all, and what it draws when it holds no value is
+   the UA's business: Chrome prints its own "mm/dd/yyyy" hint, and mobile Safari
+   — especially with the UA appearance switched off, which the rule above needs
+   in order to make the control take its width from its container — prints
+   NOTHING. So the field sat visually empty, and the teacher could not tell what
+   it wanted until they had already tapped it.
+
+   No amount of CSS fixes that, because there is no placeholder to style. The
+   app draws its own instead, over a native input that stays exactly what it
+   was: the real, focusable, accessible control that opens the real picker. No
+   custom calendar is introduced, and nothing about the value, the payload or
+   the validation changes — only what is visible when there is no value yet.
+
+   Empty and unfocused: the UA's own hint is hidden so the two can never overlap,
+   and the app's placeholder shows in its place. Focus hands the field straight
+   back, so a keyboard user types against the segments they can actually see. */
+.date-field{position:relative;display:block}
+/* The placeholder sits exactly where the input's own text sits — the container
+   IS the input's border box, so 1px of border plus the field family's 11px of
+   padding — and takes the same tone as every other placeholder in the app. */
+.date-ph{
+  position:absolute;left:1px;top:1px;bottom:1px;
+  display:flex;align-items:center;padding-inline-start:11px;
+  pointer-events:none;color:var(--muted-2);font-size:13px;line-height:1;
+  transition:opacity .15s ease;
+}
+.date-field[data-empty="1"]>input:not(:focus){color:transparent}
+.date-field[data-empty="1"]>input:focus~.date-ph{opacity:0}
 
 /* ---- Responsive (Sprint 6 review fix) ---- */
 @media (max-width:1100px){
