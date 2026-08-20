@@ -2,14 +2,19 @@
  *
  * Run with:  npm run homework:integrity
  *
- * WHY THIS EXISTS. Sprint 7 gates every Homework rollout step on two facts: the
- * collection still holds 15 assignments, and its digest is still
- * aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f. Both were
- * being carried between sessions as bare numbers, and the CONSTRUCTION behind
- * the digest was never committed — so a digest that failed to match could not be
+ * WHY THIS EXISTS. Sprint 7 gates every Homework rollout step on two facts: how
+ * many assignments the collection holds, and what its digest is. Both were being
+ * carried between sessions as bare numbers, and the CONSTRUCTION behind the
+ * digest was never committed — so a digest that failed to match could not be
  * told apart from a digest computed a different way. That is the worst possible
  * ambiguity for a check whose entire job is to say whether production was
  * written to. It is written down here once, so the answer is reproducible.
+ *
+ * THE BASELINE IS AN ACCEPTED FACT, NOT WHATEVER PRODUCTION HAPPENS TO HOLD. The
+ * two constants below are edited by hand, once, after a write has been both
+ * authorised and verified — never widened, never softened, and never read back
+ * from the collection they are checking. A mismatch is the entire product of
+ * this script: it is the only way an unauthorised write announces itself.
  *
  * THE CONSTRUCTION. SHA-256 over `JSON.stringify` of every document in the
  * `homeworks` collection, sorted by the domain's own `id` — the natural key,
@@ -29,9 +34,29 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: ".env.local" });
 
-/** The Sprint 7 baseline. Both are facts about production, not defaults. */
-const EXPECTED_COUNT = 15;
-const EXPECTED_DIGEST = "aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f";
+/** The accepted Sprint 7 baseline. Both are facts about production, not defaults.
+ *
+ * PROVENANCE — the baseline has moved exactly once, and only by authorisation:
+ *
+ *   15 / aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f
+ *        THE PRE-FIRST-WRITE BASELINE. Held from the start of Sprint 7 through
+ *        Gate 5 Phase 0, across which zero Homework writes had occurred.
+ *
+ *   16 / ce6ff87d6cad443c3321001a29020dafce802bf965c638cb374cb8196f2dec38
+ *        THE ACCEPTED POST-PHASE-1 BASELINE, and the one in force below. Gate 5
+ *        Phase 1 authorised exactly one production create — the class-scoped
+ *        smoke assignment 6a86bbbad3064b8fdc15483e on class c6, Assigned,
+ *        lessonId null, due 2026-07-31 — issued through POST /api/homework and
+ *        confirmed in the hosted app in Phase 1.1.
+ *
+ *        The move is attributable rather than merely observed: this same
+ *        construction, run over the post-write collection MINUS that one record,
+ *        still reproduces aef736e9…5741f exactly. The original 15 documents are
+ *        byte-identical, so the digest moved because one document was added and
+ *        for no other reason.
+ */
+const EXPECTED_COUNT = 16;
+const EXPECTED_DIGEST = "ce6ff87d6cad443c3321001a29020dafce802bf965c638cb374cb8196f2dec38";
 
 /* Mongoose pluralises the `Homework` model to `homeworks`. Naming it explicitly
  * is not pedantry: querying `homework` returns an empty collection rather than
@@ -86,7 +111,7 @@ try {
   console.log("\nstatus :", JSON.stringify(byStatus));
   console.log("scope  :", JSON.stringify(byScope));
 
-  console.log(`\n${failed ? "INTEGRITY FAILED — production differs from the Sprint 7 baseline" : "INTEGRITY OK — no Homework write has occurred"}`);
+  console.log(`\n${failed ? "INTEGRITY FAILED — production differs from the accepted Sprint 7 baseline" : "INTEGRITY OK — production matches the accepted Sprint 7 baseline"}`);
 } finally {
   await client.close();
 }

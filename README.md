@@ -103,10 +103,15 @@ Login screen, the **Dashboard** (revenue engine, KPIs, today's classes,
 upcoming lessons, activity), and **Attendance** (register index, take/edit
 attendance, and its API) — all pixel-faithful and wired to live data.
 
-**Implemented in source, pending production rollout:** **Homework** — the
-assignment index with its class filter, the assign/edit drawer, duplicate, and
-pending-only delete, plus its API. Not yet deployed, and not yet validated
-against production data.
+**Deployed, production verification in progress:** **Homework** — the assignment
+index with its class filter, the assign/edit drawer, duplicate, and pending-only
+delete, plus its API. Deployed and running against production data: the read-only
+production check passed (Gate 5 Phase 0), and the first controlled production
+create passed — one class-scoped assignment, written through the real API and
+then confirmed by hand in the hosted app. Production verification of Edit,
+Duplicate and Delete is **not yet complete**, so Sprint 7 is not closed.
+Recording submission outcomes stays deferred: this MVP ships no submission
+writer.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons,
 Reviews, Finance, Reports, Calendar and Settings screens — each ported

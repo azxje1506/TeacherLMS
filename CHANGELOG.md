@@ -41,6 +41,14 @@
 - No submission-recording surface in this MVP: there is no designed screen that
   records a student's outcome, so there is no endpoint that writes one.
 - No homework timestamps, so no "last updated" is shown anywhere.
+- Rolled out to the deployed application, with production verification still in
+  progress. The read-only production check passed (Gate 5 Phase 0), and the first
+  controlled production create passed: one class-scoped assignment written through
+  `POST /api/homework`, read back with its roster snapshot intact and no outcome
+  synthesised, and then confirmed by hand in the hosted app. The pre-existing
+  records were verified byte-identical afterwards, so the collection's digest
+  moved for that one addition and no other reason. Production verification of
+  Edit, Duplicate and Delete is not yet complete, so Sprint 7 is not closed.
 
 ## Unreleased — Attendance MVP (Sprint 6)
 - Attendance index: this month's rate and status counts, attendance by class,
