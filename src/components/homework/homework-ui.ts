@@ -56,9 +56,16 @@ export const SCOPE_LABEL: Record<"class" | "student", string> = {
 /** The scope field's own label, likewise from the design's dictionary. */
 export const SCOPE_FIELD_LABEL = "Assign to";
 
-/** The card surface — the comp's card, with its class-coloured left edge. */
+/** The card surface — the comp's card, with its class-coloured left edge.
+ *
+ * `minWidth: 0` because this is a GRID ITEM, and a grid item defaults to
+ * `min-width: auto` — it refuses to shrink below its own content. Without it a
+ * long title or assignee name would push the card wider than its track and give
+ * the page horizontal overflow on a narrow screen. It changes nothing at any
+ * width where the content already fits, so no desktop geometry moves. */
 export function homeworkCardStyle(color: string): React.CSSProperties {
   return {
+    minWidth: 0,
     background: "var(--card)",
     border: "1px solid var(--border)",
     borderLeft: `3px solid ${color}`,

@@ -189,7 +189,7 @@ export default function HomeworkPage() {
       )}
 
       {!isLoading && !isError && rows.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "var(--gap)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(320px,100%),1fr))", gap: "var(--gap)" }}>
           {rows.map((h) => (
             <div key={h.id} style={homeworkCardStyle(h.classColor)}>
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
@@ -277,7 +277,7 @@ function SkeletonGrid() {
     backgroundSize: "200% 100%", animation: "shimmer 1.3s ease-in-out infinite",
   };
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "var(--gap)" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(320px,100%),1fr))", gap: "var(--gap)" }}>
       {Array.from({ length: 6 }).map((_, i) => (
         <div key={i} style={homeworkCardStyle("var(--border-2)")}>
           <div style={{ height: 14, width: "65%", borderRadius: 6, ...bar }} />

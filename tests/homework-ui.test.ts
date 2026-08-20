@@ -26,6 +26,7 @@ import {
   valuesFrom, valuesFromDuplicate, withClass, withScope,
   type HomeworkFormValues,
 } from "../src/components/homework/form";
+import { homeworkCardStyle } from "../src/components/homework/homework-ui";
 import {
   buildAssignableClasses, buildFilterClasses, buildHomeworkList, HOMEWORK_ERROR, HOMEWORK_STATUSES,
 } from "../src/lib/homework";
@@ -41,6 +42,7 @@ const PAGE = code("src", "app", "(app)", "homework", "page.tsx");
 const DRAWER = code("src", "components", "homework", "homework-drawer.tsx");
 const CLIENT = code("src", "components", "homework", "api.ts");
 const FORM = code("src", "components", "homework", "form.ts");
+const SHELL_DRAWER = code("src", "components", "ui", "drawer.tsx");
 const I18N = JSON.parse(readFileSync(path.join(process.cwd(), "src", "lib", "i18n-vi.json"), "utf8")) as Record<string, string>;
 
 /* ------------------------------------------------------------------ fixtures */
@@ -527,6 +529,94 @@ describe("The client module", () => {
   it("67. the form module reaches no network and no database", () => {
     for (const forbidden of ["fetch(", "Model", "dbConnect", "new Date"]) {
       assert.ok(!FORM.includes(forbidden), `${forbidden} has no place in the form rules`);
+    }
+  });
+});
+
+/* ------------------------------------------------------ mobile geometry */
+
+/* WHY THESE EXIST. Gate 5 Phase 0 found the Homework index broken on a phone in
+ * two ways that turned out to be one fault. The card grid asked for
+ * `minmax(320px,1fr)`, and a minmax FLOOR is a hard minimum: the track keeps
+ * that width even when its container is narrower. At <=860px the sidebar is a
+ * 64px rail and .app-main pads 18px a side, so a 414px phone leaves a 314px
+ * content box — and a 320px track overflowed it.
+ *
+ * That single overflow produced both reported symptoms. The visible one was the
+ * page sitting wrong inside its own padding. The second only looked like a
+ * drawer bug: the drawer never consumed layout width — it portals to <body> and
+ * is position:fixed — but opening it runs useScrollLock, which sets
+ * body{overflow:hidden} and so CLIPS the overflow the page had been showing.
+ * The browser then re-laid the page out at the true viewport width, and the
+ * header re-wrapped. The drawer was the trigger, not the cause.
+ *
+ * So these assertions pin the cause rather than the symptom: tracks that can
+ * shrink, grid items that can shrink, and a page whose geometry never depends on
+ * drawer state. No pixel snapshots — this project ships no DOM harness, and none
+ * of these needs one. */
+
+describe("Mobile geometry — the page cannot overflow its container", () => {
+  it("68. every card grid track can shrink below its preferred width", () => {
+    const tracks = [...PAGE.matchAll(/gridTemplateColumns:\s*"([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(tracks.length >= 2, "the card grid and its skeleton both declare a track");
+    for (const track of tracks) {
+      assert.ok(
+        !/minmax\(\s*\d/.test(track),
+        `"${track}" pins a hard pixel floor, which overflows a narrower container`
+      );
+      assert.match(track, /minmax\(\s*min\(/, "a track floor must be min(<preferred>,100%)");
+    }
+  });
+
+  it("69. the real grid and the skeleton grid stay identical", () => {
+    const tracks = [...PAGE.matchAll(/gridTemplateColumns:\s*"([^"]+)"/g)].map((m) => m[1]);
+    assert.equal(new Set(tracks).size, 1, "the loading state must not reflow into the ready state");
+  });
+
+  it("70. a card is a shrinkable grid item", () => {
+    // Grid items default to min-width:auto and refuse to shrink below their own
+    // content, which is the other way a long title reaches the page edge.
+    assert.equal(homeworkCardStyle("var(--border-2)").minWidth, 0);
+  });
+
+  it("71. the page pins no fixed pixel width on a layout container", () => {
+    const widths = [...PAGE.matchAll(/(?<![a-zA-Z])width:\s*(\d+)/g)].map((m) => Number(m[1]));
+    // Only icon-sized boxes may carry a fixed width (action buttons, the error glyph).
+    for (const w of widths) {
+      assert.ok(w <= 60, `a ${w}px fixed width is a layout container, not an icon`);
+    }
+  });
+});
+
+describe("Mobile geometry — the drawer overlays instead of displacing", () => {
+  it("72. the drawer leaves the page's layout entirely", () => {
+    assert.ok(SHELL_DRAWER.includes("createPortal"), "it portals out of the page");
+    assert.ok(SHELL_DRAWER.includes("document.body"), "and lands on <body>");
+    assert.ok(SHELL_DRAWER.includes('position: "fixed"'), "so it is sized against the viewport");
+  });
+
+  it("73. the drawer panel is bounded by the viewport on a narrow screen", () => {
+    assert.ok(SHELL_DRAWER.includes('width: "min(460px,94vw)"'), "never wider than the screen");
+  });
+
+  it("74. the drawer body scrolls inside the panel", () => {
+    assert.ok(SHELL_DRAWER.includes('overflowY: "auto"'), "a tall form scrolls internally");
+  });
+
+  it("75. Homework uses the shared drawer and adds no panel of its own", () => {
+    assert.ok(DRAWER.includes("<Drawer"));
+    for (const bespoke of ["createPortal", 'position: "fixed"', "vw"]) {
+      assert.ok(!DRAWER.includes(bespoke), `${bespoke} would be a second, divergent panel`);
+    }
+  });
+
+  it("76. no page geometry is conditional on drawer or dialog state", () => {
+    // The page may decide WHAT the drawer shows; it may never decide how the page
+    // itself is laid out, or opening one would reflow the other.
+    const geometry = /width|height|padding|margin|gridTemplate|flex|gap|position/;
+    for (const line of PAGE.split("\n")) {
+      if (!/drawerFor|prefill|confirm/.test(line)) continue;
+      assert.ok(!geometry.test(line), `drawer state must not drive layout: ${line.trim()}`);
     }
   });
 });
