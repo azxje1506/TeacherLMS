@@ -186,8 +186,47 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   pointer-events:none;color:var(--muted-2);font-size:13px;line-height:1;
   transition:opacity .15s ease;
 }
+/* ONE VISIBLE TEXT LAYER, ALWAYS.
+   The app's placeholder is only correct if the browser's own empty-state text
+   is not also on screen, and v4 arranged that by setting `color:transparent` on
+   the input — which works only if the colour INHERITS into the input's shadow
+   text layer. It does in WebKit, which is why an iPhone looked right. It does
+   not in Chromium, which paints the empty date sub-fields from its own UA
+   stylesheet, so the inherited `transparent` never reached them and "mm/dd/yyyy"
+   stayed on screen under "Pick a due date". The split reported as mobile-versus-
+   desktop is really WebKit-versus-Chromium: Android Chrome shows it too.
+
+   So the native text layer is no longer hidden with a COLOUR. `opacity` on
+   ::-webkit-datetime-edit composites the whole layer away — every sub-field at
+   once, whatever colour the UA gave it — and no colour rule can defeat it.
+   `color:transparent` stays for engines that expose no such pseudo-element at
+   all (Firefox), where inheritance is the only lever and does work.
+
+   Two declarations, one intent, no user-agent sniffing: each engine is told to
+   hide its text layer through the mechanism it actually honours, and an engine
+   that honours both simply hides it twice.
+
+   The picker icon is untouched. ::-webkit-calendar-picker-indicator is a
+   SIBLING of ::-webkit-datetime-edit in the shadow tree, not a descendant, so
+   it keeps its own opacity and stays visible and clickable throughout. */
 .date-field[data-empty="1"]>input:not(:focus){color:transparent}
+.date-field[data-empty="1"]>input:not(:focus)::-webkit-datetime-edit{opacity:0}
+/* Focus is the handover: the native segments come back so a keyboard user can
+   see what they are typing, and the app's placeholder steps aside in the same
+   moment. It keeps describing the field to a screen reader either way. */
 .date-field[data-empty="1"]>input:focus~.date-ph{opacity:0}
+
+/* Forced colours: the OS owns `color`, so `color:transparent` stops suppressing
+   anything and Firefox would show its own hint under ours. Rather than leave two
+   layers where the suppression is weakest, the app's placeholder stands down and
+   the platform's hint is the single representation — and the Chromium
+   suppression is lifted with it, so the outcome is never NO text either. Exactly
+   one layer, in every engine, in this mode too. */
+@media (forced-colors:active){
+  .date-field[data-empty="1"]>input:not(:focus){color:CanvasText}
+  .date-field[data-empty="1"]>input:not(:focus)::-webkit-datetime-edit{opacity:1}
+  .date-ph{display:none}
+}
 
 /* ---- Responsive (Sprint 6 review fix) ---- */
 @media (max-width:1100px){
