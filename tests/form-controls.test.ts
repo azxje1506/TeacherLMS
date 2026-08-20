@@ -30,7 +30,15 @@ import { describe, it } from "node:test";
 
 const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), ...parts), "utf8");
 
-const CSS = read("src", "app", "globals.css");
+/** Comments stripped, always.
+ *
+ * globals.css documents its own cascade — it spells out selectors and their
+ * specificity in prose so the next reader does not have to re-derive them. That
+ * prose is a liability to a test that reads the file as text: an assertion
+ * hunting for `.cs-trigger:hover…` will happily find the sentence describing it
+ * and report a rule as present that was never written. Every rule lookup in
+ * this file therefore runs against the DECLARATIONS only. */
+const CSS = read("src", "app", "globals.css").replace(/\/\*[\s\S]*?\*\//g, "");
 const SELECT = read("src", "components", "ui", "select.tsx");
 const DATE_FIELD = read("src", "components", "ui", "date-field.tsx");
 const VI = JSON.parse(read("src", "lib", "i18n-vi.json")) as Record<string, string>;
@@ -113,28 +121,42 @@ describe("Form controls — one field family, one set of numbers", () => {
   it("4. the shared Select already matches that family", () => {
     /* The primitive was never the problem, and this records why: it states the
      * family's own numbers. If a future change to the family forgets the
-     * Select, this fails rather than the Select silently becoming the outlier. */
+     * Select, this fails rather than the Select silently becoming the outlier.
+     *
+     * v5 moved the trigger's SURFACE — border, radius, background — out of the
+     * inline style and into globals.css `.cs-trigger`, so the geometry is
+     * checked here and the surface is checked against the stylesheet. */
     assert.match(SELECT, /width: "100%", height, padding: "0 11px"/);
     assert.match(SELECT, /height = 38/, "the default height is the family's");
-    assert.match(SELECT, /borderRadius: 9/);
     assert.match(SELECT, /fontSize: 13,/);
-    assert.match(SELECT, /background: "var\(--card\)"/);
+    assert.match(UNCONDITIONAL, /\.cs-trigger\{[\s\S]*?border-radius:9px/);
+    assert.match(UNCONDITIONAL, /\.cs-trigger\{[\s\S]*?background:var\(--card\)/);
   });
 
   it("5. the Select's border language is the family's, error state included", () => {
-    // Resting --border, invalid --accent — the same two tokens, in the same
-    // order, that every drawer's `field(invalid)` uses.
-    assert.match(SELECT, /border: `1px solid \$\{invalid \? "var\(--accent\)" : "var\(--border\)"\}`/);
+    // Resting --border, invalid --accent — the same two tokens the drawers'
+    // `field(invalid)` uses, now expressed as a state selector rather than a
+    // ternary in an inline style.
+    assert.match(UNCONDITIONAL, /\.cs-trigger\{[\s\S]*?border:1px solid var\(--border\)/);
+    assert.match(UNCONDITIONAL, /\.cs-trigger\[data-invalid="1"\]\{border-color:var\(--accent\)\}/);
+    assert.match(SELECT, /data-invalid=\{invalid \? "1" : undefined\}/);
     for (const [name, src] of Object.entries(DRAWERS)) {
       assert.match(src, /border: `1px solid \$\{invalid \? "var\(--accent\)" : "var\(--border\)"\}`/, `${name}-drawer`);
     }
   });
 
   it("6. focus is the same treatment on a Select as on an input", () => {
-    // Both opt into `.ring`, and `.ring:focus` is the single place the accent
-    // border and the 3px ring are stated.
-    assert.match(SELECT, /className="ring"/);
-    assert.match(UNCONDITIONAL, /\.ring:focus\{border-color:var\(--accent\) !important;box-shadow:0 0 0 3px var\(--ring\) !important\}/);
+    // Not the same RULE any more — the trigger needs a state an input does not
+    // have — but the same two declarations, from the same two tokens.
+    const input = UNCONDITIONAL.match(/\.ring:focus\{([^}]*)\}/);
+    assert.ok(input, ".ring:focus must state the app's focus treatment");
+    assert.match(input[1], /border-color:var\(--accent\)/);
+    assert.match(input[1], /box-shadow:0 0 0 3px var\(--ring\)/);
+
+    const trigger = UNCONDITIONAL.match(/\.cs-trigger:focus,\s*\.cs-trigger\[aria-expanded="true"\]\{([^}]*)\}/);
+    assert.ok(trigger, "the trigger's focus/open rule must exist");
+    assert.match(trigger[1], /border-color:var\(--accent\)/);
+    assert.match(trigger[1], /box-shadow:0 0 0 3px var\(--ring\)/);
   });
 
   it("7. no system-blue state survives on any control in the family", () => {
@@ -163,44 +185,98 @@ describe("Form controls — one field family, one set of numbers", () => {
 /* ============================================================= Select states */
 
 describe("Select — every interaction state belongs to the app", () => {
-  it("9. hover yields to focus, exactly as the input rule does", () => {
-    /* The reported open-state fault. `input:hover` has always been guarded with
-     * :not(:focus); the trigger rule was not, so an OPEN Select kept its hover
-     * fill — and on a touch device, where :hover sticks after the tap that
-     * opened it, it kept that fill for as long as the listbox was open. */
-    assert.match(UNCONDITIONAL, /\[data-cs-trigger\]:hover:not\(:focus\)\{border-color:var\(--muted-2\) !important;background:var\(--hover\) !important\}/);
-    assert.ok(
-      !/\[data-cs-trigger\]:hover\{/.test(UNCONDITIONAL),
-      "an unguarded trigger hover would win over the focused state again"
-    );
-    // The rule it is now symmetrical with.
-    assert.match(UNCONDITIONAL, /input:not\(\[type=range\]\):hover:not\(:focus\)/);
+  it("9. the open state does not depend on :focus", () => {
+    /* THE v5 FAULT, and the reason the v4 fix did nothing. The trigger is a
+     * <button>, and WebKit does not focus a button when you tap it. Every rule
+     * painting the open state was keyed on :focus, so on an iPhone the listbox
+     * was open while the trigger was not focused — the accent rule never
+     * matched, and the sticky :hover a tap leaves behind won instead. Guarding
+     * that hover with :not(:focus) was inert: there was no focus to find.
+     *
+     * aria-expanded is true whatever the platform decided about focus. */
+    assert.match(UNCONDITIONAL, /\.cs-trigger\[aria-expanded="true"\]\{[\s\S]*?border-color:var\(--accent\)/);
+    assert.match(SELECT, /aria-expanded=\{open\}/, "the component must publish the state the rule keys on");
   });
 
-  it("10. the open listbox is exactly as wide as its trigger", () => {
+  it("10. the hover rule is mutually exclusive with focus AND open", () => {
+    /* Specificity says the hover rule (0,4,0) beats focus and open (0,2,0), so
+     * it is written so it can never MATCH alongside them rather than relying on
+     * losing a tie. That is what stops it latching over the open state again on
+     * a platform that hands out :focus differently. */
+    // CSS, not UNCONDITIONAL: the hover rule deliberately lives inside a
+    // (hover:hover) media query, which is what the next test is about.
+    const hover = CSS.match(/(\.cs-trigger:hover[^{]*)\{/);
+    assert.ok(hover, "the trigger must have a hover rule");
+    assert.match(hover[1], /:not\(:focus\)/, "hover must exclude focus");
+    assert.match(hover[1], /:not\(\[aria-expanded="true"\]\)/, "hover must exclude open");
+    // And the rule it replaced is gone, !important and all.
+    assert.ok(!/\[data-cs-trigger\]:hover/.test(CSS), "the old !important hover rule must be retired");
+  });
+
+  it("11. hover is only asked for where there is a pointer", () => {
+    /* On a touch screen :hover is not a state, it is a leftover from the last
+     * tap. Gating it is what keeps a closed trigger clean after an option is
+     * picked, and it is the query .cal-event already uses. */
+    const gated = CSS.slice(CSS.indexOf("@media (hover:hover) and (pointer:fine){", CSS.indexOf(".cs-trigger{")));
+    assert.match(gated.slice(0, 260), /\.cs-trigger:hover/);
+  });
+
+  it("12. no !important is needed anywhere on the trigger", () => {
+    /* The !important only ever existed to beat the trigger's own inline border
+     * and background. With the surface moved into the stylesheet there is
+     * nothing left to outrank — which is the real test that the presentation
+     * moved rather than just being fought harder. */
+    for (const m of CSS.matchAll(/\.cs-trigger[^{]*\{([^}]*)\}/g)) {
+      assert.ok(!m[1].includes("!important"), `.cs-trigger rule must not need !important: ${m[1].trim()}`);
+    }
+
+    /* ...and the component must not put the surface back inline, which is what
+     * would make !important necessary again. Only the TRIGGER's own style
+     * object is examined — the popover below it legitimately states a border and
+     * a background of its own. */
+    const code = codeOf(SELECT);
+    const at = code.indexOf("data-cs-trigger");
+    const open = code.indexOf("style={{", at);
+    const triggerStyle = code.slice(open, code.indexOf("}}", open));
+    for (const prop of ["border:", "borderRadius:", "background:", "outline:"]) {
+      assert.ok(!triggerStyle.includes(prop), `the trigger must not restate ${prop} inline`);
+    }
+    // What it may still state is geometry and the value's own colour.
+    assert.match(triggerStyle, /width: "100%", height, padding: "0 11px"/);
+    assert.match(triggerStyle, /color: current \? "var\(--fg\)" : "var\(--muted-2\)"/);
+  });
+
+  it("13. the UA's own button chrome is switched off", () => {
+    // The other route a system-coloured state gets in, and the reason Tailwind's
+    // preflight reset of button background/radius has to be restated.
+    assert.match(UNCONDITIONAL, /\.cs-trigger\{[\s\S]*?appearance:none/);
+    assert.match(UNCONDITIONAL, /\.cs-trigger:focus-visible\{outline:none\}/);
+  });
+
+  it("14. the open listbox is exactly as wide as its trigger", () => {
     // left/right pinned to the trigger's own box: the control cannot change
     // width between closed and open, and cannot push the drawer sideways.
     assert.match(SELECT, /position: "absolute", top: "calc\(100% \+ 6px\)", left: 0, right: 0/);
     assert.match(SELECT, /position: "relative"/, "the wrapper must be the positioning context");
   });
 
-  it("11. neither the trigger's value nor a row can overflow it", () => {
+  it("15. neither the trigger's value nor a row can overflow it", () => {
     const ellipsis = SELECT.split('overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"').length - 1;
     assert.equal(ellipsis, 2, "the trigger's value and each option row must both clip");
   });
 
-  it("12. the chevron never moves", () => {
+  it("16. the chevron never moves", () => {
     // flex:none keeps it out of the shrink that clips the label beside it.
     assert.match(SELECT, /flex: "none", color: "var\(--muted-2\)"/);
     assert.match(SELECT, /justifyContent: "space-between"/);
   });
 
-  it("13. the selected row is stated in the app's accent tokens", () => {
+  it("17. the selected row is stated in the app's accent tokens", () => {
     assert.match(SELECT, /background: on \? "var\(--accent-soft\)" : "transparent"/);
     assert.match(SELECT, /color: on \? "var\(--accent\)" : "var\(--fg\)"/);
   });
 
-  it("14. the trigger is a real listbox control", () => {
+  it("18. the trigger is a real listbox control", () => {
     // The states above are only worth checking if assistive tech sees the same
     // control a sighted user does.
     for (const attr of ['aria-haspopup="listbox"', "aria-expanded={open}", 'role="listbox"', 'role="option"', "aria-selected={on}"]) {
@@ -208,7 +284,7 @@ describe("Select — every interaction state belongs to the app", () => {
     }
   });
 
-  it("15. no consumer overrides the family height", () => {
+  it("19. no consumer overrides the family height", () => {
     /* `height` is a prop, so it COULD diverge. Today nothing passes it, and
      * this is what would say so if a screen started to. */
     const consumers = [
@@ -224,7 +300,7 @@ describe("Select — every interaction state belongs to the app", () => {
     }
   });
 
-  it("16. Select has no disabled state, and no consumer asks for one", () => {
+  it("20. Select has no disabled state, and no consumer asks for one", () => {
     /* Recorded rather than invented. The design has no disabled Select and
      * nothing in the app needs one — the two disabled controls in Classes are
      * buttons. Adding one would be new API for a state nothing renders, which
@@ -239,7 +315,7 @@ describe("Select — every interaction state belongs to the app", () => {
 /* ================================================================ DateField */
 
 describe("DateField — a native date input with a visible empty state", () => {
-  it("17. the app draws the placeholder, because the input cannot", () => {
+  it("21. the app draws the placeholder, because the input cannot", () => {
     /* `<input type="date">` does not support the placeholder attribute, and
      * what it draws while empty is the UA's business — Chrome prints
      * "mm/dd/yyyy", mobile Safari prints nothing. That is why this is markup
@@ -249,7 +325,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(UNCONDITIONAL, /\.date-ph\{[\s\S]*?position:absolute/);
   });
 
-  it("18. the placeholder is inset exactly like the field's own text", () => {
+  it("22. the placeholder is inset exactly like the field's own text", () => {
     // 1px of border plus the family's 11px of padding. If the family's inset
     // ever moves, this is what says the placeholder did not move with it.
     assert.match(UNCONDITIONAL, /\.date-ph\{[\s\S]*?left:1px/);
@@ -258,19 +334,19 @@ describe("DateField — a native date input with a visible empty state", () => {
     for (const src of Object.values(DRAWERS)) assert.match(src, /padding: "0 11px"/);
   });
 
-  it("19. the UA's own empty hint is hidden only while it would collide", () => {
+  it("23. the UA's own empty hint is hidden only while it would collide", () => {
     // Empty AND unfocused. Focus hands the field straight back so a keyboard
     // user types against segments they can see.
     assert.match(UNCONDITIONAL, /\.date-field\[data-empty="1"\]>input:not\(:focus\)\{color:transparent\}/);
     assert.match(UNCONDITIONAL, /\.date-field\[data-empty="1"\]>input:focus~\.date-ph\{opacity:0\}/);
   });
 
-  it("20. the placeholder never intercepts a tap", () => {
+  it("24. the placeholder never intercepts a tap", () => {
     // It sits over the control, so the picker would be unreachable without it.
     assert.match(UNCONDITIONAL, /\.date-ph\{[\s\S]*?pointer-events:none/);
   });
 
-  it("21. the native input is still the control", () => {
+  it("25. the native input is still the control", () => {
     /* No calendar, no parsing, no value of its own — the whole point. It stays
      * type=date, so the platform picker, the value contract, the payload and
      * the validation are all untouched. */
@@ -281,7 +357,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(DATE_FIELD, /\{\.\.\.inputProps\}/, "it must forward the form's registration");
   });
 
-  it("22. emptiness comes from the form, never from local state", () => {
+  it("26. emptiness comes from the form, never from local state", () => {
     /* A reset() — which every drawer does when it opens for a different record
      * — changes the value with no event this component could observe, so local
      * state would go stale exactly when a teacher reopened the drawer. */
@@ -292,7 +368,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(DRAWERS.students, /const birthday = useWatch\(\{ control, name: "birthday" \}\)/);
   });
 
-  it("23. the guidance reaches a screen reader too", () => {
+  it("27. the guidance reaches a screen reader too", () => {
     // Described-by, not labelled-by: the <label> already names the field, and
     // the description drops away once there is a value to announce instead.
     assert.match(DATE_FIELD, /aria-describedby=\{empty \? describedBy : undefined\}/);
@@ -302,7 +378,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(DRAWERS.students, /id="st-birthday"/);
   });
 
-  it("24. every date input in the app goes through the primitive", () => {
+  it("28. every date input in the app goes through the primitive", () => {
     /* The fix has to be the shared one. A bare type=date left anywhere would be
      * a field that still looks empty when it is empty. */
     for (const [name, src] of Object.entries(DRAWERS)) {
@@ -312,7 +388,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(DRAWERS.students, /<DateField/);
   });
 
-  it("25. the copy is the product's own, and translated", () => {
+  it("29. the copy is the product's own, and translated", () => {
     /* "Pick a due date" has been in the dictionary since S1 with nowhere to be
      * shown, because a native date input has no placeholder to put it in. */
     assert.match(DRAWERS.homework, /placeholder=\{t\("Pick a due date"\)\}/);
@@ -321,7 +397,7 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.equal(VI["Pick a birthday"], "Chọn ngày sinh");
   });
 
-  it("26. the date control still takes its width from its container", () => {
+  it("30. the date control still takes its width from its container", () => {
     // The v3 contract, restated here because DateField now wraps it: a wrapper
     // that established a width of its own would put the drawer's horizontal
     // scroll straight back.

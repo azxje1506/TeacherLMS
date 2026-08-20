@@ -1,11 +1,27 @@
 "use client";
 
 /* Select — the design comp's `data-cs-trigger` control: a button that opens a
- * popover listbox. The comp computes the trigger style at runtime and styles the
- * hover state globally (globals.css `[data-cs-trigger]:hover`), so the resting
- * style here reproduces the comp's field treatment: 38px tall, 1px --border,
- * 9px radius, --card surface, chevron in --muted-2. The popover uses the comp's
- * own `popIn` keyframe. */
+ * popover listbox. The comp computes the trigger style at runtime, so this
+ * reproduces the comp's field treatment: 38px tall, 1px --border, 9px radius,
+ * --card surface, chevron in --muted-2. The popover uses the comp's own `popIn`
+ * keyframe.
+ *
+ * THE TRIGGER'S VISUAL STATE IS NOT HERE. Border, radius, background and ring
+ * live in ONE place — globals.css, `.cs-trigger` — and this file states only
+ * the geometry and the value. That split is deliberate and it is a bug fix.
+ *
+ * They used to be inline, which meant every state rule had to beat an inline
+ * style with `!important`, and the state chain was keyed on `:focus`. WebKit
+ * does not focus a <button> on tap, so on an iPhone the open trigger was never
+ * focused: the accent rule never matched, and the sticky `:hover` that a tap
+ * leaves behind won instead — a grey fill and a --muted-2 border, held for as
+ * long as the listbox was open. Guarding the hover rule with `:not(:focus)` did
+ * nothing there, because there was no focus to guard against.
+ *
+ * So the open state is published as `aria-expanded`, which is true whether or
+ * not the platform felt like focusing the button, and the stylesheet keys on
+ * that. With the presentation out of the inline style, nothing needs
+ * `!important` any more — see globals.css for the specificity argument. */
 
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -60,18 +76,24 @@ export function Select({
         type="button"
         // `ring` gives the trigger the exact focus treatment text inputs use
         // (see globals.css .ring:focus): accent border + 3px ring, no outline.
-        className="ring"
+        // .cs-trigger owns every visual state; aria-expanded below is what it
+        // keys the open state on. data-cs-trigger stays because the shared
+        // transition and press-nudge rules address it, and the comp names it.
+        className="cs-trigger"
         data-cs-trigger="1"
+        data-invalid={invalid ? "1" : undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-label={ariaLabel}
         onClick={() => setOpen((o) => !o)}
+        /* Geometry and value only. `color` is here because it says what the
+         * trigger HOLDS — a value or a placeholder — rather than what state it
+         * is in, which is the same reason an input's value colour is inline. */
         style={{
           width: "100%", height, padding: "0 11px",
-          border: `1px solid ${invalid ? "var(--accent)" : "var(--border)"}`, borderRadius: 9,
-          background: "var(--card)", color: current ? "var(--fg)" : "var(--muted-2)",
-          fontSize: 13, fontFamily: "inherit", cursor: "pointer", outline: "none",
+          color: current ? "var(--fg)" : "var(--muted-2)",
+          fontSize: 13, fontFamily: "inherit", cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left",
         }}
       >

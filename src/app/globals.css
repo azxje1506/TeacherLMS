@@ -57,12 +57,11 @@ svg{display:block}
 @keyframes overlayFade{from{opacity:0}to{opacity:1}}
 @keyframes selIn{from{opacity:0}to{opacity:1}}
 input:not([type=range]):hover:not(:focus), textarea:hover:not(:focus), select:hover:not(:focus){border-color:var(--muted-2) !important}
-/* :not(:focus) mirrors the input rule directly above. It is the difference
-   between a control that is being hovered and one that is being USED, and the
-   trigger was missing it — so an open Select kept its hover fill, and on a touch
-   device, where :hover sticks after the tap that opened it, it kept that fill for
-   as long as the listbox was open. Focus now owns the state, in both. */
-[data-cs-trigger]:hover:not(:focus){border-color:var(--muted-2) !important;background:var(--hover) !important}
+/* The Select trigger hover USED to be declared here, with !important, because
+   its border and background were inline styles. Both the !important and the rule
+   are gone: the trigger state chain is one block in the interaction-state helpers
+   at the end of this file (.cs-trigger). Select is the only [data-cs-trigger] in
+   the app — Combobox is a real <input> — so nothing else lost a hover. */
 /* The placeholder tone is the Select trigger's, which takes --muted-2 from the
    design. Text inputs were falling through to the UA default — a different grey
    at a different opacity — so the same empty field read differently depending on
@@ -398,6 +397,66 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    comp's var(--border). Neutralise the resting state; :focus below still wins. */
 .ring{box-shadow:none}
 .ring:focus{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--ring) !important}
+/* ---- Select trigger: the whole state chain, in one place -------------------
+   WHAT WENT WRONG. The trigger is a <button>, and WebKit does not focus a button
+   when you tap it. Every rule that painted the open state was keyed on :focus,
+   so on an iPhone the listbox was open while the trigger was not focused: the
+   accent rule never matched, and the sticky :hover that a tap leaves behind won
+   instead — a var(--hover) fill over a var(--muted-2) border, held for as long
+   as the listbox stayed open. Guarding that hover with :not(:focus) changed
+   nothing there, because there was no focus for the guard to find.
+
+   WHAT FIXES IT. aria-expanded is true whether or not the platform chose to
+   focus the button, so the open state keys on that. :focus is kept beside it for
+   the keyboard, where it is the thing that IS true.
+
+   NO !important ANYWHERE BELOW, and none is needed: the trigger's border, radius
+   and background left the component's inline style, so these rules have nothing
+   to outrank. Order and specificity do the rest —
+
+     .cs-trigger                                          (0,1,0)  resting
+     .cs-trigger[data-invalid="1"]                        (0,2,0)  error
+     .cs-trigger:hover:not(:focus):not([aria-expanded=…]) (0,4,0)  hover
+     .cs-trigger:focus / [aria-expanded="true"]           (0,2,0)  focus + open
+
+   The hover rule is the MOST specific, which would normally beat focus and open
+   — so it is written to be mutually EXCLUSIVE with both rather than to lose to
+   them on a tie. That is why it can never latch over the open state again, at
+   any specificity, on any platform.
+
+   The resting declarations also restate what Tailwind's preflight resets on a
+   <button> (transparent background, zeroed radius) and switch off the UA
+   appearance, so the control is never handed back to the platform's own button
+   chrome — the other way a system-coloured state gets in. */
+.cs-trigger{
+  -webkit-appearance:none;appearance:none;
+  border:1px solid var(--border);border-radius:9px;
+  background:var(--card);box-shadow:none;outline:none;
+}
+.cs-trigger[data-invalid="1"]{border-color:var(--accent)}
+/* Hover is a pointer affordance, so it is asked for only where there is a
+   pointer. On a touch screen :hover is not a state, it is a leftover from the
+   last tap — the same reason .cal-event gates its grab cursor this way. */
+@media (hover:hover) and (pointer:fine){
+  .cs-trigger:hover:not(:focus):not([aria-expanded="true"]){
+    border-color:var(--muted-2);background:var(--hover);
+  }
+}
+/* Focus and open are one state, in the app's field language: the accent border
+   and 3px ring that .ring:focus gives every text and date input, over the
+   ordinary field surface. Background is restated so a hover fill can never
+   survive into the open state. */
+.cs-trigger:focus,
+.cs-trigger[aria-expanded="true"]{
+  border-color:var(--accent);
+  background:var(--card);
+  box-shadow:0 0 0 3px var(--ring);
+}
+/* The generic [data-cs-trigger]:focus-visible outline earlier in this file would
+   otherwise sit OUTSIDE the ring above and draw a second one. Equal specificity,
+   declared later, so this wins — and a keyboard user still has a visible focus
+   state: the accent border and the ring. */
+.cs-trigger:focus-visible{outline:none}
 .btn-primary:hover:not(:disabled){opacity:.88}
 .btn-ghost:hover:not(:disabled){background:var(--hover) !important}
 .lift:hover{border-color:var(--muted-2) !important}
