@@ -91,8 +91,8 @@ export type ReviewOpError =
   | "not_found"
   | "student_not_found"
   | "student_not_eligible"
-  | "month_not_selectable"
-  | "month_already_reviewed";
+  | "month_not_allowed"
+  | "review_already_exists";
 
 /** HTTP status + message per failure, so every Route Handler maps one the same
  * way. Plain data, no framework coupling — the shape is lifted from
@@ -102,8 +102,8 @@ export const REVIEW_ERROR: Record<ReviewOpError, { status: number; message: stri
   not_found: { status: 404, message: "Review not found" },
   student_not_found: { status: 404, message: "Student not found" },
   student_not_eligible: { status: 422, message: "An archived student can't be given a new review" },
-  month_not_selectable: { status: 422, message: "Reviews can only be written for the last 12 months" },
-  month_already_reviewed: { status: 409, message: "That student already has a review for this month" },
+  month_not_allowed: { status: 422, message: "Reviews can only be written for the last 12 months" },
+  review_already_exists: { status: 409, message: "That student already has a review for this month" },
 };
 
 /* ------------------------------------------------------------ eligibility */
@@ -461,8 +461,8 @@ export function planReviewCreate(
 ): ReviewCreatePlan {
   if (!student) return { ok: false, reason: "student_not_found" };
   if (!canReviewStudent(student)) return { ok: false, reason: "student_not_eligible" };
-  if (!isSelectableMonth(input.month, appMonth)) return { ok: false, reason: "month_not_selectable" };
-  if (reviewedMonths?.has(input.month)) return { ok: false, reason: "month_already_reviewed" };
+  if (!isSelectableMonth(input.month, appMonth)) return { ok: false, reason: "month_not_allowed" };
+  if (reviewedMonths?.has(input.month)) return { ok: false, reason: "review_already_exists" };
 
   return {
     ok: true,

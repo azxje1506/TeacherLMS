@@ -145,8 +145,8 @@ describe("Reviews · canonical vocabulary", () => {
   it("maps every failure to one status and one sentence", () => {
     assert.equal(REVIEW_ERROR.student_not_found.status, 404);
     assert.equal(REVIEW_ERROR.student_not_eligible.status, 422);
-    assert.equal(REVIEW_ERROR.month_not_selectable.status, 422);
-    assert.equal(REVIEW_ERROR.month_already_reviewed.status, 409);
+    assert.equal(REVIEW_ERROR.month_not_allowed.status, 422);
+    assert.equal(REVIEW_ERROR.review_already_exists.status, 409);
     assert.equal(REVIEW_ERROR.not_found.status, 404);
     for (const entry of Object.values(REVIEW_ERROR)) assert.ok(entry.message.length > 0);
   });
@@ -540,7 +540,7 @@ describe("Reviews · create planner", () => {
   it("refuses a month outside the window, future or ancient", () => {
     for (const month of ["2026-08", "2025-07", "2026-13"]) {
       const plan = planReviewCreate(createInput({ month }), eligible, new Set(), "rv-1", APP_MONTH);
-      assert.deepEqual(plan, { ok: false, reason: "month_not_selectable" }, month);
+      assert.deepEqual(plan, { ok: false, reason: "month_not_allowed" }, month);
     }
   });
 
@@ -548,7 +548,7 @@ describe("Reviews · create planner", () => {
     const plan = planReviewCreate(
       createInput({ month: "2026-06" }), eligible, new Set(["2026-06"]), "rv-1", APP_MONTH
     );
-    assert.deepEqual(plan, { ok: false, reason: "month_already_reviewed" });
+    assert.deepEqual(plan, { ok: false, reason: "review_already_exists" });
   });
 
   it("decides in a fixed order — the student before the month", () => {
