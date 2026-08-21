@@ -54,8 +54,15 @@
   therefore still pending. The pre-existing records were verified byte-identical
   after every write, and the delete returned the collection to its original
   15-record baseline — same ids, zero field differences, ghost outcomes preserved,
-  and no test data left behind. The Sprint 7 closure audit has not yet run, so
-  Sprint 7 is not closed.
+  and no test data left behind. The Sprint 7 closure audit has since passed.
+- **Sprint 7 — Homework is closed.** The closure audit re-checked the accepted
+  contract against the current code rather than against the gate reports: the
+  Active-class create guard, the Assigned initial status, `lessonId = null`, Late
+  counting as done with Assigned excluded, ghost outcome preservation, the
+  Assigned-only delete and Duplicate’s sanitised prefill are each implemented and
+  covered by tests. Production integrity, reporting, smoke-data removal and the
+  engineering gates were all verified. Recording submission outcomes stays
+  deferred, and no submission writer shipped.
 
 ## Unreleased — Attendance MVP (Sprint 6)
 - Attendance index: this month's rate and status counts, attendance by class,
