@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { minutesBetween, overlappingSlotIndexes } from "./calc";
+import { REVIEW_RATING_MAX, REVIEW_RATING_MIN, SKILL_KEYS, hasRequiredProse } from "./reviews";
 import type { AttendanceStatus, ClassStatus } from "./types";
 
 export const loginSchema = z.object({
@@ -245,17 +246,110 @@ export const homeworkUpdateSchema = z
   .strict();
 export type HomeworkUpdateBody = z.output<typeof homeworkUpdateSchema>;
 
-export const reviewSchema = z.object({
-  studentId: z.string().min(1, "Select a student"),
-  month: z.string().min(1),
-  skills: z.record(z.string(), z.number().min(1).max(5)),
-  comment: z.string().optional().default(""),
-  strengths: z.string().optional().default(""),
-  improvements: z.string().optional().default(""),
-  goals: z.string().optional().default(""),
-  parentNotes: z.string().optional().default(""),
-});
-export type ReviewInput = z.infer<typeof reviewSchema>;
+/* ------------------------------------------------------------------ Reviews */
+
+/* "YYYY-MM", with the month part constrained to 01..12, so "2026-13" and
+ * "2026-7" are refused as shapes before any window rule is consulted. WHETHER a
+ * well-formed month may be reviewed is a question about the application month —
+ * `isSelectableMonth` in src/lib/reviews.ts answers it, and the create planner
+ * asks. Zod checks the shape it can see. */
+const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/* One skill rating: an INTEGER from 1 to 5.
+ *
+ * `z.number()` and not `z.coerce.number()`, deliberately: "4" is a string, and a
+ * rating arriving as text means something upstream is not sending the value the
+ * segmented control produced. `.int()` refuses 4.5 — the scale has five points,
+ * not nine — and `null` is not a number, so an unrated skill fails rather than
+ * silently scoring zero. */
+const skillRatingSchema = z
+  .number({ message: "Rate every skill" })
+  .int("Ratings are whole numbers")
+  .min(REVIEW_RATING_MIN, `Ratings run from ${REVIEW_RATING_MIN} to ${REVIEW_RATING_MAX}`)
+  .max(REVIEW_RATING_MAX, `Ratings run from ${REVIEW_RATING_MIN} to ${REVIEW_RATING_MAX}`);
+
+/* THE TEN CANONICAL SKILLS, EXACTLY.
+ *
+ * The shape is BUILT from SKILL_KEYS (which is itself derived from the canonical
+ * SKILLS constant), never retyped here, so the schema and the form cannot drift:
+ * every key is required, which refuses a review missing a dimension, and
+ * `.strict()` refuses an eleventh key rather than storing it in a `Mixed` field
+ * where nothing would ever read it again. */
+const skillShape: Record<string, typeof skillRatingSchema> = {};
+for (const key of SKILL_KEYS) skillShape[key] = skillRatingSchema;
+export const reviewSkillsSchema = z.object(skillShape).strict();
+
+/* The prose GROUP rule, shared by create and update so the two state one rule.
+ *
+ * Each field is optional on its own — a teacher who says everything in the
+ * comment should not have to repeat it under three headings — but a review with
+ * no words at all is a row of numbers, so at least one of comment / strengths /
+ * improvements / goals must survive trimming. `parentNotes` does not count: it
+ * is addressed to the parent, not an assessment of the month.
+ *
+ * The issue is attached to `comment`, a real field the form renders, so React
+ * Hook Form has somewhere to show it. A form-level path would surface nowhere. */
+const proseGroupMessage = "Write at least one note about this month";
+function requireProse(
+  value: { comment: string; strengths: string; improvements: string; goals: string },
+  ctx: z.RefinementCtx
+): void {
+  if (!hasRequiredProse(value)) {
+    ctx.addIssue({ code: "custom", path: ["comment"], message: proseGroupMessage });
+  }
+}
+
+/** POST /api/reviews — everything a teacher supplies when writing a review.
+ *
+ * `month` IS REQUIRED AND EXPLICIT. The server never substitutes the current
+ * month for a payload that omitted one: which month a review is about is the
+ * teacher's statement, not the server's guess.
+ *
+ * `.strict()` refuses every field the server owns — `id` — and every field that
+ * does not exist on a Review at all: `status`, `createdAt`, `updatedAt`,
+ * `classId`, `lessonId`, `average`. A request naming one is refused rather than
+ * silently ignored. */
+export const reviewCreateSchema = z
+  .object({
+    studentId: z.string().min(1, "Select a student"),
+    month: z.string().regex(ISO_MONTH, "Pick a month"),
+    skills: reviewSkillsSchema,
+    comment: z.string().optional().default(""),
+    strengths: z.string().optional().default(""),
+    improvements: z.string().optional().default(""),
+    goals: z.string().optional().default(""),
+    parentNotes: z.string().optional().default(""),
+  })
+  .strict()
+  .superRefine(requireProse);
+/** What the create form holds while editing (text defaults unapplied). */
+export type ReviewCreateFormInput = z.input<typeof reviewCreateSchema>;
+/** What validation produces and the API accepts. */
+export type ReviewCreateBody = z.output<typeof reviewCreateSchema>;
+
+/** PATCH /api/reviews/:id — a correction to the six fields a teacher authored.
+ *
+ * NOT a partial patch: a review is edited as a whole in one drawer, so the ten
+ * ratings are required here exactly as they are on create, and the same prose
+ * group rule applies. Sending five ratings would mean the other five had been
+ * cleared, which no screen can express and no teacher intends.
+ *
+ * The student and the month of a review are fixed at creation and are not listed
+ * here, so `.strict()` refuses a request naming `studentId`, `month` or `id` —
+ * along with the lifecycle and timestamp fields a Review has never had. */
+export const reviewUpdateSchema = z
+  .object({
+    skills: reviewSkillsSchema,
+    comment: z.string().optional().default(""),
+    strengths: z.string().optional().default(""),
+    improvements: z.string().optional().default(""),
+    goals: z.string().optional().default(""),
+    parentNotes: z.string().optional().default(""),
+  })
+  .strict()
+  .superRefine(requireProse);
+export type ReviewUpdateFormInput = z.input<typeof reviewUpdateSchema>;
+export type ReviewUpdateBody = z.output<typeof reviewUpdateSchema>;
 
 export const paymentSchema = z.object({
   status: z.enum(["Paid", "Partially Paid", "Unpaid"]),
