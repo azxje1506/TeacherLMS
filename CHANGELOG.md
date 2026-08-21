@@ -41,18 +41,21 @@
 - No submission-recording surface in this MVP: there is no designed screen that
   records a student's outcome, so there is no endpoint that writes one.
 - No homework timestamps, so no "last updated" is shown anywhere.
-- Rolled out to the deployed application, with production verification still in
-  progress. The read-only production check passed (Gate 5 Phase 0), and the first
-  controlled production create passed: one class-scoped assignment written through
-  `POST /api/homework`, read back with its roster snapshot intact and no outcome
-  synthesised, and then confirmed by hand in the hosted app. The pre-existing
-  records were verified byte-identical afterwards, so the collection's digest
-  moved for that one addition and no other reason. The first controlled production
-  edit then passed: the same assignment amended through `PATCH /api/homework/:id`,
-  changing only title, description, due date and teacher notes, with ownership,
-  status and recorded outcomes unchanged and the record count unmoved — and again
-  confirmed by hand in the hosted app. Production verification of Duplicate and
-  Delete is not yet complete, so Sprint 7 is not closed.
+- Rolled out to the deployed application, and production verification of the
+  shipped MVP is now complete. The read-only production check passed (Gate 5
+  Phase 0). Then, against production data and each confirmed by hand in the hosted
+  app: one controlled create through `POST /api/homework`, read back with its
+  roster snapshot intact and no outcome synthesised; one controlled edit through
+  `PATCH /api/homework/:id`, changing only title, description, due date and
+  teacher notes, with ownership, status and recorded outcomes unchanged and the
+  record count unmoved; Duplicate confirmed to open a prefilled create form with a
+  blank due date and write nothing at all; and one delete through
+  `DELETE /api/homework/:id` of that same assignment, still Assigned and
+  therefore still pending. The pre-existing records were verified byte-identical
+  after every write, and the delete returned the collection to its original
+  15-record baseline — same ids, zero field differences, ghost outcomes preserved,
+  and no test data left behind. The Sprint 7 closure audit has not yet run, so
+  Sprint 7 is not closed.
 
 ## Unreleased — Attendance MVP (Sprint 6)
 - Attendance index: this month's rate and status counts, attendance by class,

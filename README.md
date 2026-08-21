@@ -103,15 +103,17 @@ Login screen, the **Dashboard** (revenue engine, KPIs, today's classes,
 upcoming lessons, activity), and **Attendance** (register index, take/edit
 attendance, and its API) — all pixel-faithful and wired to live data.
 
-**Deployed, production verification in progress:** **Homework** — the assignment
-index with its class filter, the assign/edit drawer, duplicate, and pending-only
-delete, plus its API. Deployed and running against production data: the read-only
-production check passed (Gate 5 Phase 0), and the first controlled production
-create and edit have both passed — one class-scoped assignment, written and then
-amended through the real API, each confirmed by hand in the hosted app. The edit
-changed only the four fields a teacher authored and left ownership, status and
-recorded outcomes untouched. Production verification of Duplicate and Delete is
-**not yet complete**, so Sprint 7 is not closed.
+**Deployed, production-verified:** **Homework** — the assignment index with its
+class filter, the assign/edit drawer, duplicate, and pending-only delete, plus
+its API. Deployed and running against production data, and every operation this
+MVP ships has now been verified against it: the read-only production check passed
+(Gate 5 Phase 0), then one controlled create, one edit, Duplicate’s write-free
+prefill and one Assigned-only delete — each confirmed by hand in the hosted app
+where a visual check applied. The edit changed only the four fields a teacher
+authored and left ownership, status and recorded outcomes untouched; the delete
+removed only that one smoke assignment, returning production to its original
+15-record baseline, byte-identical, with no test data left behind. The Sprint 7
+closure audit has **not yet run**, so Sprint 7 is not closed.
 Recording submission outcomes stays deferred: this MVP ships no submission
 writer.
 

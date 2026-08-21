@@ -36,14 +36,15 @@ dotenv.config({ path: ".env.local" });
 
 /** The accepted Sprint 7 baseline. Both are facts about production, not defaults.
  *
- * PROVENANCE — the baseline has moved exactly twice, and only by authorisation:
+ * PROVENANCE — the baseline moved exactly three times, and only by authorisation,
+ * before returning to where it started:
  *
  *   15 / aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f
  *        THE PRE-FIRST-WRITE BASELINE. Held from the start of Sprint 7 through
  *        Gate 5 Phase 0, across which zero Homework writes had occurred.
  *
  *   16 / ce6ff87d6cad443c3321001a29020dafce802bf965c638cb374cb8196f2dec38
- *        THE ACCEPTED POST-CREATE BASELINE, superseded. Gate 5 Phase 1 authorised
+ *        THE ACCEPTED POST-CREATE CHECKPOINT, superseded. Gate 5 Phase 1 authorised
  *        exactly one production create — the class-scoped smoke assignment
  *        6a86bbbad3064b8fdc15483e on class c6, Assigned, lessonId null, due
  *        2026-07-31 — issued through POST /api/homework and confirmed in the
@@ -56,9 +57,9 @@ dotenv.config({ path: ".env.local" });
  *        for no other reason.
  *
  *   16 / 813a8da1722bbeba3ca437a4d0703beb9a1119dd4773b7c2e2a0c84f0477657c
- *        THE ACCEPTED POST-EDIT BASELINE, and the one in force below. Gate 5
- *        Phase 2 authorised exactly one production edit — the same assignment,
- *        through PATCH /api/homework/:id, changing only the four fields a teacher
+ *        THE ACCEPTED POST-EDIT CHECKPOINT, superseded. Gate 5 Phase 2 authorised
+ *        exactly one production edit — the same assignment, through
+ *        PATCH /api/homework/:id, changing only the four fields a teacher
  *        authored: title, description, dueDate (2026-07-31 -> 2026-08-07) and
  *        teacherNotes. Confirmed in the hosted app in Phase 2.1.
  *
@@ -68,12 +69,29 @@ dotenv.config({ path: ".env.local" });
  *        reproduces ce6ff87d…2dec38 exactly, so the other 15 documents are
  *        byte-identical and the digest moved for the authorised edit alone.
  *
- *        Ownership was unchanged and remains classId c6, scope class, studentId
- *        null, status Assigned, lessonId null, submissions {"s11":"Assigned"},
- *        createdAt 2026-07-10.
+ *   15 / aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f
+ *        THE FINAL POST-DELETE BASELINE, and the one in force below. Gate 5
+ *        Phase 4 authorised exactly one production delete — the same assignment,
+ *        still Assigned and therefore still pending, through
+ *        DELETE /api/homework/:id. Confirmed in the hosted app in Phase 4.1.
+ *
+ *        IT IS THE SAME PAIR AS THE FIRST LINE OF THIS LIST, byte for byte, and
+ *        that is the point. The only production record Sprint 7 ever wrote was
+ *        created, edited and then deleted, and it never touched the original 15:
+ *        the collection now holds those 15 documents with the same ids, zero
+ *        field differences and no duplicate id. A digest returning to an earlier
+ *        value is normally suspicious; here it is the closure proof, and it was
+ *        predicted before the delete rather than explained after it — hashing the
+ *        15 non-target documents while the target was still present already
+ *        reproduced this value.
+ *
+ *        Ghost preservation is unchanged across the whole cycle: 8 stored
+ *        submission entries belonging to 4 students who no longer exist, plus
+ *        hw-c4-1, the student-scoped assignment whose student is gone — still
+ *        stored, still counted, still deliberately unlisted and unreachable.
  */
-const EXPECTED_COUNT = 16;
-const EXPECTED_DIGEST = "813a8da1722bbeba3ca437a4d0703beb9a1119dd4773b7c2e2a0c84f0477657c";
+const EXPECTED_COUNT = 15;
+const EXPECTED_DIGEST = "aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f";
 
 /* Mongoose pluralises the `Homework` model to `homeworks`. Naming it explicitly
  * is not pedantry: querying `homework` returns an empty collection rather than
