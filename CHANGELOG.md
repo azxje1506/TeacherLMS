@@ -47,8 +47,12 @@
   `POST /api/homework`, read back with its roster snapshot intact and no outcome
   synthesised, and then confirmed by hand in the hosted app. The pre-existing
   records were verified byte-identical afterwards, so the collection's digest
-  moved for that one addition and no other reason. Production verification of
-  Edit, Duplicate and Delete is not yet complete, so Sprint 7 is not closed.
+  moved for that one addition and no other reason. The first controlled production
+  edit then passed: the same assignment amended through `PATCH /api/homework/:id`,
+  changing only title, description, due date and teacher notes, with ownership,
+  status and recorded outcomes unchanged and the record count unmoved — and again
+  confirmed by hand in the hosted app. Production verification of Duplicate and
+  Delete is not yet complete, so Sprint 7 is not closed.
 
 ## Unreleased — Attendance MVP (Sprint 6)
 - Attendance index: this month's rate and status counts, attendance by class,

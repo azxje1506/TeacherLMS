@@ -107,9 +107,11 @@ attendance, and its API) — all pixel-faithful and wired to live data.
 index with its class filter, the assign/edit drawer, duplicate, and pending-only
 delete, plus its API. Deployed and running against production data: the read-only
 production check passed (Gate 5 Phase 0), and the first controlled production
-create passed — one class-scoped assignment, written through the real API and
-then confirmed by hand in the hosted app. Production verification of Edit,
-Duplicate and Delete is **not yet complete**, so Sprint 7 is not closed.
+create and edit have both passed — one class-scoped assignment, written and then
+amended through the real API, each confirmed by hand in the hosted app. The edit
+changed only the four fields a teacher authored and left ownership, status and
+recorded outcomes untouched. Production verification of Duplicate and Delete is
+**not yet complete**, so Sprint 7 is not closed.
 Recording submission outcomes stays deferred: this MVP ships no submission
 writer.
 

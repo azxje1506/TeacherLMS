@@ -36,27 +36,44 @@ dotenv.config({ path: ".env.local" });
 
 /** The accepted Sprint 7 baseline. Both are facts about production, not defaults.
  *
- * PROVENANCE — the baseline has moved exactly once, and only by authorisation:
+ * PROVENANCE — the baseline has moved exactly twice, and only by authorisation:
  *
  *   15 / aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f
  *        THE PRE-FIRST-WRITE BASELINE. Held from the start of Sprint 7 through
  *        Gate 5 Phase 0, across which zero Homework writes had occurred.
  *
  *   16 / ce6ff87d6cad443c3321001a29020dafce802bf965c638cb374cb8196f2dec38
- *        THE ACCEPTED POST-PHASE-1 BASELINE, and the one in force below. Gate 5
- *        Phase 1 authorised exactly one production create — the class-scoped
- *        smoke assignment 6a86bbbad3064b8fdc15483e on class c6, Assigned,
- *        lessonId null, due 2026-07-31 — issued through POST /api/homework and
- *        confirmed in the hosted app in Phase 1.1.
+ *        THE ACCEPTED POST-CREATE BASELINE, superseded. Gate 5 Phase 1 authorised
+ *        exactly one production create — the class-scoped smoke assignment
+ *        6a86bbbad3064b8fdc15483e on class c6, Assigned, lessonId null, due
+ *        2026-07-31 — issued through POST /api/homework and confirmed in the
+ *        hosted app in Phase 1.1.
  *
  *        The move is attributable rather than merely observed: this same
  *        construction, run over the post-write collection MINUS that one record,
  *        still reproduces aef736e9…5741f exactly. The original 15 documents are
  *        byte-identical, so the digest moved because one document was added and
  *        for no other reason.
+ *
+ *   16 / 813a8da1722bbeba3ca437a4d0703beb9a1119dd4773b7c2e2a0c84f0477657c
+ *        THE ACCEPTED POST-EDIT BASELINE, and the one in force below. Gate 5
+ *        Phase 2 authorised exactly one production edit — the same assignment,
+ *        through PATCH /api/homework/:id, changing only the four fields a teacher
+ *        authored: title, description, dueDate (2026-07-31 -> 2026-08-07) and
+ *        teacherNotes. Confirmed in the hosted app in Phase 2.1.
+ *
+ *        THE COUNT DID NOT MOVE, so the count alone could not have caught this;
+ *        the digest is what did. Attributable on the same construction: restoring
+ *        that one record's pre-edit representation into the post-edit collection
+ *        reproduces ce6ff87d…2dec38 exactly, so the other 15 documents are
+ *        byte-identical and the digest moved for the authorised edit alone.
+ *
+ *        Ownership was unchanged and remains classId c6, scope class, studentId
+ *        null, status Assigned, lessonId null, submissions {"s11":"Assigned"},
+ *        createdAt 2026-07-10.
  */
 const EXPECTED_COUNT = 16;
-const EXPECTED_DIGEST = "ce6ff87d6cad443c3321001a29020dafce802bf965c638cb374cb8196f2dec38";
+const EXPECTED_DIGEST = "813a8da1722bbeba3ca437a4d0703beb9a1119dd4773b7c2e2a0c84f0477657c";
 
 /* Mongoose pluralises the `Homework` model to `homeworks`. Naming it explicitly
  * is not pedantry: querying `homework` returns an empty collection rather than
