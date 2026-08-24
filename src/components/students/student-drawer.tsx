@@ -57,7 +57,7 @@ export function StudentDrawer({
 
   // Three generics: what the fields hold, context, and what validation emits —
   // `grade` is coerced, so the in-form and submitted shapes genuinely differ.
-  const { register, handleSubmit, control, reset, setValue, formState: { errors } } =
+  const { register, handleSubmit, control, reset, setValue, formState: { errors, isDirty } } =
     useForm<StudentFormInput, unknown, StudentInput>({
       resolver: zodResolver(studentSchema),
       defaultValues: student ? valuesFrom(student) : emptyValues(),
@@ -93,6 +93,7 @@ export function StudentDrawer({
 
   return (
     <Drawer
+      dirty={isDirty}
       open={open}
       title={t(student ? "Edit student" : "Add student")}
       subtitle={student ? student.name : t("Create a new student record.")}

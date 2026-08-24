@@ -523,22 +523,34 @@ describe("No Review index is declared anywhere", () => {
  * Phase boundary — no UI exists yet
  * ====================================================================== */
 
-describe("Gate 4.2 builds no Reviews UI", () => {
-  it("54. there is no Reviews component directory", () => {
-    assert.ok(!existsSync(path.join(process.cwd(), "src", "components", "reviews")));
+describe("The service stays a server, whatever the client does", () => {
+  /* Gate 4.2 asserted these three as "no Reviews UI exists yet". Gate 4.3 built
+   * the UI, so two of them would now be false statements about the phase rather
+   * than invariants. What they were really protecting survives, and is stated
+   * here as the thing that must hold FOREVER: the boundary between the two. */
+
+  it("54. the client never imports the service's runtime, only its types", () => {
+    const dir = path.join(process.cwd(), "src", "components", "reviews");
+    assert.ok(existsSync(dir), "the Reviews client arrived in Gate 4.3");
+    for (const file of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx"]) {
+      const src = readFileSync(path.join(dir, file), "utf8");
+      const runtimeImport = /^import\s+(?!type)[^;]*from\s+"@\/lib\/reviews-service"/m.test(src);
+      assert.ok(!runtimeImport, `${file} may import types from the service, never its code`);
+    }
   });
 
-  it("55. the Reviews screen is still the untouched placeholder", () => {
+  it("55. the page reaches the service only through the API", () => {
     const page = readFileSync(
       path.join(process.cwd(), "src", "app", "(app)", "reviews", "page.tsx"), "utf8"
     );
-    assert.ok(page.includes("ModulePlaceholder"), "Gate 4.3 owns the screen, not this phase");
-    assert.ok(!page.includes("reviews-service"));
+    assert.ok(!/from "@\/lib\/reviews-service"/.test(page.replace(/import type[^;]+;/g, "")),
+      "no runtime import of a server-only module");
+    assert.ok(page.includes("@/components/reviews/api"), "it goes through the fetchers");
   });
 
-  it("56. no client-side data fetching was added for Reviews", () => {
-    for (const forbidden of ["useQuery", "useMutation", "react-query", "\"use client\""]) {
-      assert.ok(!SERVICE.includes(forbidden), `${forbidden} belongs to Gate 4.3`);
+  it("56. no client-side data fetching leaked INTO the service", () => {
+    for (const forbidden of ["useQuery", "useMutation", "react-query", "\"use client\"", "useState"]) {
+      assert.ok(!SERVICE.includes(forbidden), `${forbidden} has no place in a server module`);
     }
   });
 });

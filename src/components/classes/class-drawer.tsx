@@ -130,6 +130,7 @@ export function ClassDrawer({
 
   return (
     <Drawer
+      dirty={isDirty}
       open={open}
       title={t(klass ? "Edit class" : "Create class")}
       subtitle={klass ? klass.name : t("Set up a new class")}

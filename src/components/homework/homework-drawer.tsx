@@ -93,7 +93,7 @@ export function HomeworkDrawer({
    * It suits an edit too: the ownership values are carried from the record, so
    * they satisfy it without being editable — and `toUpdateBody` is what keeps
    * them off the wire. */
-  const { register, control, handleSubmit, reset, setValue, getValues, formState: { errors } } =
+  const { register, control, handleSubmit, reset, setValue, getValues, formState: { errors, isDirty } } =
     useForm<HomeworkFormValues>({
       resolver: zodResolver(homeworkCreateSchema) as never,
       defaultValues: initialValues ?? emptyValues(),
@@ -122,18 +122,19 @@ export function HomeworkDrawer({
   /** Re-point the form at a class, dropping a student who is not in it. */
   function pickClass(next: string) {
     const v = withClass(getValues(), next, assignableClasses);
-    setValue("classId", v.classId, { shouldValidate: true });
-    setValue("studentId", v.studentId);
+    setValue("classId", v.classId, { shouldValidate: true, shouldDirty: true });
+    setValue("studentId", v.studentId, { shouldDirty: true });
   }
 
   function pickScope(next: string) {
     const v = withScope(getValues(), next === "student" ? "student" : "class");
-    setValue("scope", v.scope, { shouldValidate: true });
-    setValue("studentId", v.studentId);
+    setValue("scope", v.scope, { shouldValidate: true, shouldDirty: true });
+    setValue("studentId", v.studentId, { shouldDirty: true });
   }
 
   return (
     <Drawer
+      dirty={isDirty}
       open={open}
       title={t(editing ? "Edit homework" : "Create new homework")}
       subtitle={editing ? homework.title : t("Assign work to a class or a single student")}

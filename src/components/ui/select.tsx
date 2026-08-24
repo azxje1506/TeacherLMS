@@ -28,6 +28,11 @@ import { useEffect, useId, useRef, useState } from "react";
 export interface SelectOption {
   value: string;
   label: string;
+  /** Offered but not choosable. The row stays in the list — a value a user
+   * expects to see and cannot find is worse than one they can see is taken —
+   * and takes the app's existing `button:disabled` treatment. Optional, so
+   * every existing caller is unaffected. */
+  disabled?: boolean;
 }
 
 const chevron = (
@@ -123,6 +128,8 @@ export function Select({
                 type="button"
                 role="option"
                 aria-selected={on}
+                aria-disabled={o.disabled || undefined}
+                disabled={o.disabled}
                 onClick={() => { onChange(o.value); setOpen(false); }}
                 style={{
                   width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
@@ -132,8 +139,10 @@ export function Select({
                   color: on ? "var(--accent)" : "var(--fg)",
                   fontWeight: on ? 600 : 500,
                 }}
-                // Only unselected rows take the ghost hover; the selected row keeps --accent-soft.
-                className={on ? undefined : "btn-ghost"}
+                // Only unselected, choosable rows take the ghost hover; the
+                // selected row keeps --accent-soft and a disabled row keeps the
+                // app's own `button:disabled` treatment with no hover at all.
+                className={on || o.disabled ? undefined : "btn-ghost"}
               >
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.label}</span>
                 {on && (

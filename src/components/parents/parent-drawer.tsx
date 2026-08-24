@@ -46,7 +46,7 @@ export function ParentDrawer({
 }) {
   const { t } = useSettings();
 
-  const { register, handleSubmit, control, reset, formState: { errors } } =
+  const { register, handleSubmit, control, reset, formState: { errors, isDirty } } =
     useForm<ParentFormInput, unknown, ParentInput>({
       resolver: zodResolver(parentSchema),
       defaultValues: parent ? valuesFrom(parent) : emptyValues(),
@@ -61,6 +61,7 @@ export function ParentDrawer({
 
   return (
     <Drawer
+      dirty={isDirty}
       open={open}
       title={t(parent ? "Edit parent" : "Add parent")}
       subtitle={parent ? parent.name : t("Create a new parent")}

@@ -11,12 +11,16 @@ import { useT } from "@/lib/settings-context";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 
 export function ConfirmDialog({
-  open, title, message, confirmLabel, destructive = false, busy = false, onCancel, onConfirm,
+  open, title, message, confirmLabel, cancelLabel, destructive = false, busy = false, onCancel, onConfirm,
 }: {
   open: boolean;
   title: string;
   message: string;
   confirmLabel: string;
+  /** The safe action's label. Defaults to the shared "Cancel" every other
+   * confirm uses; a dialog whose safe action is "carry on with what you were
+   * doing" says that instead. Optional, so no existing caller changes. */
+  cancelLabel?: string;
   destructive?: boolean;
   busy?: boolean;
   onCancel: () => void;
@@ -97,7 +101,7 @@ export function ConfirmDialog({
             type="button" onClick={onCancel} className="btn-ghost"
             style={{ flex: 1, height: 40, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg)", fontSize: 13.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}
           >
-            {t("Cancel")}
+            {cancelLabel ?? t("Cancel")}
           </button>
           <button
             ref={confirmRef} type="button" onClick={onConfirm} disabled={busy} className="btn-primary"

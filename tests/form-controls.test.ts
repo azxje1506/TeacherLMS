@@ -300,15 +300,32 @@ describe("Select — every interaction state belongs to the app", () => {
     }
   });
 
-  it("20. Select has no disabled state, and no consumer asks for one", () => {
-    /* Recorded rather than invented. The design has no disabled Select and
-     * nothing in the app needs one — the two disabled controls in Classes are
-     * buttons. Adding one would be new API for a state nothing renders, which
-     * PROJECT_RULES puts off until a design exists for it. If a consumer ever
-     * passes `disabled`, this fails and the state gets designed first. */
-    assert.ok(!/disabled/.test(SELECT), "Select must not grow a disabled state unasked");
+  it("20. Select disables an OPTION, never the control, and only where it was asked for", () => {
+    /* This test used to record that Select had no disabled state at all, and
+     * said that if a consumer ever passed `disabled` it should fail "and the
+     * state gets designed first". That is what happened: Sprint 8 Gate 4.3
+     * specifies a review month picker in which months already reviewed stay
+     * VISIBLE and are not choosable, so the state was designed and then built.
+     *
+     * The invariant is therefore narrowed, not dropped. What Select grew is a
+     * per-OPTION flag taking the app's existing `button:disabled` treatment —
+     * no new token, no new visual language. What it still does NOT have is a
+     * disabled TRIGGER: nothing in the design disables a whole Select, and a
+     * consumer that wants one still has to get it designed. */
+    assert.ok(SELECT.includes("disabled?: boolean"), "the flag lives on SelectOption");
+    assert.ok(SELECT.includes("disabled={o.disabled}"), "and is applied to the option row");
+    assert.ok(SELECT.includes('aria-disabled={o.disabled || undefined}'), "and published to assistive tech");
+
+    // The TRIGGER is still never disabled: the only `disabled` in the file is
+    // the option's, so the control itself cannot be switched off.
+    const triggerBlock = SELECT.slice(SELECT.indexOf('className="cs-trigger"'), SELECT.indexOf("role=\"listbox\""));
+    assert.ok(!/disabled/.test(triggerBlock), "no consumer may disable the whole control");
+
+    // No existing consumer asks for any of it; the month picker is the one that does.
     const consumers = [...Object.values(DRAWERS), read("src", "components", "lessons", "calendar-ui.tsx")];
     for (const src of consumers) assert.ok(!/<Select[^/>]*disabled/.test(src));
+    const reviewDrawer = read("src", "components", "reviews", "review-drawer.tsx");
+    assert.ok(reviewDrawer.includes("disabled: m.taken"), "the reviewed month is the one disabled option");
   });
 });
 
