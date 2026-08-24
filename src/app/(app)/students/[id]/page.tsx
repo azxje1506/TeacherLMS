@@ -5,17 +5,31 @@
  * Delete) and the tablist.
  *
  * Only the Overview tab belongs to the Students module. Attendance, Homework,
- * Reviews, Classes and Finance read from modules later in the priority order, so
- * they render the comp's own "arrives in a later sprint" panel until then. */
+ * Classes and Finance read from modules later in the priority order, so they
+ * render the comp's own "arrives in a later sprint" panel until then.
+ *
+ * REVIEWS IS LIVE as of Sprint 8 Gate 4.4, and it is the whole of this page's
+ * involvement with it: the tab renders `<StudentReviews>`, which owns its own
+ * query, its own states and its own drawer. This page fetches no review, holds
+ * no review state and knows no review rule.
+ *
+ * THE TAB MAY BE DEEP-LINKED. `/students/{id}?tab=Reviews` is the destination
+ * the Reviews index's "View performance" already points at. The query is read
+ * ONCE, as the initial value of the existing tab state, and is never written
+ * back — clicking a tab changes the tab and leaves the URL alone, so there is no
+ * URL/state round trip to loop. An unknown value falls back to Overview.
+ * `useSearchParams` needs a Suspense boundary, exactly as the Login screen's
+ * does; the page's own body is otherwise unchanged. */
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSettings, useT } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { StudentDrawer } from "@/components/students/student-drawer";
+import { StudentReviews } from "@/components/reviews/student-reviews";
 import { Avatar, cardStyle, statusBadgeStyle, statusDotStyle, tabStyle } from "@/components/students/student-ui";
 import {
   deleteStudent, fetchStudent, saveStudentNotes, studentKeys, updateStudent,
@@ -35,14 +49,39 @@ const fieldLabel: React.CSSProperties = {
   fontSize: 11.5, color: "var(--muted-2)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600,
 };
 
+/** The tab a `?tab=` query asks for, or Overview.
+ *
+ * MEMBERSHIP OF `TABS`, so it fails closed: `?tab=Nonsense`, `?tab=reviews`,
+ * `?tab=` and a missing query all land on Overview rather than on a tab that
+ * does not exist. It is a pure function of the query string — it reads no state,
+ * writes nothing, and is used once, as an initial value. */
+function tabFromQuery(value: string | null): Tab {
+  return TABS.includes(value as Tab) ? (value as Tab) : "Overview";
+}
+
 export default function StudentProfilePage() {
+  /* `useSearchParams` suspends while the query is resolved, so the page states
+   * its own boundary — the same shape the Login screen uses. The fallback is
+   * null because the profile already renders its own loading card underneath. */
+  return (
+    <Suspense fallback={null}>
+      <StudentProfile />
+    </Suspense>
+  );
+}
+
+function StudentProfile() {
   const { t, fmt } = useSettings();
   const { toast } = useToast();
   const router = useRouter();
   const qc = useQueryClient();
   const id = String(useParams().id);
+  const params = useSearchParams();
 
-  const [tab, setTab] = useState<Tab>("Overview");
+  /* Read once, as the initial value. Ordinary tab clicks own the state from
+   * then on and nothing writes the query back, so no effect can chase the URL
+   * and no render can chase an effect. */
+  const [tab, setTab] = useState<Tab>(() => tabFromQuery(params.get("tab")));
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -259,6 +298,10 @@ export default function StudentProfilePage() {
             )}
           </div>
         </div>
+      ) : tab === "Reviews" ? (
+        /* Sprint 8. The component owns the query, the states and the drawer;
+         * this page passes it a student id and nothing else. */
+        <StudentReviews studentId={id} />
       ) : (
         /* The comp's own placeholder for sections owned by later sprints. */
         <div style={{ background: "var(--card)", border: "1px dashed var(--border)", borderRadius: "var(--r)", padding: "52px 24px", textAlign: "center" }}>

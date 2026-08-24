@@ -29,7 +29,9 @@ import {
   toCreateBody, toUpdateBody, valuesFrom, type ReviewFormValues,
 } from "../src/components/reviews/form";
 import { reviewCountKey, reviewScore } from "../src/components/reviews/reviews-ui";
-import { REVIEW_EDITABLE_FIELDS, SKILL_KEYS, perfColor, perfLabel } from "../src/lib/reviews";
+import {
+  REVIEW_EDITABLE_FIELDS, SKILL_KEYS, perfColor, perfLabel, rankSkills,
+} from "../src/lib/reviews";
 import { reviewCreateSchema, reviewUpdateSchema } from "../src/lib/schemas";
 import type { ReviewMonthOption } from "../src/lib/reviews";
 import type { ReviewDetail } from "../src/lib/reviews-service";
@@ -50,8 +52,11 @@ const DRAWER = code("src", "components", "reviews", "review-drawer.tsx");
 const API = code("src", "components", "reviews", "api.ts");
 const FORM = code("src", "components", "reviews", "form.ts");
 const UI = code("src", "components", "reviews", "reviews-ui.ts");
+/** Gate 4.4: the Student Profile's Reviews tab, and the profile page it hangs in. */
+const TAB = code("src", "components", "reviews", "student-reviews.tsx");
+const PROFILE = code("src", "app", "(app)", "students", "[id]", "page.tsx");
 const CLIENT_FILES: Array<[string, string]> = [
-  ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER],
+  ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER], ["student-reviews.tsx", TAB],
   ["api.ts", API], ["form.ts", FORM], ["reviews-ui.ts", UI],
 ];
 
@@ -334,11 +339,18 @@ function translatedLiterals(src: string): string[] {
  *  - two are the Gate 4.1 validation messages this form is the first to render.
  *
  * Each falls back to English, which is exactly what the i18n engine is built to
- * do. Listing them here means a sixth cannot appear unnoticed. */
+ * do. Listing them here means an unreported one cannot appear unnoticed.
+ *
+ * Gate 4.4 adds ONE more, and it is reported for the same reason: "Latest
+ * review" is the profile tab's subtitle, which the comp renders as part of a
+ * computed binding ("Latest review · {{ perf.latestMonthLabel }}"). The design's
+ * own dictionary does not carry it either, so the gap is the comp's rather than
+ * this phase's. */
 const REPORTED_MISSING = [
   "Strong", "Developing", "Needs support",
   "Write at least one note about this month", "Pick a month",
   "Couldn't load reviews", "Couldn't save review",
+  "Latest review",
 ];
 
 describe("Review copy — provenance", () => {
@@ -353,6 +365,10 @@ describe("Review copy — provenance", () => {
       "Where should we focus next?", "Goals for next month…", "A private note for the family…",
       "No parent linked. Edit this student to assign one.", "No students", "Try again", "Refresh",
       "Month", " review", " reviews",
+      // Gate 4.4 — every word the profile's Reviews tab says, bar the one reported above.
+      "Learning analytics", "No monthly reviews yet for this student.", "Quick view", "Edit",
+      "Strengths & focus areas", "Top strengths",
+      "Something went wrong while fetching the list. Check your connection and try again.",
     ]) {
       assert.ok(key in DICT, `${JSON.stringify(key)} must already exist`);
     }
@@ -368,7 +384,8 @@ describe("Review copy — provenance", () => {
 
   it("28. no Review literal is passed through t() outside the dictionary and the reported list", () => {
     const seen = new Set([...translatedLiterals(raw("src", "app", "(app)", "reviews", "page.tsx")),
-      ...translatedLiterals(raw("src", "components", "reviews", "review-drawer.tsx"))]);
+      ...translatedLiterals(raw("src", "components", "reviews", "review-drawer.tsx")),
+      ...translatedLiterals(raw("src", "components", "reviews", "student-reviews.tsx"))]);
     const missing = [...seen].filter((s) => s !== "" && !(s in DICT));
     assert.deepEqual(
       missing.sort(),
@@ -544,9 +561,14 @@ describe("Gate 4.3 stays inside its phase", () => {
     assert.ok(PAGE.includes("href={`/students/${c.studentId}?tab=Reviews`}"));
   });
 
-  it("49. no Student Profile file was drawn into this phase", () => {
-    const profile = raw("src", "app", "(app)", "students", "[id]", "page.tsx");
-    assert.ok(!profile.includes("components/reviews"), "Gate 4.4 owns the profile's Reviews tab");
+  it("49. the Student Profile reaches Reviews through exactly one component", () => {
+    /* Gate 4.3 asserted the profile had NOT been touched. Gate 4.4 is the phase
+     * that touches it, and the rule becomes the narrower one: the page mounts
+     * `StudentReviews` and imports nothing else from the module — no client, no
+     * drawer, no key, no helper. Everything Reviews is behind that one import. */
+    const imports = [...PROFILE.matchAll(/from "@\/components\/reviews\/([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(imports, ["student-reviews"]);
+    assert.ok(PROFILE.includes("<StudentReviews studentId={id} />"));
   });
 
   it("50. models.ts still declares no Review compound index", () => {
@@ -555,9 +577,9 @@ describe("Gate 4.3 stays inside its phase", () => {
     assert.ok(!/studentId:\s*1/.test(models));
   });
 
-  it("51. the Reviews client is exactly the four files this phase adds", () => {
+  it("51. the Reviews client is the four files Gate 4.3 added plus the one Gate 4.4 adds", () => {
     const dir = path.join(process.cwd(), "src", "components", "reviews");
-    for (const f of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx"]) {
+    for (const f of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx", "student-reviews.tsx"]) {
       assert.ok(existsSync(path.join(dir, f)), f);
     }
     assert.ok(!existsSync(path.join(dir, "review-card.tsx")), "the card is drawn by the page, as the comp draws it");
@@ -646,5 +668,361 @@ describe("Reviews — the mobile geometry contract", () => {
     for (const w of widths) {
       assert.ok(w <= 52, `a ${w}px fixed width belongs to an icon or avatar, not a layout`);
     }
+  });
+});
+
+/* =========================================================================
+ * 10. Gate 4.4 — the Student Profile's Reviews tab
+ *
+ * NO RENDERER, as section 9 explains. Two techniques are used below and they
+ * are deliberately different:
+ *
+ *  - the DECISIONS are exercised as functions. `rankSkills` is the domain's
+ *    own and is imported and run. The deep-link rule is one pure function of a
+ *    string living in the page, and it is EXTRACTED FROM THE SHIPPED SOURCE and
+ *    evaluated, so what these assertions run is the code that ships rather than
+ *    a restatement of it;
+ *  - the guarantees that only exist inside JSX — which field is rendered when,
+ *    what is never rendered at all — are asserted by scanning the source.
+ *
+ * A human still confirms on a device that the tab LOOKS right. This file keeps
+ * the contract from drifting; it does not replace that pass.
+ * ====================================================================== */
+
+/** The shipped `tabFromQuery`, lifted out of the page and made callable.
+ *
+ * The page is a client component with next/navigation and React Query at the
+ * top, so the test runner cannot import it. The deep-link rule, however, is one
+ * function over one string — so it is read out of the source together with the
+ * `TABS` list it closes over, the TypeScript assertions are stripped, and the
+ * result is executed. If the rule changes, this runs the changed rule. */
+function shippedTabFromQuery(): (value: string | null) => string {
+  const src = raw("src", "app", "(app)", "students", "[id]", "page.tsx");
+  const tabs = /const TABS = (\[[^\]]*\]) as const;/.exec(src);
+  const fn = /function tabFromQuery\(value: string \| null\): Tab \{([\s\S]*?)\n\}/.exec(src);
+  assert.ok(tabs, "TABS must be readable from the page");
+  assert.ok(fn, "tabFromQuery must be a named function on the page");
+  const body = fn[1].replace(/ as Tab/g, "");
+  return new Function("value", `const TABS = ${tabs[1]};${body}`) as (v: string | null) => string;
+}
+
+describe("Student Profile Reviews — the data rendering contract", () => {
+  it("61. a student with no reviews gets the recovered empty state, and no score", () => {
+    // The branch is on the LATEST review being absent, which is the same fact
+    // as "the server sent an empty history" and cannot disagree with it.
+    assert.ok(TAB.includes("const latest = reviews[0] ?? null;"));
+    assert.ok(/latest === null \? \(/.test(TAB), "the empty state is what an absent latest review renders");
+    assert.ok(TAB.includes('t("No monthly reviews yet for this student.")'));
+    // Nothing numeric is drawn in that branch: no average, no label, no chart.
+    const empty = TAB.slice(TAB.indexOf("latest === null ? ("), TAB.indexOf("Learning analytics"));
+    for (const forbidden of ["reviewScore", "toFixed", "avg / 5", "perfLabel", "rankSkills"]) {
+      assert.ok(!empty.includes(forbidden), `the empty state must not render ${forbidden}`);
+    }
+  });
+
+  it("62. the Create CTA is the server's eligibility answer, never a local rule", () => {
+    /* `canCreate` comes from the payload, which computes it with the same
+     * `canReviewStudent` the create endpoint enforces — so the button can never
+     * offer what the API would refuse. */
+    assert.ok(TAB.includes("canCreate"), "the payload's own flag");
+    assert.ok(!TAB.includes("canReviewStudent"), "eligibility is not re-derived on the client");
+    assert.ok(!/"Archived"/.test(TAB), "and no status is compared here");
+    assert.ok(!/"Trial"|"Paused"|"Active"/.test(TAB));
+  });
+
+  it("63. an Archived student's history reads, and offers no Create", () => {
+    // Both CTAs — the empty state's and the header's — are behind `canCreate`,
+    // which the server sets false for an Archived student. Nothing else gates
+    // the history, so it renders for them exactly as it does for anyone.
+    const calls = [...TAB.matchAll(/writeButton\(/g)];
+    assert.equal(calls.length, 2, "exactly two call sites — the empty state's and the header's");
+    const gated = [...TAB.matchAll(/\{canCreate && writeButton\(/g)];
+    assert.equal(gated.length, 2, "and every one of them is gated on canCreate");
+  });
+
+  it("64. history is rendered in the server's order and is never re-sorted", () => {
+    assert.ok(TAB.includes("reviews.map("), "the payload's array, as it arrived");
+    for (const forbidden of [".sort(", ".reverse(", "buildReviewHistory", "latestReview("]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} would restate an order the server already fixed`);
+    }
+  });
+
+  it("65. the latest review is the head of that newest-first list", () => {
+    assert.ok(TAB.includes("const latest = reviews[0] ?? null;"));
+    // And it is the only review the header and the strengths card read.
+    assert.ok(TAB.includes("fmt.monthLabel(latest.month)"));
+    assert.ok(TAB.includes("<StrengthsCard skills={latest.skills} />"));
+  });
+});
+
+describe("Student Profile Reviews — the timeline", () => {
+  it("66. every row's label, colour and one decimal come from the server's average", () => {
+    assert.ok(TAB.includes("reviewScore(r.average)"), "the guarded formatter, over the server's number");
+    for (const forbidden of ["perfLabel(", "perfColor(", "reviewAverage(", "toFixed("]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} must not be called here`);
+    }
+    // reviewScore is the one place those live, and it rounds to one decimal.
+    assert.equal(reviewScore(4.25)?.value, "4.3");
+    assert.equal(reviewScore(4.25)?.label, perfLabel(4.25));
+    assert.equal(reviewScore(4.25)?.color, perfColor(4.25));
+  });
+
+  it("67. prose the teacher did not write is omitted, never invented", () => {
+    // Each of the four prose fields is rendered only when it holds something.
+    assert.ok(TAB.includes('r.comment.trim() !== ""'), "the summary line is guarded");
+    assert.ok(TAB.includes('.filter(([, value]) => value.trim() !== "")'), "and so is each Quick view section");
+    // No fallback text exists to render in their place.
+    for (const forbidden of ["No comment", "Not provided", "—", "N/A", "No notes"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} would be fabricated content`);
+    }
+  });
+
+  it("68. Quick view shows the three approved stored fields and nothing else", () => {
+    const quick = TAB.slice(TAB.indexOf("const quick = ("), TAB.indexOf("const last ="));
+    for (const field of ["r.strengths", "r.improvements", "r.goals"]) {
+      assert.ok(quick.includes(field), `${field} belongs in Quick view`);
+    }
+    assert.ok(!quick.includes("r.parentNotes"), "parent notes stay in the drawer");
+    assert.ok(!quick.includes("r.skills"), "the ten ratings are the drawer's, not a read-only panel's");
+    // And no field this sprint does not have.
+    for (const forbidden of ["aiSummary", "achievement", "attendance", "homework"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} is not a Review field`);
+    }
+  });
+
+  it("69. every row offers Edit, and nothing anywhere offers Delete", () => {
+    assert.ok(TAB.includes("onClick={() => setEditing(r)}"), "Edit is per-row");
+    assert.ok(TAB.includes('t("Edit")'));
+    assert.ok(!/deleteReview|"Delete"|ConfirmDialog/.test(TAB), "a review is a historical record");
+  });
+
+  it("70. Edit opens the Gate 4.3 drawer, and no second form exists", () => {
+    assert.ok(TAB.includes("<ReviewDrawer"), "the shared drawer");
+    assert.equal([...TAB.matchAll(/<ReviewDrawer/g)].length, 2, "one create, one edit — both the same component");
+    for (const forbidden of ["useForm", "<textarea", "<input", "register(", "zodResolver"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} would be a second Review form`);
+    }
+    // The month is not passed on an edit, so it cannot become a control.
+    const edit = TAB.slice(TAB.indexOf("review={editing}"));
+    assert.ok(!edit.includes("months={"), "an edit may not change its month");
+  });
+});
+
+describe("Student Profile Reviews — strengths and focus areas", () => {
+  it("71. the card is the domain's ranking, over the latest review alone", () => {
+    assert.ok(TAB.includes("rankSkills(skills)"), "the shared pure function");
+    assert.ok(!/rankSkills\([^)]*,\s*\d/.test(TAB), "the default count of 3 is not overridden");
+    assert.ok(TAB.includes("<StrengthsCard skills={latest.skills} />"));
+    // No other review reaches it, and nothing reads the prose to guess a skill.
+    assert.ok(!/StrengthsCard[^>]*reviews/.test(TAB));
+    assert.ok(!/strengths={r\.strengths}|improvements={r\.improvements}/.test(TAB));
+  });
+
+  it("72. rankSkills gives the top three and the bottom three", () => {
+    const flat = Object.fromEntries(SKILL_KEYS.map((k) => [k, 3]));
+    const varied = {
+      ...flat,
+      [SKILL_KEYS[4]]: 5, [SKILL_KEYS[7]]: 5, [SKILL_KEYS[1]]: 4,
+      [SKILL_KEYS[9]]: 1, [SKILL_KEYS[0]]: 2, [SKILL_KEYS[6]]: 2,
+    };
+    const { strengths, focus } = rankSkills(varied);
+    assert.equal(strengths.length, 3);
+    assert.equal(focus.length, 3);
+    assert.deepEqual(strengths.map((s) => s.key), [SKILL_KEYS[4], SKILL_KEYS[7], SKILL_KEYS[1]]);
+    assert.deepEqual(focus.map((s) => s.key), [SKILL_KEYS[9], SKILL_KEYS[0], SKILL_KEYS[6]]);
+    for (const s of strengths) assert.equal(s.rating, varied[s.key]);
+  });
+
+  it("73. ties break on the canonical SKILLS order, both ways", () => {
+    // Every rating equal: the answer must still be stated rather than left to
+    // whatever order the engine's sort happened to produce.
+    const flat = Object.fromEntries(SKILL_KEYS.map((k) => [k, 4]));
+    const { strengths, focus } = rankSkills(flat);
+    assert.deepEqual(strengths.map((s) => s.key), SKILL_KEYS.slice(0, 3));
+    assert.deepEqual(focus.map((s) => s.key), SKILL_KEYS.slice(0, 3));
+    // And it is the same answer every time.
+    assert.deepEqual(rankSkills(flat).strengths, strengths);
+  });
+});
+
+describe("Student Profile Reviews — the deep link", () => {
+  const tabFromQuery = shippedTabFromQuery();
+
+  it("74. ?tab=Reviews selects Reviews", () => {
+    assert.equal(tabFromQuery("Reviews"), "Reviews");
+    assert.ok(PAGE.includes("href={`/students/${c.studentId}?tab=Reviews`}"), "which is where the index points");
+  });
+
+  it("75. every other real tab deep-links too, and none of them is Reviews", () => {
+    for (const tb of ["Overview", "Attendance", "Homework", "Classes", "Finance"]) {
+      assert.equal(tabFromQuery(tb), tb);
+    }
+  });
+
+  it("76. an unknown, wrongly-cased, empty or absent tab falls back to Overview", () => {
+    for (const bad of ["reviews", "REVIEWS", "Nonsense", "", "__proto__", "constructor", null]) {
+      assert.equal(tabFromQuery(bad), "Overview", `${JSON.stringify(bad)} must not select a tab`);
+    }
+  });
+
+  it("77. the query is read once and never written back, so nothing can loop", () => {
+    assert.ok(
+      PROFILE.includes('useState<Tab>(() => tabFromQuery(params.get("tab")))'),
+      "the query is the INITIAL value of the existing state, not a synced one"
+    );
+    // No effect chases the URL, and no handler rewrites it.
+    assert.ok(!/useEffect\([^)]*params/.test(PROFILE), "no URL/state synchronisation effect");
+    assert.ok(!/router\.(push|replace)\([^)]*tab/.test(PROFILE), "a tab click must not rewrite the URL");
+    // Ordinary tab clicking still owns the state from then on.
+    assert.ok(PROFILE.includes("onClick={() => setTab(tb)}"));
+  });
+
+  it("78. useSearchParams sits inside a Suspense boundary, as the Login screen's does", () => {
+    assert.ok(PROFILE.includes("useSearchParams"));
+    assert.match(PROFILE, /<Suspense fallback=\{null\}>\s*<StudentProfile \/>\s*<\/Suspense>/);
+  });
+});
+
+describe("Student Profile Reviews — the boundary", () => {
+  it("79. the tab fetches exactly one endpoint, and it is the Reviews one", () => {
+    assert.ok(TAB.includes("fetchStudentReviews(studentId)"));
+    // Every other domain's client is unreachable from here.
+    for (const forbidden of [
+      "components/attendance", "components/homework", "components/classes", "components/lessons",
+      "components/students/api", "components/parents", "fetchStudent(", "fetchDashboard",
+      "attendanceKeys", "homeworkKeys", "studentKeys", "classKeys", "lessonKeys", "financeKeys",
+    ]) {
+      assert.ok(!TAB.includes(forbidden), `the profile tab must not reach ${forbidden}`);
+    }
+  });
+
+  it("80. it reaches no other module's domain helpers or lifecycle", () => {
+    for (const forbidden of [
+      "lib/attendance", "lib/homework", "lib/finance", "lib/lifecycle", "lib/recurrence",
+      "lib/dashboard", "lib/classes", "lib/students", "lib/lessons", "lib/repo",
+      "advanceLessonLifecycle", "attendanceRate", "completionRate",
+    ]) {
+      assert.ok(!TAB.includes(forbidden), `the profile tab must not import ${forbidden}`);
+    }
+  });
+
+  it("81. its mutations refresh Reviews and mark the Dashboard stale without fetching it", () => {
+    assert.ok(
+      /invalidateQueries\(\{\s*queryKey:\s*\["dashboard"\],\s*refetchType:\s*"none",?\s*\}\)/.test(TAB),
+      "GET /api/dashboard advances the lesson lifecycle and WRITES to Lessons"
+    );
+    const keys = [...TAB.matchAll(/queryKey:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
+    assert.deepEqual([...new Set(keys)].sort(), ['["dashboard"]', "reviewKeys.all", "reviewKeys.student(studentId)"]);
+  });
+
+  it("82. the deferred design blocks are omitted whole, not drawn as dead shells", () => {
+    for (const block of [
+      "Overall score", "Attendance", "Homework completion", "Skill radar", "Compare",
+      "Progress over time", "Score distribution", "Skill trend heatmap",
+      "Monthly learning journey", "View all", "Print", "PDF", "jspdf",
+    ]) {
+      assert.ok(!TAB.includes(block), `${block} belongs to a later sprint and must not appear at all`);
+    }
+    assert.ok(!/disabled.*Coming soon|Coming soon/.test(TAB), "and no placeholder claims to be one");
+  });
+
+  it("83. the profile page gained a branch, and lost none", () => {
+    // The Overview tab is untouched, and every other tab still renders the
+    // comp's later-sprint panel.
+    assert.ok(PROFILE.includes('tab === "Overview" ? ('), "Overview still branches first");
+    assert.ok(PROFILE.includes('tab === "Reviews" ? ('), "Reviews is the one new branch");
+    assert.ok(PROFILE.includes('t("arrives in a later sprint")'), "and the placeholder is still the fallback");
+    assert.ok(PROFILE.includes("Student details") && PROFILE.includes("Parent / Guardian"),
+      "the Overview cards are still there");
+    assert.equal(
+      [...PROFILE.matchAll(/const TABS = \["Overview", "Attendance", "Homework", "Reviews", "Classes", "Finance"\]/g)].length,
+      1, "the tab list itself is unchanged"
+    );
+  });
+
+  it("84. the page holds no Review state, query, key or rule of its own", () => {
+    for (const forbidden of [
+      "reviewKeys", "fetchStudentReviews", "createReview", "updateReview", "ReviewDrawer",
+      "rankSkills", "reviewScore", "ReviewDetail",
+    ]) {
+      assert.ok(!PROFILE.includes(forbidden), `${forbidden} belongs to student-reviews.tsx, not the page`);
+    }
+  });
+
+  it("85. no duplicate parent warning is added to the tab — the drawer carries it", () => {
+    assert.ok(TAB.includes("parentLinked={parentLinked}"), "it is passed through to the drawer");
+    assert.ok(!TAB.includes("noParentPillStyle"), "and not restated as a pill on the profile");
+    assert.ok(!TAB.includes("No parent linked"), "the informational sentence stays in the drawer");
+    // And no parent state gates a create or an edit.
+    assert.ok(!/parentLinked &&|!parentLinked \?|disabled=\{!parentLinked/.test(TAB));
+  });
+});
+
+/* =========================================================================
+ * 11. The profile tab's geometry
+ *
+ * Same method and same limitation as section 9: the arithmetic on the numbers
+ * the component states, read as text.
+ * ====================================================================== */
+
+describe("Student Profile Reviews — the mobile geometry contract", () => {
+  it("86. adds no Reviews-specific responsive CSS at all", () => {
+    const CSS = raw("src", "app", "globals.css");
+    for (const selector of ["student-reviews", "rv-timeline", "rv-strengths"]) {
+      assert.ok(!CSS.includes(`.${selector}`), `globals.css must carry no .${selector} rule`);
+    }
+  });
+
+  it("87. the two-column row is the comp's own track, in this app's shrinkable form", () => {
+    /* The comp's second row is `repeat(auto-fit,minmax(290px,1fr))`. At 375px the
+     * content column is the full viewport less the main padding, which is well
+     * under 290px + the gap — so a bare 290px floor is a track the column cannot
+     * pay for, exactly the shape the Gate 5 Phase 0 remediation replaced
+     * everywhere else. `min(290px,100%)` keeps the comp's two columns at every
+     * width that can hold them and lets the item shrink where it cannot. */
+    const tracks = [...TAB.matchAll(/gridTemplateColumns: "([^"]+)"/g)].map((m) => m[1]);
+    assert.ok(tracks.length > 0);
+    for (const track of tracks) {
+      assert.equal(track, "repeat(auto-fit,minmax(min(290px,100%),1fr))");
+    }
+  });
+
+  it("88. every panel and every timeline row may shrink below its content", () => {
+    assert.ok(TAB.includes("const panel: React.CSSProperties = {\n  minWidth: 0,"),
+      "the card surface is a grid item that shrinks");
+    // The row, its content column, and the Quick view panel inside it.
+    assert.ok(TAB.includes('style={{ display: "flex", gap: 12, minWidth: 0 }}'), "the timeline row");
+    assert.ok(TAB.includes('style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 16 }}'), "its content column");
+  });
+
+  it("89. a long month label wraps instead of widening the column", () => {
+    /* At 375px the timeline card's content box is roughly 375 - 36 (main
+     * padding) - 42 (card padding + border) - 23 (marker column + gap) ≈ 274px.
+     * "Tháng 12 2025" beside "Needs support · 2.1" does not fit that on one
+     * line, so the header row wraps and the badge keeps its own width. */
+    const header = TAB.slice(TAB.indexOf("marginBottom: 5"), TAB.indexOf("The comp's two-line summary"));
+    assert.ok(TAB.includes('justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 5'),
+      "the month/badge row wraps");
+    assert.ok(header.includes('whiteSpace: "nowrap"'), "the badge itself stays on one line");
+    assert.ok(header.includes('overflowWrap: "anywhere"'), "and the month may break if it must");
+  });
+
+  it("90. teacher prose can never widen a column, however it was typed", () => {
+    // A pasted URL or an unbroken string is the case that overflows.
+    assert.equal([...TAB.matchAll(/overflowWrap: "anywhere"/g)].length, 3,
+      "the month label, the summary line, and each Quick view body");
+  });
+
+  it("91. the tab states no fixed pixel width that a layout depends on", () => {
+    const widths = [...TAB.matchAll(/width: (\d+)/g)].map((m) => Number(m[1]));
+    for (const w of widths) {
+      assert.ok(w <= 52, `a ${w}px fixed width belongs to an icon, a marker or an avatar, not a layout`);
+    }
+  });
+
+  it("92. the skill rows truncate the label rather than the rating", () => {
+    assert.ok(TAB.includes('flex: 1, minWidth: 0, fontSize: 13'), "the label column shrinks");
+    assert.equal([...TAB.matchAll(/flex: "none"/g)].length, 4,
+      "the badge, the icon, the rating pill and the skeleton's button stay fixed");
   });
 });
