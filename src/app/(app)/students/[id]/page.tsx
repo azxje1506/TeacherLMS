@@ -21,7 +21,7 @@
  * `useSearchParams` needs a Suspense boundary, exactly as the Login screen's
  * does; the page's own body is otherwise unchanged. */
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -82,8 +82,30 @@ function StudentProfile() {
    * then on and nothing writes the query back, so no effect can chase the URL
    * and no render can chase an effect. */
   const [tab, setTab] = useState<Tab>(() => tabFromQuery(params.get("tab")));
+
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  /* KEEP THE SELECTED TAB REACHABLE. At 375px the six tabs are wider than the
+   * column, so a deep link to a later tab — `?tab=Reviews` is the one the
+   * Reviews index points at — could land on a tab scrolled out of sight, with
+   * the strip's scrollbar hidden and nothing to suggest it was there.
+   *
+   * ONLY `scrollLeft` IS TOUCHED, never `scrollIntoView`: that would search for
+   * the nearest scrollable ancestor on BOTH axes and could move the page under
+   * the reader. This adjusts one number on one element, and only when the tab is
+   * actually out of view — a tab already visible is left exactly where it is, so
+   * the strip does not jump when somebody clicks a tab they can already see. */
+  const tablistRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const strip = tablistRef.current;
+    const active = strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!strip || !active) return;
+    const left = active.offsetLeft;
+    const right = left + active.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = left;
+    else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+  }, [tab]);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: studentKeys.detail(id),
@@ -216,12 +238,32 @@ function StudentProfile() {
       </div>
 
       {/* Tabs */}
-      <div role="tablist" aria-label={t("Student sections")} style={{ display: "flex", gap: 2, borderBottom: "1px solid var(--border)", marginBottom: 18, overflowX: "auto" }}>
-        {TABS.map((tb) => (
-          <button key={tb} role="tab" aria-selected={tab === tb} onClick={() => setTab(tb)} style={tabStyle(tab === tb)}>
-            {t(tb)}
-          </button>
-        ))}
+      {/* THE DIVIDER LIVES ON THE WRAPPER, OUTSIDE THE SCROLL CONTAINER.
+        * A scroll container clips at its PADDING box, and each tab deliberately
+        * hangs 1px below the flex line (`marginBottom: -1` in tabStyle) so its
+        * 2px active underline covers that divider. Clipping vertically on the
+        * same element that draws the divider would shave the underline back to
+        * 1px. Splitting them keeps every pixel where it was: the strip pads its
+        * own 1px back, pulls it off again with a negative margin, and the
+        * wrapper's border lands exactly under the tabs, as before. */}
+      <div style={{ borderBottom: "1px solid var(--border)", marginBottom: 18 }}>
+        <div
+          ref={tablistRef}
+          role="tablist"
+          aria-label={t("Student sections")}
+          className="tabstrip"
+          /* HORIZONTAL ONLY. `overflow-y` is stated explicitly because leaving
+           * it out does NOT leave it alone — with `overflow-x: auto` beside it,
+           * `visible` computes to `auto`, which is what put a vertical scrollbar
+           * on this strip. See ".tabstrip" in globals.css. */
+          style={{ display: "flex", gap: 2, overflowX: "auto", overflowY: "hidden", paddingBottom: 1, marginBottom: -1 }}
+        >
+          {TABS.map((tb) => (
+            <button key={tb} role="tab" aria-selected={tab === tb} onClick={() => setTab(tb)} style={tabStyle(tab === tb)}>
+              {t(tb)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === "Overview" ? (

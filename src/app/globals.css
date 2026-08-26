@@ -200,6 +200,37 @@ input[type="date"]{-webkit-appearance:none;appearance:none;min-width:0;max-width
    too. Had the original rule been written here it would never have had a hole in
    the middle of its range. */
 .app-drawer-body{overscroll-behavior:contain}
+
+/* ---- A horizontal tab strip scrolls sideways and only sideways -------------
+   THE REPORTED DEFECT: the Student Profile tab bar showed a VERTICAL scrollbar,
+   worse on tablet and phone. The cause is a CSS rule that is easy to miss —
+   `overflow-x: auto` alone does not leave the other axis alone:
+
+     "The computed value of overflow-x/overflow-y is auto if the specified value
+      is visible and the other is not visible."   (CSS Overflow 3)
+
+   So declaring only `overflow-x:auto` silently made the strip a scroller on
+   BOTH axes, and then two things gave it something to scroll vertically:
+
+     1. each tab carries `margin-bottom:-1px` so its 2px active underline
+        overlaps the divider, which leaves its border box 1px below the flex
+        line — 1px of vertical overflow, and 1px is enough for a scrollbar;
+     2. once a horizontal scrollbar appears it takes 10px of height from inside
+        the box (see the ::-webkit-scrollbar sizing above), leaving 27px for a
+        38px tab — 11px more of vertical overflow.
+
+   The fix is this class plus an explicit `overflow-y:hidden` on the element.
+   The SCROLLBAR is hidden, not the overflow: wheel, trackpad, touch and
+   keyboard focus all still scroll the strip, and the profile scrolls the active
+   tab into view itself, so no tab is unreachable. That is also what stops (2)
+   from clipping the tabs — a scrollbar that occupies no height cannot steal any.
+
+   `overscroll-behavior-x: contain` keeps a swipe that runs off the end of the
+   strip from turning into the browser's back gesture — the same ownership rule
+   the drawer body states above. */
+.tabstrip{scrollbar-width:none;-ms-overflow-style:none;overscroll-behavior-x:contain}
+.tabstrip::-webkit-scrollbar{display:none}
+
 /* iOS right-aligns the value once appearance is off; every other field in these
    forms reads from the left. */
 input[type="date"]::-webkit-date-and-time-value{text-align:left;margin:0}

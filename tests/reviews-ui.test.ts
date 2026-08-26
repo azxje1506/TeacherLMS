@@ -1363,3 +1363,130 @@ describe("The Reviews payload carries the derived metrics", () => {
     assert.ok(!/attendance|homeworkCompletion|pct/.test(domain), "the Review document gains nothing");
   });
 });
+
+/* =========================================================================
+ * 13. The Student Profile tab strip
+ *
+ * A REPORTED DEFECT, PINNED. The strip declared `overflow-x: auto` and nothing
+ * else, and a vertical scrollbar appeared beside the tabs — worse on tablet and
+ * phone. The cause is one line of CSS Overflow 3: with one axis non-visible, the
+ * other computes from `visible` to `auto`. Everything below exists so that a
+ * future edit cannot quietly re-create it.
+ *
+ * Same limitation as every other suite here: no browser, so the rules are read
+ * as text and the arithmetic is done on the numbers they state.
+ * ====================================================================== */
+
+describe("The Student Profile tab strip scrolls sideways and only sideways", () => {
+  const TAB_UI = code("src", "components", "students", "student-ui.tsx");
+  const CSS = raw("src", "app", "globals.css");
+  const RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  it("116. both axes are stated — the defect was leaving one of them out", () => {
+    /* `overflow-x: auto` alone does NOT leave `overflow-y` alone: it computes to
+     * `auto`, and then the tabs' own -1px overlap is enough to draw a scrollbar.
+     * Stating both is the fix, and the assertion is that both keep being stated. */
+    assert.match(PROFILE, /overflowX: "auto", overflowY: "hidden"/);
+    assert.ok(
+      !/role="tablist"[\s\S]{0,400}overflowX: "auto"(?![\s\S]{0,40}overflowY)/.test(PROFILE),
+      "overflowX must never appear on the strip without overflowY beside it"
+    );
+  });
+
+  it("117. the overflow is kept — only the scrollbar's chrome is hidden", () => {
+    /* Hiding the OVERFLOW would make the later tabs unreachable. Hiding the
+     * scrollbar leaves wheel, trackpad, touch and keyboard scrolling intact —
+     * and is what stops a 10px horizontal scrollbar eating 10px of a 38px tab. */
+    assert.match(RULES, /\.tabstrip\{[^}]*scrollbar-width:none/);
+    assert.match(RULES, /\.tabstrip::-webkit-scrollbar\{display:none\}/);
+    assert.ok(!/role="tablist"[\s\S]{0,400}overflowX: "hidden"/.test(PROFILE), "the strip still scrolls");
+    assert.ok(PROFILE.includes('className="tabstrip"'));
+  });
+
+  it("118. a swipe off the end of the strip does not become a back gesture", () => {
+    assert.match(RULES, /\.tabstrip\{[^}]*overscroll-behavior-x:contain/);
+  });
+
+  it("119. a tab never shrinks and never wraps", () => {
+    /* Flex items shrink by default, and a strip that squeezes its tabs never
+     * overflows — so it never scrolls, and the later tabs are simply lost. */
+    assert.ok(TAB_UI.includes("flexShrink: 0"), "tabStyle must hold its width");
+    assert.ok(TAB_UI.includes('whiteSpace: "nowrap"'), "and keep its label on one line");
+    assert.ok(!/flexWrap: "wrap"/.test(PROFILE.slice(PROFILE.indexOf('role="tablist"') - 400)), "the strip does not wrap");
+  });
+
+  it("120. the divider sits OUTSIDE the scroll container, so the underline survives", () => {
+    /* A scroll container clips at its padding box. The active tab hangs 1px
+     * below the flex line (`marginBottom: -1`) so its 2px underline covers the
+     * divider; clipping on the same element would shave that back to 1px. The
+     * strip therefore pads its 1px back and pulls it off again, and the divider
+     * is drawn by the wrapper. Net geometry is unchanged. */
+    assert.match(
+      PROFILE,
+      /borderBottom: "1px solid var\(--border\)", marginBottom: 18 \}\}>\s*<div\s+ref=\{tablistRef\}/,
+      "the wrapper draws the divider and wraps the strip"
+    );
+    assert.match(PROFILE, /paddingBottom: 1, marginBottom: -1/, "the strip gives back the 1px it clips");
+    assert.ok(TAB_UI.includes("marginBottom: -1"), "and the tab still overlaps the divider");
+    // The strip itself must not also draw a border — that would double the rule.
+    const strip = PROFILE.slice(PROFILE.indexOf("ref={tablistRef}"), PROFILE.indexOf("TABS.map"));
+    assert.ok(!strip.includes("borderBottom"), "only the wrapper draws the divider");
+  });
+
+  it("121. the selected tab is scrolled into view without moving the page", () => {
+    /* `scrollIntoView` looks for the nearest scrollable ancestor on BOTH axes
+     * and can scroll the document under the reader. Setting `scrollLeft` on one
+     * element cannot. */
+    assert.ok(PROFILE.includes("strip.scrollLeft = left"), "leftwards when the tab is behind");
+    assert.ok(PROFILE.includes("strip.scrollLeft = right - strip.clientWidth"), "and rightwards when ahead");
+    assert.ok(!PROFILE.includes("scrollIntoView"), "never scrollIntoView — it can move the page");
+    assert.ok(!PROFILE.includes("scrollTop"), "and the vertical axis is never touched");
+  });
+
+  it("122. it runs on the selected tab, so a deep link lands on a visible tab", () => {
+    assert.match(PROFILE, /useEffect\(\(\) => \{[\s\S]{0,500}aria-selected="true"[\s\S]{0,500}\}, \[tab\]\);/);
+    // And it only acts when the tab is genuinely out of view.
+    assert.ok(PROFILE.includes("if (left < strip.scrollLeft)"), "a visible tab is left alone");
+  });
+
+  it("123. the strip is the only scroller on the profile, and the page is not one", () => {
+    const scrollers = [...PROFILE.matchAll(/overflowX: "([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(scrollers, ["auto"], "one horizontal scroller: the tab strip");
+    assert.ok(!PROFILE.includes('overflowY: "auto"'), "nothing on this page scrolls vertically by itself");
+  });
+
+  it("124. six tabs at 375px: the strip must scroll, and Reviews must be reachable", () => {
+    /* THE ARITHMETIC THIS FIX EXISTS FOR. At 375px the sidebar is out of flow and
+     * `.app-main` pads 14px a side, so the content column is 347px. Six tabs at
+     * 13.5px with 14px of padding a side, plus five 2px gaps, come to roughly
+     * 494px in English and more in Vietnamese — comfortably wider than 347px.
+     *
+     * So the strip DOES overflow at 375px, which is exactly why hiding the
+     * overflow would have been the wrong fix and why the selected tab has to be
+     * scrolled into view. Reviews is the fourth of six: without the effect it
+     * would begin around 269px into a 347px window and end past its right edge. */
+    const column = 375 - 14 * 2;
+    const tabs = [8, 10, 8, 7, 7, 7]; // Overview, Attendance, Homework, Reviews, Classes, Finance
+    const width = (chars: number) => chars * 6.75 + 28; // ~0.5em glyphs plus 14px padding a side
+    const strip = tabs.reduce((sum, c) => sum + width(c), 0) + 2 * (tabs.length - 1);
+    assert.ok(strip > column, `the strip is ~${strip.toFixed(0)}px in a ${column}px column — it must scroll`);
+
+    /* Reviews is the fourth of six and lands within a few pixels of the right
+     * edge — ~341px into a 347px window. It FITS, barely, and that is the point:
+     * a margin that thin is a coincidence of one font at one language, not a
+     * guarantee. Classes and Finance are plainly off-screen either way, so the
+     * strip must scroll and the selected tab must be brought into view rather
+     * than trusted to land somewhere visible. */
+    const reviewsEnd = tabs.slice(0, 4).reduce((sum, c) => sum + width(c), 0) + 2 * 3;
+    assert.ok(reviewsEnd > column - 20, `Reviews ends at ~${reviewsEnd.toFixed(0)}px — too close to ${column} to rely on`);
+    const financeEnd = strip;
+    assert.ok(financeEnd > column + 100, "and the last tabs are well past the edge");
+  });
+
+  it("125. from 768px up the strip fits, so nothing scrolls and nothing is hidden", () => {
+    // 768px: sidebar rail 64px, `.app-main` pads 18px a side -> 668px column.
+    const column = 768 - 64 - 18 * 2;
+    const strip = [8, 10, 8, 7, 7, 7].reduce((sum, c) => sum + (c * 6.75 + 28), 0) + 2 * 5;
+    assert.ok(strip < column, `~${strip.toFixed(0)}px fits a ${column}px column`);
+  });
+});

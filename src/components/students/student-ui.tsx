@@ -52,6 +52,12 @@ export function tabStyle(active: boolean): React.CSSProperties {
     color: active ? "var(--accent)" : "var(--muted)",
     fontSize: 13.5, fontWeight: active ? 600 : 500, fontFamily: "inherit",
     cursor: "pointer", whiteSpace: "nowrap", marginBottom: -1,
+    /* A TAB NEVER SHRINKS. Flex items default to `flex-shrink: 1`, so in a strip
+     * narrower than its tabs the row would squeeze each one toward its
+     * min-content width instead of overflowing — and a strip that never
+     * overflows never scrolls, which is how a tab bar quietly loses its later
+     * tabs. Holding the width is what hands the excess to the scroll container. */
+    flexShrink: 0,
   };
 }
 
