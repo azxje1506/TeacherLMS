@@ -181,11 +181,29 @@ function shiftMonth(month: string, delta: number): string | null {
  * reads one, so the caller — and a test — decides what "now" is. A malformed
  * month on either side fails closed. */
 export function isSelectableMonth(month: string | null | undefined, appMonth: string): boolean {
+  const monthsBack = monthsAgo(month, appMonth);
+  return monthsBack != null && monthsBack >= 0 && monthsBack < REVIEW_MONTH_WINDOW;
+}
+
+/** How many months before `appMonth` this month falls — 0 for the application
+ * month itself, positive going back, NEGATIVE for a future month. `null` when
+ * either side is not a well-formed month.
+ *
+ * EXPORTED SO THE ARITHMETIC IS STATED ONCE. `isSelectableMonth` asks it whether
+ * a month is inside the twelve-month create window; the analytics trend asks it
+ * whether a review falls inside a six- or twelve-month chart window. Those are
+ * different questions with different bounds, and the only thing they share is
+ * "how far apart are these two months" — which is the part that must not be
+ * written down twice. Cross-year arithmetic falls out of `monthIndex`, so
+ * December 2025 is exactly one month before January 2026 with no special case.
+ *
+ * NO CLOCK. `appMonth` is an argument here as it is everywhere else in this
+ * module. */
+export function monthsAgo(month: string | null | undefined, appMonth: string): number | null {
   const target = monthIndex(month);
   const now = monthIndex(appMonth);
-  if (target == null || now == null) return false;
-  const monthsBack = now - target;
-  return monthsBack >= 0 && monthsBack < REVIEW_MONTH_WINDOW;
+  if (target == null || now == null) return null;
+  return now - target;
 }
 
 /** One month the Create form may offer. `taken` marks a month this student has

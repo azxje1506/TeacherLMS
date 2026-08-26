@@ -357,11 +357,31 @@ describe("Gate 4.2 changes no reporting semantics", () => {
     assert.ok(FINANCE.includes('export function homeworkCompletion(month: string, data: Pick<AllData, "homework">)'));
   });
 
-  it("42. finance exposes exactly one homework function, and the service calls none", () => {
+  it("42. finance exposes exactly two homework functions, and the service calls neither", () => {
+    /* Sprint 7 pinned this list at one. Sprint 8 Gate 4.4B adds the second, and
+     * only the second: `studentHomeworkCompletion`, the per-student filter the
+     * Reviews report needs. It is deliberately a SIBLING of the aggregate rather
+     * than a replacement — same month rule, same three exclusions, same
+     * numerator, same rounding, differing only in which outcomes it selects —
+     * which is why it lives here beside it instead of in another module.
+     *
+     * The list stays pinned so a third cannot appear unnoticed, and the Homework
+     * service still computes no reporting of its own. */
     const homeworkExports = [...FINANCE.matchAll(/export function (\w*[Hh]omework\w*)/g)].map((m) => m[1]);
-    assert.deepEqual(homeworkExports, ["homeworkCompletion"]);
+    assert.deepEqual(homeworkExports, ["homeworkCompletion", "studentHomeworkCompletion"]);
     assert.ok(!SERVICE.includes("homeworkCompletion"), "the service does not compute reporting");
     assert.ok(!SERVICE.includes("finance"));
+  });
+
+  it("42b. the Sprint 7 aggregate itself is untouched by the Sprint 8 addition", () => {
+    // Signature, empty-month behaviour and the Late-counts-as-done rule, all as
+    // Sprint 7 left them. The new sibling returns `null` for an empty
+    // denominator; the aggregate still returns 0, because other screens read it.
+    assert.ok(FINANCE.includes('export function homeworkCompletion(month: string, data: Pick<AllData, "homework">): number'));
+    assert.equal(
+      [...FINANCE.matchAll(/if \(hw\.status === "Assigned"\) continue;/g)].length, 2,
+      "both functions skip a top-level Assigned assignment — the identical rule"
+    );
   });
 
   it("43. no submissions writer exists anywhere in the module", () => {

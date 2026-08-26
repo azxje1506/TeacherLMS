@@ -121,6 +121,89 @@ export function attendanceRate(month: string, data: Pick<AllData, "lessons" | "a
   return total === 0 ? 0 : Math.round((present / total) * 100);
 }
 
+/** One student's attendance for one month, with the coverage behind it.
+ *
+ * `pct` is `null`, never 0, when nothing was recorded. Those are different
+ * facts — "this student missed everything" and "nobody took a register" — and a
+ * screen that renders 0% for the second is stating an assessment the data never
+ * made. Every caller must branch on `null`. */
+export interface StudentAttendanceRate {
+  /** Present + Late + Excused, over this student's stored entries. */
+  attended: number;
+  /** This student's stored entries in the month — the rate's denominator. */
+  total: number;
+  /** `attended / total` as a whole percent, or `null` when `total` is 0. */
+  pct: number | null;
+  /** Completed lessons in scope that have a stored register at all. */
+  registersTaken: number;
+  /** Completed lessons in scope, register or not. */
+  lessonsCompleted: number;
+}
+
+/** Attendance rate (%) for ONE student in a month, plus its coverage.
+ *
+ * A FILTER OF `attendanceRate`, NOT A SECOND FORMULA. The lesson set is the same
+ * (`Completed`, in month, every type), the attended statuses are the same
+ * (Present / Late / Excused, with Absent the only one that withholds), and the
+ * rounding is the same. The single difference is that this reads one key out of
+ * each register instead of every key. Summing this over the students a month's
+ * registers name reproduces the aggregate's numerator and denominator exactly,
+ * which is asserted rather than asserted-about (see tests/review-analytics).
+ *
+ * SCOPE IS THE CALLER'S, exactly as it already is for `attendanceRate` — which
+ * `buildAttendanceIndex` calls once with the month's lessons for the studio
+ * figure and again with one class's lessons for a per-class figure. Pass the
+ * lessons the report is about; this function does not decide what "relevant"
+ * means and does not read a roster.
+ *
+ * STORED ENTRIES ONLY. Where no register exists, nothing is invented for this
+ * metric — not even the "everyone present" default that revenue assumes and that
+ * PROJECT_RULES describes for OPENING a register. That default answers "what
+ * does the teacher see before they touch anything"; this answers "what was
+ * actually recorded", which is the question every other attendance figure in the
+ * app already answers. A metric that quietly filled the gap would disagree with
+ * the Attendance index for the same month. `registersTaken` / `lessonsCompleted`
+ * are returned so the gap is visible instead of disguised.
+ *
+ * THE LESSON OWNS THE DATE. `AttendanceRecord.date` is a legacy mirror and is
+ * never read here, so a rescheduled lesson is counted in the month it was
+ * actually taught (PROJECT_RULES, Date ownership).
+ *
+ * Reads only. Nothing is repaired, written back or reported. */
+export function studentAttendanceRate(
+  studentId: string,
+  month: string,
+  data: Pick<AllData, "lessons" | "attendance">
+): StudentAttendanceRate {
+  const monthLessonIds = new Set(
+    data.lessons.filter((l) => inMonth(l.date, month) && l.status === "Completed").map((l) => l.id)
+  );
+
+  let attended = 0, total = 0;
+  /* Counted as DISTINCT lessons, not as records. `AttendanceRecord.lessonId` is
+   * unique in the schema, so the two agree today; a set means a stray duplicate
+   * could never inflate a coverage figure into claiming more registers than
+   * there are lessons. */
+  const registered = new Set<string>();
+  for (const rec of data.attendance) {
+    if (!monthLessonIds.has(rec.lessonId)) continue;
+    registered.add(rec.lessonId);
+    const entry = rec.entries?.[studentId];
+    if (!entry) continue; // no entry for this student — not invented
+    total++;
+    const st = entry.status;
+    if (st === "Present" || st === "Late" || st === "Excused") attended++;
+  }
+
+  return {
+    attended,
+    total,
+    pct: total === 0 ? null : Math.round((attended / total) * 100),
+    registersTaken: registered.size,
+    lessonsCompleted: monthLessonIds.size,
+  };
+}
+
 /** Homework completion (%) for a month, over class-scoped submissions + student-scoped items.
  *
  * DONE MEANS COMPLETED **OR LATE**. Work submitted late was submitted; `Missing`
@@ -154,4 +237,73 @@ export function homeworkCompletion(month: string, data: Pick<AllData, "homework"
     }
   }
   return total === 0 ? 0 : Math.round((done / total) * 100);
+}
+
+/** One student's homework completion for one month.
+ *
+ * `pct` is `null`, never 0, when no eligible outcome exists — the same
+ * distinction `StudentAttendanceRate` draws, for the same reason. "Nothing was
+ * done" and "nothing was set, or nothing has been marked yet" are different
+ * facts. */
+export interface StudentHomeworkCompletion {
+  /** Completed + Late, over this student's eligible outcomes. */
+  done: number;
+  /** This student's eligible outcomes in the month — the denominator. */
+  total: number;
+  /** `done / total` as a whole percent, or `null` when `total` is 0. */
+  pct: number | null;
+}
+
+/** Homework completion (%) for ONE student in a month.
+ *
+ * A FILTER OF `homeworkCompletion`, NOT A SECOND FORMULA. Same month rule (the
+ * assignment's DUE DATE), same three exclusions, same numerator, same rounding.
+ * The only difference is which outcomes are selected: this student's submission
+ * on a class-scoped assignment, and only the student-scoped assignments
+ * addressed to them. Summing this over the students a month's homework names
+ * reproduces the aggregate exactly.
+ *
+ * THE TOP-LEVEL `Assigned` SKIP IS DELIBERATELY REPRODUCED, including for
+ * class-scoped work. It is surprising — an assignment still marked `Assigned`
+ * is skipped whole, so a submission recorded under it is not counted — but it
+ * is the rule the aggregate has enforced since Sprint 7, and a per-student
+ * figure that disagreed with the monthly figure would be the second formula
+ * this function exists to avoid. Sprint 8 changes no Homework rule.
+ *
+ * `Assigned` COUNTS AS NEITHER, at both levels: it means no outcome has been
+ * recorded, which is not a failure, and it stays true whether or not the due
+ * date has passed — a date passing settles nothing (PROJECT_RULES, Homework).
+ *
+ * OTHER STUDENTS' GHOST SUBMISSIONS CANNOT REACH THIS FIGURE, because only one
+ * key is read. That does not restate the aggregate, which still counts every
+ * stored outcome including those of students who no longer exist — a student's
+ * later deletion must not move a closed month's reported completion.
+ *
+ * NOT THE REVIEW'S `homework` SKILL RATING, which is a different thing that
+ * happens to share a word: the rating is the teacher's 1-5 judgement of a
+ * student's homework habits, this is a count of recorded submissions. They will
+ * often disagree, and that is not a fault in either.
+ *
+ * Reads only. */
+export function studentHomeworkCompletion(
+  studentId: string,
+  month: string,
+  data: Pick<AllData, "homework">
+): StudentHomeworkCompletion {
+  let done = 0, total = 0;
+  for (const hw of data.homework) {
+    if (!inMonth(hw.dueDate, month)) continue;
+    if (hw.status === "Assigned") continue; // no outcome recorded
+    if (hw.scope === "class") {
+      const s = hw.submissions?.[studentId];
+      if (!s || s === "Assigned") continue;
+      total++;
+      if (s === "Completed" || s === "Late") done++;
+    } else {
+      if (hw.studentId !== studentId) continue;
+      total++;
+      if (hw.status === "Completed" || hw.status === "Late") done++;
+    }
+  }
+  return { done, total, pct: total === 0 ? null : Math.round((done / total) * 100) };
 }
