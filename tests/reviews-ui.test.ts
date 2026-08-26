@@ -30,7 +30,7 @@ import {
 } from "../src/components/reviews/form";
 import { reviewCountKey, reviewScore } from "../src/components/reviews/reviews-ui";
 import {
-  REVIEW_EDITABLE_FIELDS, SKILL_KEYS, perfColor, perfLabel, rankSkills,
+  REVIEW_EDITABLE_FIELDS, REVIEW_ERROR, SKILL_KEYS, perfColor, perfLabel, rankSkills,
 } from "../src/lib/reviews";
 import { reviewCreateSchema, reviewUpdateSchema } from "../src/lib/schemas";
 import type { ReviewMonthOption } from "../src/lib/reviews";
@@ -327,36 +327,52 @@ function translatedLiterals(src: string): string[] {
   return [...src.matchAll(/\bt\(\s*"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\"/g, '"'));
 }
 
-/** Strings the Reviews client renders that the dictionary does not yet carry.
+/** The Sprint 8 translations Gate 4.5 authorised, and why each one was owed.
  *
- * REPORTED, NOT ADDED. Gate 4.3 authorises exactly one new key — "No linked
- * parent" — and requires anything else to be reported rather than added, so
- * these five are listed here instead of in i18n-vi.json:
+ * GATES 4.1–4.4 REPORTED THESE RATHER THAN ADDING THEM: a module sprint may not
+ * quietly grow the dictionary, so every string the Reviews UI rendered without a
+ * Vietnamese entry was listed in this file instead. Gate 4.5 is the readiness
+ * gate, and it authorises exactly this set — no more — because shipping a module
+ * that is half Vietnamese and half fallback English is a polish defect.
  *
- *  - three are the performance labels from src/lib/calc.ts, existing app
- *    vocabulary whose other two members ("Excellent", "Good") the dictionary
- *    already carries. The gap predates Reviews;
- *  - two are the Gate 4.1 validation messages this form is the first to render.
+ * The set is what a teacher can actually SEE while using Reviews:
  *
- * Each falls back to English, which is exactly what the i18n engine is built to
- * do. Listing them here means an unreported one cannot appear unnoticed.
+ *  - three performance labels from src/lib/calc.ts, whose other two members
+ *    ("Excellent", "Good") the dictionary already carried. They are drawn on
+ *    every index card and every timeline badge;
+ *  - one profile subtitle the comp renders inside a computed binding, so neither
+ *    dictionary carried it;
+ *  - the two API-client failure sentences;
+ *  - the four REVIEW_ERROR sentences the dictionary lacked, which reach the
+ *    screen through `toast(t(e.message))` — the same treatment HOMEWORK_ERROR's
+ *    sentences already have;
+ *  - the five Reviews schema messages. Two are rendered inline by the drawer;
+ *    three are defensive only — no shipped control can produce a rating that is
+ *    not an integer in range — but they are Reviews-owned strings, and a
+ *    defensive message that fires in English inside a Vietnamese app is the
+ *    hole this gate exists to close.
  *
- * Gate 4.4 adds ONE more, and it is reported for the same reason: "Latest
- * review" is the profile tab's subtitle, which the comp renders as part of a
- * computed binding ("Latest review · {{ perf.latestMonthLabel }}"). The design's
- * own dictionary does not carry it either, so the gap is the comp's rather than
- * this phase's. */
-const REPORTED_MISSING = [
+ * NOT TRANSLATED, DELIBERATELY: "Invalid input", the generic parse fallback in
+ * all seventeen route files across every module. It is nobody's module string,
+ * and translating it here would change Students, Classes, Parents, Lessons,
+ * Attendance and Homework toasts from a Reviews readiness gate. See test 30. */
+const AUTHORISED_TRANSLATIONS = [
   "Strong", "Developing", "Needs support",
-  "Write at least one note about this month", "Pick a month",
-  "Couldn't load reviews", "Couldn't save review",
   "Latest review",
+  "Couldn't load reviews", "Couldn't save review",
+  "Review not found", "An archived student can't be given a new review",
+  "Reviews can only be written for the last 12 months",
+  "That student already has a review for this month",
+  "Write at least one note about this month", "Pick a month",
+  "Rate every skill", "Ratings are whole numbers", "Ratings run from 1 to 5",
 ];
 
+/** The one string the Reviews surfaces can raise that stays in English. */
+const REPORTED_MISSING = ["Invalid input"];
+
 describe("Review copy — provenance", () => {
-  it("26. exactly one new dictionary key was added, and it is the authorised one", () => {
-    assert.equal(DICT["No linked parent"], "Chưa liên kết phụ huynh");
-    // Everything else the Reviews screen says is an entry that predates it.
+  it("26. the dictionary carries every word the Reviews UI says", () => {
+    assert.equal(DICT["No linked parent"], "Chưa liên kết phụ huynh", "the Gate 4.3 key");
     for (const key of [
       "Monthly reviews", "Monthly review", "Write review", "No review yet", "Review saved",
       "Review month", "Save review", "Save changes", "View performance", "avg / 5",
@@ -369,9 +385,31 @@ describe("Review copy — provenance", () => {
       "Learning analytics", "No monthly reviews yet for this student.", "Quick view", "Edit",
       "Strengths & focus areas", "Top strengths",
       "Something went wrong while fetching the list. Check your connection and try again.",
+      // Gate 4.5 — the authorised translations.
+      ...AUTHORISED_TRANSLATIONS,
     ]) {
-      assert.ok(key in DICT, `${JSON.stringify(key)} must already exist`);
+      assert.ok(key in DICT, `${JSON.stringify(key)} must be translated`);
     }
+  });
+
+  it("26b. every authorised translation is real Vietnamese, not an English echo", () => {
+    for (const key of AUTHORISED_TRANSLATIONS) {
+      const value = DICT[key];
+      assert.equal(typeof value, "string", key);
+      assert.ok(value.trim() !== "", `${JSON.stringify(key)} must not be blank`);
+      assert.notEqual(value, key, `${JSON.stringify(key)} must not echo the English`);
+    }
+  });
+
+  it("26c. the five performance labels are one complete, distinct scale", () => {
+    /* perfLabel has five outputs and the dictionary now carries all five. They
+     * must also be five DIFFERENT Vietnamese words: two bands sharing a label
+     * would silently merge on screen. */
+    const bands = [5, 4, 3.4, 2.5, 1].map((n) => perfLabel(n));
+    assert.deepEqual(bands, ["Excellent", "Strong", "Good", "Developing", "Needs support"]);
+    const vi = bands.map((b) => DICT[b]);
+    for (const [i, v] of vi.entries()) assert.ok(v, `${bands[i]} must be translated`);
+    assert.equal(new Set(vi).size, 5, `the five bands collapsed: ${vi.join(" / ")}`);
   });
 
   it("27. every skill label the drawer shows is an existing entry", () => {
@@ -382,22 +420,53 @@ describe("Review copy — provenance", () => {
     }
   });
 
-  it("28. no Review literal is passed through t() outside the dictionary and the reported list", () => {
+  it("28. every literal the three Reviews surfaces pass to t() is translated", () => {
     const seen = new Set([...translatedLiterals(raw("src", "app", "(app)", "reviews", "page.tsx")),
       ...translatedLiterals(raw("src", "components", "reviews", "review-drawer.tsx")),
       ...translatedLiterals(raw("src", "components", "reviews", "student-reviews.tsx"))]);
     const missing = [...seen].filter((s) => s !== "" && !(s in DICT));
-    assert.deepEqual(
-      missing.sort(),
-      [...REPORTED_MISSING].filter((s) => seen.has(s)).sort(),
-      "an unreported new string appeared — report it rather than adding it"
-    );
+    assert.deepEqual(missing.sort(), [], "a new untranslated string appeared on a Reviews surface");
   });
 
-  it("29. the reported gaps are genuinely absent, so the list stays honest", () => {
-    for (const s of REPORTED_MISSING) {
-      assert.ok(!(s in DICT), `${JSON.stringify(s)} is in the dictionary — drop it from the report`);
+  it("29. every string the Reviews surfaces render THROUGH A VARIABLE is translated too", () => {
+    /* The scan above only sees literals. These reach `t()` as values — the
+     * performance label on a card, the skill labels, the Quick view headings,
+     * and every sentence the server can send into `toast(t(e.message))` — so
+     * they are enumerated from their own sources rather than from the JSX. */
+    const surfaced = [
+      // perfLabel, via reviewScore
+      ...[5, 4, 3.4, 2.5, 1].map((n) => perfLabel(n)),
+      // SKILL_LABEL, in the drawer and the strengths card
+      ...SKILL_KEYS.map((k) => k.charAt(0).toUpperCase() + k.slice(1)),
+      // Quick view section headings
+      "Strengths", "Areas for improvement", "Learning goals",
+      // REVIEW_ERROR — every sentence a Reviews route can answer with
+      ...Object.values(REVIEW_ERROR).map((e) => e.message),
+      // The API client's own two fallbacks
+      "Couldn't load reviews", "Couldn't save review",
+      // Every message the Reviews schemas can produce
+      "Select a student", "Pick a month", "Rate every skill", "Ratings are whole numbers",
+      "Ratings run from 1 to 5", "Write at least one note about this month",
+    ];
+    const missing = [...new Set(surfaced)].filter((s) => !(s in DICT));
+    assert.deepEqual(missing.sort(), [], "a Reviews string can still reach the screen in English");
+  });
+
+  it("29b. the one untranslated fallback is shared by every module, not owned by Reviews", () => {
+    /* "Invalid input" is the generic parse fallback. Gate 4.5 deliberately did
+     * NOT translate it: it lives in every module's routes, so changing it from a
+     * Reviews readiness gate would change six other modules' toasts. The
+     * assertion is that it is still shared — the day it becomes Reviews-only,
+     * this fails and the decision has to be made again. */
+    assert.deepEqual(REPORTED_MISSING, ["Invalid input"]);
+    assert.ok(!("Invalid input" in DICT), "still untranslated, as reported");
+    const owners = new Set<string>();
+    for (const dir of ["students", "classes", "parents", "homework", "lessons", "reviews"]) {
+      const routes = path.join(process.cwd(), "src", "app", "api", dir, "route.ts");
+      if (existsSync(routes) && readFileSync(routes, "utf8").includes('"Invalid input"')) owners.add(dir);
     }
+    assert.ok(owners.size >= 5, `shared by ${owners.size} modules, not Reviews alone`);
+    assert.ok(owners.has("reviews"));
   });
 });
 

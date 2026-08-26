@@ -532,7 +532,7 @@ describe("The service stays a server, whatever the client does", () => {
   it("54. the client never imports the service's runtime, only its types", () => {
     const dir = path.join(process.cwd(), "src", "components", "reviews");
     assert.ok(existsSync(dir), "the Reviews client arrived in Gate 4.3");
-    for (const file of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx"]) {
+    for (const file of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx", "student-reviews.tsx"]) {
       const src = readFileSync(path.join(dir, file), "utf8");
       const runtimeImport = /^import\s+(?!type)[^;]*from\s+"@\/lib\/reviews-service"/m.test(src);
       assert.ok(!runtimeImport, `${file} may import types from the service, never its code`);
@@ -551,6 +551,150 @@ describe("The service stays a server, whatever the client does", () => {
   it("56. no client-side data fetching leaked INTO the service", () => {
     for (const forbidden of ["useQuery", "useMutation", "react-query", "\"use client\"", "useState"]) {
       assert.ok(!SERVICE.includes(forbidden), `${forbidden} has no place in a server module`);
+    }
+  });
+});
+
+/* =========================================================================
+ * Gate 4.5 — rollout readiness
+ *
+ * The integrity tool and the index sequencing are the two things standing
+ * between this branch and a production write, and both are claims about files
+ * rather than about behaviour a unit test can execute: the script talks to
+ * production Atlas, which no test may do. So they are read as text — the same
+ * technique the suites above use for "this module must not import that one".
+ * ====================================================================== */
+
+/** Raw, for the constants and the provenance prose. */
+const INTEGRITY = readFileSync(path.join(process.cwd(), "scripts", "reviews-integrity.mjs"), "utf8");
+/** Comment-stripped, for the forbidden-verb scan — the file NAMES the verbs it
+ * refuses to use, and a scan that could not tell a promise from a call would
+ * fail on the sentence promising not to make one. */
+const INTEGRITY_CODE = code("scripts", "reviews-integrity.mjs");
+const PKG = JSON.parse(readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
+  scripts: Record<string, string>;
+};
+const DB = readFileSync(path.join(process.cwd(), "src", "lib", "db.ts"), "utf8");
+
+describe("The Reviews integrity tool is read-only, and stays that way", () => {
+  it("57. the script exists and npm exposes it under the agreed name", () => {
+    assert.equal(PKG.scripts["reviews:integrity"], "node scripts/reviews-integrity.mjs");
+    assert.ok(INTEGRITY.length > 0);
+  });
+
+  it("58. it issues no write verb, and no DDL of any kind", () => {
+    /* THIS IS THE WHOLE POINT OF THE TOOL. Its output is only trustworthy
+     * because it cannot be the thing that changed what it is measuring — and it
+     * is emphatically not the thing that creates the unique index. */
+    for (const forbidden of [
+      "insertOne", "insertMany", "updateOne", "updateMany", "replaceOne",
+      "deleteOne", "deleteMany", "bulkWrite", "findOneAndUpdate", "findOneAndDelete",
+      "createIndex", "dropIndex", "createIndexes", "syncIndexes", "ensureIndex",
+      "createCollection", "drop(", "renameCollection", "aggregate(", "$out", "$merge",
+    ]) {
+      assert.ok(!INTEGRITY_CODE.includes(forbidden), `${forbidden} has no place in a read-only probe`);
+    }
+  });
+
+  it("59. the only driver calls it makes are countDocuments and find", () => {
+    const calls = [...INTEGRITY_CODE.matchAll(/\b(?:col|collection\([^)]*\))\s*\.\s*([a-zA-Z]+)\(/g)]
+      .map((m) => m[1]);
+    for (const call of calls) {
+      assert.ok(["countDocuments", "find"].includes(call), `unexpected driver call: .${call}()`);
+    }
+    assert.ok(calls.includes("countDocuments") && calls.includes("find"));
+  });
+
+  it("60. the digest construction is the one the baseline will be taken from", () => {
+    // id-sorted, _id and __v stripped, JSON.stringify, SHA-256 — identical to
+    // scripts/homework-integrity.mjs, so the two tools cannot mean different
+    // things by the word "digest".
+    assert.ok(INTEGRITY.includes(".sort({ id: 1 })"), "sorted by the natural key");
+    assert.ok(INTEGRITY.includes('new Set(["_id", "__v"])'), "storage keys stripped");
+    assert.ok(INTEGRITY.includes('createHash("sha256")'));
+    assert.ok(INTEGRITY.includes("JSON.stringify(stripped)"));
+  });
+
+  it("61. it reports every fact Gate 5 has to read off it", () => {
+    for (const fact of ["count", "digest", "histogram", "resolvable", "ghost", "duplicates"]) {
+      assert.ok(INTEGRITY.includes(`${fact}`), `the probe must report ${fact}`);
+    }
+    // A duplicate pair is a HARD failure: it is the one condition that makes the
+    // Gate 5.3 unique index impossible.
+    assert.match(INTEGRITY, /duplicates\.length > 0[\s\S]{0,300}fail\(/);
+  });
+
+  it("62. NO accepted baseline is banked — Sprint 8 has authorised no write", () => {
+    /* `null` is the correct value for the whole of Gate 4.5 and it is a
+     * statement, not an omission. The day it stops being null, a production
+     * write must have been authorised and verified first. */
+    assert.match(INTEGRITY, /const ACCEPTED_BASELINE = null;/);
+  });
+
+  it("63. the Gate 1 numbers are a reproduction reference, not an acceptance", () => {
+    assert.match(INTEGRITY, /const GATE_1_OBSERVATION = \{/);
+    assert.ok(INTEGRITY.includes("c4418428f5d247b7c58caf046ce09c6e71f24dd30caab3bc86d4032a5fa8c4d5"));
+    assert.ok(INTEGRITY.includes("count: 33"));
+    // And the file says out loud that they must not be promoted by copying.
+    assert.ok(/IT IS NOT A BASELINE/.test(INTEGRITY));
+  });
+
+  it("64. nothing is auto-learned — no expectation is assigned from a query", () => {
+    /* A baseline that reads itself back out of the collection it is checking
+     * detects nothing. Both constants must be literals. */
+    assert.ok(!/ACCEPTED_BASELINE\s*=\s*(?!null)/.test(INTEGRITY.replace("const ACCEPTED_BASELINE = null;", "")));
+    assert.ok(!/GATE_1_OBSERVATION\.\w+\s*=/.test(INTEGRITY), "the reference is never written to");
+    assert.ok(!/(EXPECTED|BASELINE|OBSERVATION)[^\n]*=\s*(count|digest|docs|await)/.test(INTEGRITY));
+  });
+});
+
+describe("Production index sequencing — what Gate 5 must do first", () => {
+  it("65. models.ts still declares no compound Review index", () => {
+    assert.ok(!/ReviewSchema[\s\S]*?\.index\(/.test(MODELS));
+    assert.ok(!MODELS.includes("studentId: 1"), "no compound key spec appears anywhere in the model file");
+  });
+
+  it("66. mongoose autoIndex is left at its default, which is ON", () => {
+    /* THIS IS THE FACT THAT DECIDES THE SEQUENCING. `dbConnect` does not pass
+     * `autoIndex: false`, and mongoose's default is `true` — so every index a
+     * schema DECLARES is built implicitly the first time the model is used, in
+     * every process, including a Vercel deploy.
+     *
+     * Therefore adding `ReviewSchema.index({studentId:1, month:1},{unique:true})`
+     * to source is not an inert declaration: it is a deploy-time DDL nobody
+     * authorised, and if a duplicate pair existed it would fail asynchronously
+     * on the connection rather than anywhere a human would see it.
+     *
+     * Gate 5 must therefore create the index EXPLICITLY first (5.3), and only
+     * then add the declaration — at which point the implicit build is a no-op
+     * against an index that already exists with the same spec.
+     *
+     * If someone later sets autoIndex:false, this fails, and the sequencing
+     * recommendation has to be made again rather than inherited. */
+    assert.ok(!/autoIndex/.test(DB), "src/lib/db.ts must not silently change this without a decision");
+    assert.ok(DB.includes("mongoose.connect("), "and the connection is still the one place it would go");
+  });
+
+  it("67. the one-shot DDL script does not exist yet", () => {
+    // Gate 4.5 prepares the approach; it does not ship the tool that performs it.
+    for (const name of [
+      "reviews-create-index.mjs", "reviews-index.mjs", "create-review-index.mjs",
+    ]) {
+      assert.ok(
+        !existsSync(path.join(process.cwd(), "scripts", name)),
+        `${name} is a Gate 5 artefact, not a Gate 4.5 one`
+      );
+    }
+    assert.ok(!("reviews:index" in PKG.scripts), "no index script is wired up yet");
+  });
+
+  it("68. no smoke fixture or disposable Review data ships in the repo", () => {
+    /* There is no Review delete, so disposable smoke data would be permanent.
+     * The first production write must be a legitimate review, which means the
+     * repository must carry no prefabricated one to paste in. */
+    const seed = readFileSync(path.join(process.cwd(), "src", "lib", "seed-data.ts"), "utf8");
+    for (const marker of ["smoke", "SMOKE", "gate5", "Gate 5 review", "test review", "TODO review"]) {
+      assert.ok(!seed.includes(marker), `${marker} suggests fixture data for a production write`);
     }
   });
 });

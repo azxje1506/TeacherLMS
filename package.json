@@ -17,7 +17,8 @@
     "attendance:scratch-proof": "tsx --env-file=.env.local scripts/attendance-scratch-proof.ts",
     "attendance:live-audit": "tsx --env-file=.env.local scripts/attendance-live-audit.ts",
     "attendance:rollout-phase1": "tsx --env-file=.env.local scripts/attendance-rollout-phase1.ts",
-    "homework:integrity": "node scripts/homework-integrity.mjs"
+    "homework:integrity": "node scripts/homework-integrity.mjs",
+    "reviews:integrity": "node scripts/reviews-integrity.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
