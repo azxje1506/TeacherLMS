@@ -37,15 +37,23 @@
 
 import "server-only";
 import { dbConnect, isDupKey } from "./db";
-import { ParentModel, ReviewModel, StudentModel, mongoose } from "./models";
+import {
+  AttendanceModel, ClassModel, HomeworkModel, LessonModel,
+  ParentModel, ReviewModel, StudentModel, mongoose,
+} from "./models";
 import { CURRENT_MONTH } from "./constants";
+import {
+  studentAttendanceRate, studentHomeworkCompletion,
+  type StudentAttendanceRate, type StudentHomeworkCompletion,
+} from "./finance";
+import { buildReviewAnalytics, type ReviewAnalytics } from "./review-analytics";
 import {
   buildReviewCards, buildReviewHistory, canReviewStudent, isParentLinked, planReviewCreate,
   planReviewUpdate, reviewAverage, reviewMonthOptions,
   type ReviewCard, type ReviewMonthOption, type ReviewOpError,
 } from "./reviews";
 import type { ReviewCreateBody, ReviewUpdateBody } from "./schemas";
-import type { Parent, Review, Student } from "./types";
+import type { AttendanceRecord, Homework, Klass, Lesson, Parent, Review, Student } from "./types";
 
 const clean = "-_id -__v";
 
@@ -79,8 +87,35 @@ export interface ReviewCardsPayload {
   cards: ReviewCard[];
 }
 
-/** The Reviews payload for one student's profile. Reviews only: no attendance,
- * no homework, no classes, no lessons, no export data, and nothing generated. */
+/** One month of a student's cross-domain context, derived read-only.
+ *
+ * BOTH PERCENTAGES MAY BE `null`, AND THAT IS NOT ZERO. `null` means the
+ * denominator was empty — no register was taken, or no homework outcome was
+ * recorded — which is a different fact from "attended nothing" or "did nothing".
+ * Every consumer branches on it; nothing renders 0%.
+ *
+ * NOTHING HERE IS STORED. Both figures are computed per request from canonical
+ * Attendance and Homework data by the helpers in src/lib/finance.ts, beside the
+ * aggregates they must agree with. A Review document carries neither, and never
+ * will: a percentage copied onto a review would be a second copy of a fact that
+ * is free to drift from the first. */
+export interface StudentMonthMetrics {
+  month: string;
+  attendance: StudentAttendanceRate;
+  homework: StudentHomeworkCompletion;
+}
+
+/** The Reviews payload for one student's profile.
+ *
+ * SPRINT 8 GATE 4.4C widened this. It used to carry reviews and nothing else;
+ * the approved scope amendment brought the design's analytics blocks into the
+ * sprint, and those blocks need three things this payload now adds: the charts
+ * derived from the reviews themselves, and the two cross-domain metrics.
+ *
+ * IT IS STILL READ-ONLY, AND STILL NOT A REPORT. There is no parent block, no
+ * generated-on stamp and no PDF structure here — Gate 4.4D owns the report
+ * model. Nothing is exported, nothing is generated, and no achievement, concern
+ * or summary prose exists anywhere in it. */
 export interface StudentReviewsPayload {
   student: {
     id: string;
@@ -101,6 +136,18 @@ export interface StudentReviewsPayload {
   months: ReviewMonthOption[];
   /** This student's reviews, newest month first. */
   reviews: ReviewDetail[];
+  /** Every chart for the LATEST review, or `null` when there is none.
+   *
+   * `null` rather than an empty analytics object, so a screen with no reviews
+   * renders its empty state instead of a shell of zeroed charts. */
+  analytics: ReviewAnalytics | null;
+  /** Attendance and homework for the LATEST review's month, or `null` when the
+   * student has no reviews — there is no month to report on. */
+  latestMetrics: StudentMonthMetrics | null;
+  /** The same two metrics for every reviewed month, newest first, so the
+   * learning journey can put a month's numbers beside that month's words
+   * without a second round trip. Same order as `reviews`. */
+  metricsByMonth: StudentMonthMetrics[];
 }
 
 /** Discriminated result so Route Handlers map a failure through REVIEW_ERROR the
@@ -198,6 +245,9 @@ export async function getStudentReviews(studentId: string): Promise<StudentRevie
     ? await ParentModel.findOne({ id: student.parentId }).select("id -_id").lean<Pick<Parent, "id">>()
     : null;
 
+  const metricsByMonth = await studentMonthMetrics(student.id, history.map((r) => r.month));
+  const latest = history[0] ?? null;
+
   return {
     ok: true,
     payload: {
@@ -215,8 +265,84 @@ export async function getStudentReviews(studentId: string): Promise<StudentRevie
       defaultMonth: CURRENT_MONTH,
       months: reviewMonthOptions(CURRENT_MONTH, history.map((r) => r.month)),
       reviews: history.map(present),
+      /* Charts are for the LATEST review, against this student's own history.
+       * `history` is newest-first; the analytics module sorts its own copy, so
+       * the order it is handed does not matter. */
+      analytics: latest ? buildReviewAnalytics(latest, history) : null,
+      latestMetrics: metricsByMonth[0] ?? null,
+      metricsByMonth,
     },
   };
+}
+
+/** Attendance and homework for each of a student's reviewed months.
+ *
+ * WHY THE REVIEWS SERVICE READS FOUR MORE COLLECTIONS. The approved Gate 4.4A
+ * amendment puts an Attendance percentage and a Homework completion percentage
+ * on the Reviews surfaces, and both are facts about other domains. They are
+ * DERIVED LIVE and never stored on a Review, so they have to be read somewhere;
+ * this is that place, and it reads only.
+ *
+ * THE ATTENDANCE SCOPE IS THIS STUDENT'S CLASSES. `studentAttendanceRate` takes
+ * its lesson set from its caller — exactly as `attendanceRate` already does,
+ * which `buildAttendanceIndex` calls once with a month's lessons and again with
+ * one class's. Passing the whole studio's lessons would make `lessonsCompleted`
+ * describe the school rather than the student, so the lessons are narrowed to
+ * the classes whose roster names them. That narrowing changes no percentage: the
+ * numerator and denominator are stored ENTRIES, and an entry for this student
+ * can only exist on a lesson of a class they were on. It changes the coverage
+ * figures, which is the point of having them.
+ *
+ * ROSTER MEMBERSHIP IS READ AS IT IS TODAY, and that is a real limitation worth
+ * stating: a student moved out of a class after a month was taught will see that
+ * month's coverage shrink, though their percentage is unmoved. Attendance stores
+ * no membership history, so no other answer is available from this data.
+ *
+ * ONE ROUND TRIP PER COLLECTION, whatever the number of months. Everything is
+ * fetched once and the pure helpers are called per month over the same arrays.
+ *
+ * NOTHING IS WRITTEN, REPAIRED OR REPORTED. No lifecycle advance, no
+ * reconciliation, no generation — a student's profile must never mutate a lesson
+ * because somebody looked at their reviews. */
+async function studentMonthMetrics(
+  studentId: string,
+  months: readonly string[]
+): Promise<StudentMonthMetrics[]> {
+  if (months.length === 0) return [];
+
+  /* Only the fields the two helpers read, and only the classes this student is
+   * on. `select` keeps the payload small; `lean` keeps it plain. */
+  const classes = await ClassModel.find({ studentIds: studentId })
+    .select("id -_id").lean<Array<Pick<Klass, "id">>>();
+  const classIds = classes.map((c) => c.id);
+
+  const lessons = classIds.length === 0
+    ? []
+    : await LessonModel.find({ classId: { $in: classIds }, status: "Completed" })
+        .select("id date status -_id").lean<Lesson[]>();
+
+  const lessonIds = lessons.map((l) => l.id);
+  const attendance = lessonIds.length === 0
+    ? []
+    : await AttendanceModel.find({ lessonId: { $in: lessonIds } })
+        .select("lessonId entries -_id").lean<AttendanceRecord[]>();
+
+  /* Homework is scoped by the query to work that can concern this student: work
+   * set to one of their classes, or addressed to them by name. The month filter
+   * and every exclusion stay inside `studentHomeworkCompletion`, so the rule is
+   * still stated once, in Sprint 7's own file. */
+  const homework = classIds.length === 0
+    ? await HomeworkModel.find({ scope: "student", studentId })
+        .select("dueDate status scope studentId submissions -_id").lean<Homework[]>()
+    : await HomeworkModel.find({
+        $or: [{ classId: { $in: classIds } }, { scope: "student", studentId }],
+      }).select("dueDate status scope studentId submissions -_id").lean<Homework[]>();
+
+  return months.map((month) => ({
+    month,
+    attendance: studentAttendanceRate(studentId, month, { lessons, attendance }),
+    homework: studentHomeworkCompletion(studentId, month, { homework }),
+  }));
 }
 
 /* ------------------------------------------------------------------- create */

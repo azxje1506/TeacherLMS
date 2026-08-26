@@ -38,7 +38,9 @@ import { useSettings } from "@/lib/settings-context";
 import { useToast } from "@/components/ui/toast";
 import { ReviewDrawer } from "@/components/reviews/review-drawer";
 import { reviewScore } from "@/components/reviews/reviews-ui";
+import { ScoreDonut, ScoreTrend, SkillHeatmap, SkillRadar } from "@/components/reviews/charts";
 import { hasAvailableMonth } from "@/components/reviews/form";
+import { TREND_WINDOWS, trendWindowPoints, type TrendWindow } from "@/lib/review-analytics";
 import {
   createReview, fetchStudentReviews, reviewKeys, updateReview, ReviewApiError,
 } from "@/components/reviews/api";
@@ -94,6 +96,9 @@ export function StudentReviews({ studentId }: { studentId: string }) {
   const [editing, setEditing] = useState<ReviewDetail | null>(null);
   /** Which timeline rows have their Quick view open. Presentation state only. */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  /** Radar overlay and trend range — both presentation state, both local. */
+  const [compare, setCompare] = useState(false);
+  const [windowMonths, setWindowMonths] = useState<TrendWindow>(12);
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: reviewKeys.student(studentId),
@@ -158,7 +163,15 @@ export function StudentReviews({ studentId }: { studentId: string }) {
     );
   }
 
-  const { student, reviews, months, canCreate, parentLinked } = data;
+  const {
+    student, reviews, months, canCreate, parentLinked,
+    analytics, latestMetrics, metricsByMonth, defaultMonth,
+  } = data;
+
+  /* Each reviewed month's derived metrics, by month, so the journey can put a
+   * month's numbers beside that month's words without searching an array per
+   * row. Built from the payload; nothing is computed here. */
+  const metricsFor = new Map(metricsByMonth.map((m) => [m.month, m]));
 
   /* THE CTA'S TWO CONDITIONS ARE DIFFERENT QUESTIONS, and they are answered
    * differently. `canCreate` is the server's eligibility rule — false for an
@@ -175,6 +188,10 @@ export function StudentReviews({ studentId }: { studentId: string }) {
    * re-sorted here. The first entry is therefore the latest review — the one
    * the header names and the only one the strengths card reads. */
   const latest = reviews[0] ?? null;
+  /* `null` only when there is no review at all — the same fact `latest === null`
+   * states, and the reason an absent assessment renders the empty state rather
+   * than a shell of zeroed charts. */
+  const latestScore = latest ? reviewScore(latest.average) : null;
 
   const writeButton = (style: React.CSSProperties) => (
     <button
@@ -195,10 +212,13 @@ export function StudentReviews({ studentId }: { studentId: string }) {
 
   return (
     <div style={{ minWidth: 0 }}>
-      {latest === null ? (
+      {latest === null || analytics === null ? (
         /* The comp's empty performance tab. NO SCORE, NO ANALYTICS: a student
          * nobody has assessed has no average, and drawing a 0.0 would be an
-         * assessment this app never made. */
+         * assessment this app never made — so the whole analytics surface is
+         * absent rather than present and zeroed. The server sends `analytics:
+         * null` for exactly the same case, and both are checked because either
+         * one alone would leave the other unproven to the compiler. */
         <div style={{ background: "var(--card)", border: "1px dashed var(--border)", borderRadius: "var(--r)", padding: "48px 24px", textAlign: "center" }}>
           <p style={{ color: "var(--muted)", fontSize: 13.5, margin: canCreate ? "0 0 16px" : 0 }}>
             {t("No monthly reviews yet for this student.")}
@@ -220,12 +240,139 @@ export function StudentReviews({ studentId }: { studentId: string }) {
             {canCreate && writeButton(primaryBtn)}
           </div>
 
-          {/* The comp's second row. Its third member — the skill heatmap — reads
-            * cross-month aggregates and is omitted whole, so the row is the
-            * timeline beside the strengths card, in the comp's own auto-fit
-            * track. `min(...,100%)` is this app's remediated form of that track:
-            * below 290px the column can pay for the item instead of overflowing. */}
+          {/* ROW 1 — the comp's summary cards. Attendance and Homework are
+            * DERIVED LIVE from canonical data by src/lib/finance.ts and arrive
+            * on the payload; neither is stored on a review and neither is the
+            * review's own `homework` skill rating, which is a different thing
+            * that happens to share a word. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(180px,100%),1fr))", gap: "var(--gap)", marginBottom: "var(--gap)" }}>
+            <div style={{ ...panel, padding: "16px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ minWidth: 52, width: 52, height: 52, borderRadius: 13, background: `color-mix(in srgb, ${latestScore?.color ?? "var(--muted)"} 12%, var(--card))`, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+                <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-.02em", color: latestScore?.color, fontFamily: "'Geist Mono',monospace" }}>
+                  {latestScore?.value}
+                </div>
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>{t("Overall score")}</div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: latestScore?.color, marginTop: 2 }}>
+                  {latestScore ? t(latestScore.label) : t("No data")}
+                </div>
+              </div>
+            </div>
+
+            <MetricCard
+              label={t("Attendance")}
+              pct={latestMetrics?.attendance.pct ?? null}
+              /* Coverage, kept secondary: a percentage over two registers and a
+               * percentage over twenty are not the same claim, and the design's
+               * single big number cannot say which this is. */
+              detail={
+                latestMetrics && latestMetrics.attendance.lessonsCompleted > 0
+                  ? `${t("Registers taken")} ${latestMetrics.attendance.registersTaken}/${latestMetrics.attendance.lessonsCompleted}`
+                  : null
+              }
+            />
+
+            <MetricCard
+              label={t("Homework completion")}
+              pct={latestMetrics?.homework.pct ?? null}
+              detail={
+                latestMetrics && latestMetrics.homework.total > 0
+                  ? `${latestMetrics.homework.done}/${latestMetrics.homework.total}`
+                  : null
+              }
+            />
+          </div>
+
+          {/* ROW 2 — radar, trend, distribution. The comp's own auto-fit track;
+            * `min(...,100%)` is this app's remediated form of it, so below 290px
+            * the column pays for the item instead of overflowing. */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(290px,100%),1fr))", gap: "var(--gap)", alignItems: "stretch", marginBottom: "var(--gap)" }}>
+            <div style={{ ...panel, display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 6 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{t("Skill radar")}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("10 skills · rated 1–5")}</div>
+                </div>
+                {/* NO PREVIOUS REVIEW, NO CONTROL. A disabled Compare button would
+                  * advertise a comparison that does not exist; a second series
+                  * drawn from nothing would be a fabrication. */}
+                {analytics.radar.previous && (
+                  <button
+                    onClick={() => setCompare((v) => !v)}
+                    aria-pressed={compare}
+                    className="btn-ghost"
+                    style={{ flex: "none", height: 28, padding: "0 10px", border: "1px solid var(--border)", borderRadius: 8, background: compare ? "var(--card-2)" : "var(--card)", color: "var(--fg-2)", fontSize: 11.5, fontWeight: 500, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    {t("Compare")}
+                  </button>
+                )}
+              </div>
+              <SkillRadar
+                current={analytics.radar.current}
+                previous={analytics.radar.previous?.axes ?? null}
+                compare={compare}
+              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "center", marginTop: 6 }}>
+                <LegendSwatch color="var(--green)" label={fmt.monthLabel(analytics.radar.month)} />
+                {compare && analytics.radar.previous && (
+                  <LegendSwatch color="var(--sky)" label={fmt.monthLabel(analytics.radar.previous.month)} muted />
+                )}
+              </div>
+            </div>
+
+            <div style={{ ...panel, display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{t("Progress over time")}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Overall score trend")}</div>
+                </div>
+                {/* 6M / 12M are the comp's own literals — symbols rather than
+                  * copy, so they are not put through the dictionary. */}
+                <div style={{ display: "flex", gap: 6, flex: "none" }}>
+                  {TREND_WINDOWS.map((w) => (
+                    <button
+                      key={w}
+                      onClick={() => setWindowMonths(w)}
+                      aria-pressed={windowMonths === w}
+                      style={{ height: 28, padding: "0 9px", border: "1px solid var(--border)", borderRadius: 8, background: windowMonths === w ? "var(--card-2)" : "var(--card)", color: windowMonths === w ? "var(--fg)" : "var(--muted)", fontSize: 11.5, fontWeight: windowMonths === w ? 600 : 500, fontFamily: "inherit", cursor: "pointer" }}
+                    >
+                      {w}M
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* The window is anchored to the SERVER's application month. The
+                * client reads no clock. */}
+              <ScoreTrend points={trendWindowPoints(analytics.trend, defaultMonth, windowMonths)} />
+            </div>
+
+            <div style={{ ...panel, display: "flex", flexDirection: "column" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{t("Score distribution")}</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 10 }}>{t("Across 10 skills this month")}</div>
+              <ScoreDonut buckets={analytics.distribution} averageLabel={latestScore?.value ?? ""} />
+              {/* The comp's AI summary panel sat here. It is omitted whole: no
+                * stored field carries it and no rule produces it. */}
+            </div>
+          </div>
+
+          {/* ROW 3 — heatmap, timeline, strengths. */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(290px,100%),1fr))", gap: "var(--gap)", alignItems: "start" }}>
+            <div style={panel}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{t("Skill trend heatmap")}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Rating by month")}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "var(--muted-2)", flex: "none" }}>
+                  {t("Low")}
+                  <span style={{ width: 44, height: 8, borderRadius: 99, background: "linear-gradient(90deg, color-mix(in srgb,var(--green) 18%,var(--card)), var(--green))" }} />
+                  {t("High")}
+                </div>
+              </div>
+              <SkillHeatmap data={analytics.heatmap} />
+            </div>
+
             {/* Monthly reviews timeline. The comp's "View all →" is omitted:
               * this IS the full history, so the link has no destination. */}
             <div style={panel}>
@@ -313,6 +460,55 @@ export function StudentReviews({ studentId }: { studentId: string }) {
               * ones the payload already carries rather than a second DTO. */}
             <StrengthsCard skills={latest.skills} />
           </div>
+
+          {/* ROW 4 — the monthly learning journey, newest first.
+            *
+            * REAL DATA ONLY. Each entry carries the month, that review's own
+            * score, the teacher's own words, and the two derived metrics for
+            * that month. The comp's achievement callout is omitted whole: no
+            * stored field carries one and no deterministic rule produces one, so
+            * generating a trophy line for a real child is not something this app
+            * will do. */}
+          <div style={{ ...panel, padding: "20px 22px", marginTop: "var(--gap)" }}>
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{t("Monthly learning journey")}</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Long-term progress at a glance")}</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {reviews.map((r, i) => {
+                const score = reviewScore(r.average);
+                const m = metricsFor.get(r.month);
+                const last = i === reviews.length - 1;
+                return (
+                  <div key={r.id} style={{ display: "flex", gap: 16, minWidth: 0 }}>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, paddingTop: 5 }}>
+                      <span style={{ width: 13, height: 13, borderRadius: "50%", background: score ? score.color : "var(--border)", boxShadow: `0 0 0 4px color-mix(in srgb, ${score ? score.color : "var(--border)"} 15%, transparent)` }} />
+                      {!last && <span style={{ flex: 1, width: 2, background: "var(--border-2)", marginTop: 4 }} />}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 22 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                        <div style={{ fontSize: 14.5, fontWeight: 600, minWidth: 0, overflowWrap: "anywhere" }}>{fmt.monthLabel(r.month)}</div>
+                        {score && (
+                          <span style={{ flex: "none", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap", background: `color-mix(in srgb, ${score.color} 13%, var(--card))`, color: score.color }}>
+                            {t(score.label)} · <span style={{ fontFamily: "'Geist Mono',monospace" }}>{score.value}</span>
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                        <JourneyChip label={t("Attendance")} pct={m?.attendance.pct ?? null} noData={t("No data")} />
+                        <JourneyChip label={t("Homework")} pct={m?.homework.pct ?? null} noData={t("No data")} />
+                      </div>
+                      {r.comment.trim() !== "" && (
+                        <p style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.55, margin: 0, overflowWrap: "anywhere" }}>
+                          {r.comment}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </>
       )}
 
@@ -345,6 +541,65 @@ export function StudentReviews({ studentId }: { studentId: string }) {
         />
       )}
     </div>
+  );
+}
+
+/** One derived percentage, in the comp's summary-card shape.
+ *
+ * `null` RENDERS "No data", NEVER 0%. The two are different facts — "this
+ * student attended nothing" and "nobody took a register" — and a card showing
+ * 0% for the second states an assessment the data never made. The metric
+ * helpers return `null` precisely so this branch exists.
+ *
+ * THE NUMBER IS NOT COLOUR-CODED. `perfColor` grades a 1-5 average and there is
+ * no threshold anywhere in this app for grading a percentage; the Attendance
+ * index renders its own rate in `var(--fg)` for the same reason. Inventing a
+ * band here would be inventing a rule. */
+function MetricCard({ label, pct, detail }: { label: string; pct: number | null; detail: string | null }) {
+  return (
+    <div style={{ ...panel, padding: "16px 18px" }}>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>{label}</div>
+      {pct === null ? (
+        <NoData size={17} />
+      ) : (
+        <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-.02em", marginTop: 4, color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>
+          {pct}%
+        </div>
+      )}
+      {detail && (
+        <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 4, overflowWrap: "anywhere" }}>{detail}</div>
+      )}
+    </div>
+  );
+}
+
+/** The absence of a measurement, said plainly. */
+function NoData({ size }: { size: number }) {
+  const t = useSettings().t;
+  return (
+    <div style={{ fontSize: size, fontWeight: 600, marginTop: 4, color: "var(--muted-2)" }}>{t("No data")}</div>
+  );
+}
+
+/** A radar legend entry: the comp's swatch and month label. */
+function LegendSwatch({ color, label, muted = false }: { color: string; label: string; muted?: boolean }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: muted ? "var(--muted)" : "var(--fg-2)", minWidth: 0 }}>
+      <span style={{ minWidth: 11, width: 11, height: 11, borderRadius: 3, background: color, flex: "none" }} />
+      <span style={{ overflowWrap: "anywhere" }}>{label}</span>
+    </div>
+  );
+}
+
+/** One derived metric on a journey entry. `null` says so rather than showing 0%. */
+function JourneyChip({ label, pct, noData }: { label: string; pct: number | null; noData: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--fg-2)", background: "var(--card-2)", borderRadius: 8, padding: "5px 10px", maxWidth: "100%", minWidth: 0 }}>
+      <span style={{ color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+      <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: pct === null ? "var(--muted-2)" : undefined }}>
+        {pct === null ? noData : `${pct}%`}
+      </span>
+    </span>
   );
 }
 

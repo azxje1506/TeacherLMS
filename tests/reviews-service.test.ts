@@ -219,13 +219,41 @@ describe("getStudentReviews — one student's payload", () => {
     assert.ok(!/average:\s*doc\.average/.test(SERVICE), "no stored average is ever read");
   });
 
-  it("18. carries reviews only — no attendance, homework, class or lesson data", () => {
+  it("18. carries the two approved derived metrics, and still generates nothing", () => {
+    /* GATE 4.2 PINNED THIS AT "reviews only". The Gate 4.4A scope amendment put
+     * an Attendance percentage and a Homework completion percentage on the
+     * Reviews surfaces, so the payload now carries both — DERIVED LIVE, never
+     * stored on a review, and computed by the helpers in finance.ts beside the
+     * aggregates they must agree with.
+     *
+     * What has NOT changed is everything the original assertion was really
+     * protecting: nothing is generated, nothing is exported, and no report or
+     * PDF structure lives in a read payload. */
+    assert.ok(SERVICE.includes("studentAttendanceRate("), "the approved per-student metric");
+    assert.ok(SERVICE.includes("studentHomeworkCompletion("), "and its homework sibling");
+    assert.ok(SERVICE.includes("buildReviewAnalytics("), "charts come from the pure module");
+
+    // The aggregates are NOT used here — a per-student surface must not show a
+    // studio-wide figure.
+    assert.ok(!/[^t]attendanceRate\(/.test(SERVICE), "the studio aggregate has no place on one student's page");
+    assert.ok(!/[^t]homeworkCompletion\(/.test(SERVICE), "likewise");
+
     for (const forbidden of [
-      "AttendanceModel", "HomeworkModel", "ClassModel", "LessonModel", "BillingModel",
-      "attendanceRate", "homeworkCompletion", "achievements", "aiSummary", "jspdf", "buildReport",
+      "achievements", "achievement", "aiSummary", "concern", "jspdf", "buildReport",
+      "MonthlyReviewReport", "generatedOn", "preparedFor",
     ]) {
-      assert.ok(!SERVICE.includes(forbidden), `${forbidden} is not part of a Reviews payload`);
+      assert.ok(!SERVICE.includes(forbidden), `${forbidden} is not part of a Reviews read payload`);
     }
+  });
+
+  it("18b. no derived percentage is ever persisted onto a review", () => {
+    /* The whole point of deriving live: a percentage copied onto a Review
+     * document would be a second copy of a fact, free to drift from the first.
+     * The two write verbs may not carry one. */
+    const created = SERVICE.slice(SERVICE.indexOf("ReviewModel.create("));
+    assert.ok(!/attendance|homework(?!Completion)/i.test(created.slice(0, 200)),
+      "a create writes the planned document and nothing else");
+    assert.ok(!SERVICE.includes("$set: { attendance"), "and an edit writes six planned keys");
   });
 });
 
@@ -432,23 +460,34 @@ describe("The service writes ReviewModel and nothing else", () => {
     }
   });
 
-  it("43. Student and Parent appear, but only as reads", () => {
+  it("43. every model but ReviewModel appears ONLY as a read", () => {
+    /* THIS IS THE ASSERTION THAT MATTERS, and it is unchanged in substance: the
+     * Reviews service may write exactly one collection. Gate 4.4C widened WHICH
+     * models it reads — the derived Attendance and Homework metrics need Class,
+     * Lesson, Attendance and Homework data — but not what it may do to them. */
     const referenced = [...new Set([...SERVICE.matchAll(/\b(\w+Model)\.\w+/g)].map((m) => m[1]))].sort();
-    assert.deepEqual(referenced, ["ParentModel", "ReviewModel", "StudentModel"]);
-    for (const m of ["ParentModel", "StudentModel"]) {
+    assert.deepEqual(referenced, [
+      "AttendanceModel", "ClassModel", "HomeworkModel", "LessonModel",
+      "ParentModel", "ReviewModel", "StudentModel",
+    ]);
+    for (const m of referenced.filter((x) => x !== "ReviewModel")) {
       const calls = [...SERVICE.matchAll(new RegExp(`\\b${m}\\.(\\w+)`, "g"))].map((x) => x[1]);
+      assert.ok(calls.length > 0, m);
       for (const c of calls) {
         assert.ok(["find", "findOne", "countDocuments"].includes(c), `${m}.${c} is not a read`);
       }
     }
   });
 
-  it("44. Class, Lesson, Attendance, Homework and Billing are not its business", () => {
-    for (const forbidden of [
-      "ClassModel", "LessonModel", "AttendanceModel", "HomeworkModel", "BillingModel", "ActivityModel",
-    ]) {
+  it("44. Billing and Activity remain none of its business, and neither does a whole-collection read", () => {
+    for (const forbidden of ["BillingModel", "ActivityModel"]) {
       assert.ok(!SERVICE.includes(forbidden), `${forbidden} must not be referenced`);
     }
+    /* Every cross-domain read is NARROWED BY QUERY to this student's own
+     * classes or to them by name. `Model.find()` with no filter would pull the
+     * whole collection to draw one profile. */
+    assert.ok(!/(?:Lesson|Attendance|Homework|Class)Model\.find\(\)/.test(SERVICE), "no unfiltered read");
+    assert.ok(SERVICE.includes("ClassModel.find({ studentIds: studentId })"), "classes are scoped to the student");
   });
 
   it("45. no lifecycle, recurrence, reconciliation or whole-database read", () => {

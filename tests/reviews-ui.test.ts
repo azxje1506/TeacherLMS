@@ -55,9 +55,11 @@ const UI = code("src", "components", "reviews", "reviews-ui.ts");
 /** Gate 4.4: the Student Profile's Reviews tab, and the profile page it hangs in. */
 const TAB = code("src", "components", "reviews", "student-reviews.tsx");
 const PROFILE = code("src", "app", "(app)", "students", "[id]", "page.tsx");
+/** Gate 4.4C: the analytics charts. */
+const CHARTS = code("src", "components", "reviews", "charts.tsx");
 const CLIENT_FILES: Array<[string, string]> = [
   ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER], ["student-reviews.tsx", TAB],
-  ["api.ts", API], ["form.ts", FORM], ["reviews-ui.ts", UI],
+  ["charts.tsx", CHARTS], ["api.ts", API], ["form.ts", FORM], ["reviews-ui.ts", UI],
 ];
 
 const DICT = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
@@ -780,11 +782,25 @@ describe("Student Profile Reviews — the data rendering contract", () => {
     // The branch is on the LATEST review being absent, which is the same fact
     // as "the server sent an empty history" and cannot disagree with it.
     assert.ok(TAB.includes("const latest = reviews[0] ?? null;"));
-    assert.ok(/latest === null \? \(/.test(TAB), "the empty state is what an absent latest review renders");
+    /* Both halves are checked because the server sends `analytics: null` for
+     * exactly the same case, and either alone would leave the other unproven —
+     * a student with no reviews must never reach a chart. */
+    assert.ok(
+      /latest === null \|\| analytics === null \? \(/.test(TAB),
+      "the empty state is what an absent latest review renders"
+    );
     assert.ok(TAB.includes('t("No monthly reviews yet for this student.")'));
     // Nothing numeric is drawn in that branch: no average, no label, no chart.
-    const empty = TAB.slice(TAB.indexOf("latest === null ? ("), TAB.indexOf("Learning analytics"));
-    for (const forbidden of ["reviewScore", "toFixed", "avg / 5", "perfLabel", "rankSkills"]) {
+    /* Bounded by the first thing the POPULATED branch says. A JSX comment would
+     * be a useless anchor — `code()` strips comments before this file sees it. */
+    const empty = TAB.slice(
+      TAB.indexOf("latest === null || analytics === null ? ("),
+      TAB.indexOf('t("Learning analytics")')
+    );
+    for (const forbidden of [
+      "reviewScore", "toFixed", "avg / 5", "perfLabel", "rankSkills",
+      "SkillRadar", "ScoreTrend", "ScoreDonut", "SkillHeatmap", "MetricCard",
+    ]) {
       assert.ok(!empty.includes(forbidden), `the empty state must not render ${forbidden}`);
     }
   });
@@ -853,9 +869,16 @@ describe("Student Profile Reviews — the timeline", () => {
     }
     assert.ok(!quick.includes("r.parentNotes"), "parent notes stay in the drawer");
     assert.ok(!quick.includes("r.skills"), "the ten ratings are the drawer's, not a read-only panel's");
-    // And no field this sprint does not have.
-    for (const forbidden of ["aiSummary", "achievement", "attendance", "homework"]) {
-      assert.ok(!TAB.includes(forbidden), `${forbidden} is not a Review field`);
+    /* Quick view shows STORED REVIEW FIELDS. The derived Attendance and
+     * Homework percentages are real and approved, but they belong to the
+     * summary cards and the journey — not inside a panel whose whole claim is
+     * "here is what the teacher wrote". */
+    for (const forbidden of ["r.attendance", "r.homework", "attendance.pct", "homework.pct"]) {
+      assert.ok(!quick.includes(forbidden), `${forbidden} is not a stored Review field`);
+    }
+    // And no field this sprint does not have, anywhere in the file.
+    for (const forbidden of ["aiSummary", "achievement", "concern"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} is generated content and must not exist`);
     }
   });
 
@@ -984,15 +1007,35 @@ describe("Student Profile Reviews — the boundary", () => {
     assert.deepEqual([...new Set(keys)].sort(), ['["dashboard"]', "reviewKeys.all", "reviewKeys.student(studentId)"]);
   });
 
-  it("82. the deferred design blocks are omitted whole, not drawn as dead shells", () => {
+  it("82. the analytics blocks the amendment approved are all present", () => {
+    /* GATE 4.4 ASSERTED THE OPPOSITE OF THIS, and correctly: the analytics
+     * blocks were deferred because Attendance% and Homework% per student-month
+     * were outside the Reviews data contract, not because the design was
+     * missing. The Gate 4.4A amendment approved both metrics, so the blocks
+     * belong to Sprint 8 now and the assertion inverts. */
     for (const block of [
       "Overall score", "Attendance", "Homework completion", "Skill radar", "Compare",
       "Progress over time", "Score distribution", "Skill trend heatmap",
-      "Monthly learning journey", "View all", "Print", "PDF", "jspdf",
+      "Monthly learning journey",
     ]) {
-      assert.ok(!TAB.includes(block), `${block} belongs to a later sprint and must not appear at all`);
+      assert.ok(TAB.includes(`t("${block}")`), `${block} is part of the amended scope`);
     }
-    assert.ok(!/disabled.*Coming soon|Coming soon/.test(TAB), "and no placeholder claims to be one");
+  });
+
+  it("82b. what is STILL deferred is still absent, and still absent whole", () => {
+    /* The amendment approved charts, not generated prose, and it did not bring
+     * Gate 4.4D's dedicated page or 4.4E's export forward. */
+    for (const block of [
+      "aiSummary", "achievement", "concern", "View all", "Print", "PDF", "jspdf",
+      "MonthlyReviewReport", "report-sheet", "window.print",
+    ]) {
+      assert.ok(!TAB.includes(block), `${block} is not part of Gate 4.4C`);
+    }
+    assert.ok(!/Coming soon|arrives in a later sprint/.test(TAB), "and nothing is a dead shell");
+    // Edit still opens the drawer: the dedicated route is Gate 4.4D's, and a
+    // link to a page that does not exist would be a broken link.
+    assert.ok(TAB.includes("onClick={() => setEditing(r)}"), "Edit stays on the drawer for now");
+    assert.ok(!TAB.includes("/reviews/${"), "no navigation to an unbuilt route");
   });
 
   it("83. the profile page gained a branch, and lost none", () => {
@@ -1051,9 +1094,17 @@ describe("Student Profile Reviews — the mobile geometry contract", () => {
      * width that can hold them and lets the item shrink where it cannot. */
     const tracks = [...TAB.matchAll(/gridTemplateColumns: "([^"]+)"/g)].map((m) => m[1]);
     assert.ok(tracks.length > 0);
+    /* The comp uses two floors: 180px for the summary cards and 290px for the
+     * chart rows. Both are wrapped in `min(...,100%)` — a bare floor is a track
+     * a 375px column cannot pay for, which is the exact shape the Gate 5 Phase 0
+     * remediation replaced everywhere else in the app. */
     for (const track of tracks) {
-      assert.equal(track, "repeat(auto-fit,minmax(min(290px,100%),1fr))");
+      assert.match(track, /^repeat\(auto-fit,minmax\(min\((180|290)px,100%\),1fr\)\)$/, track);
     }
+    assert.equal(tracks.filter((t) => t.includes("180px")).length, 1, "one summary row");
+    assert.equal(tracks.filter((t) => t.includes("290px")).length, 3, "two chart rows and the skeleton");
+    // Nothing states a bare pixel floor.
+    assert.ok(!/minmax\(\d+px/.test(TAB), "every floor is wrapped in min(...,100%)");
   });
 
   it("88. every panel and every timeline row may shrink below its content", () => {
@@ -1078,8 +1129,9 @@ describe("Student Profile Reviews — the mobile geometry contract", () => {
 
   it("90. teacher prose can never widen a column, however it was typed", () => {
     // A pasted URL or an unbroken string is the case that overflows.
-    assert.equal([...TAB.matchAll(/overflowWrap: "anywhere"/g)].length, 3,
-      "the month label, the summary line, and each Quick view body");
+    assert.equal([...TAB.matchAll(/overflowWrap: "anywhere"/g)].length, 7,
+      "timeline month, summary line and Quick view body; journey month and prose; "
+      + "the coverage detail line; the radar legend");
   });
 
   it("91. the tab states no fixed pixel width that a layout depends on", () => {
@@ -1091,7 +1143,223 @@ describe("Student Profile Reviews — the mobile geometry contract", () => {
 
   it("92. the skill rows truncate the label rather than the rating", () => {
     assert.ok(TAB.includes('flex: 1, minWidth: 0, fontSize: 13'), "the label column shrinks");
-    assert.equal([...TAB.matchAll(/flex: "none"/g)].length, 4,
-      "the badge, the icon, the rating pill and the skeleton's button stay fixed");
+    assert.equal([...TAB.matchAll(/flex: "none"/g)].length, 10,
+      "every fixed sibling of a shrinking column: the timeline and journey badges, "
+      + "the strengths icon and rating pill, the overall-score tile, the Compare and "
+      + "range controls, the heatmap legend, the radar swatch and the skeleton button");
+  });
+});
+
+/* =========================================================================
+ * 12. Gate 4.4C — the expanded analytics surface
+ *
+ * The formulas themselves are executed in tests/review-analytics.test.ts. What
+ * is asserted here is the WIRING: that the screen renders what the server sent,
+ * that it recomputes nothing, that an absent measurement says so, and that the
+ * charts carry no arithmetic of their own.
+ *
+ * Same limitation as sections 9 and 11: no renderer, so this reads the
+ * components as text. A human still confirms the charts LOOK right on a device.
+ * ====================================================================== */
+
+describe("Student Profile Reviews — the summary metrics", () => {
+  it("93. all three summary values come from the payload, not from the client", () => {
+    assert.ok(TAB.includes("latestMetrics?.attendance.pct"), "the server's attendance figure");
+    assert.ok(TAB.includes("latestMetrics?.homework.pct"), "the server's homework figure");
+    assert.ok(TAB.includes("reviewScore(latest.average)"), "the server's average, formatted once");
+    // No metric is computed here, from any domain.
+    for (const forbidden of [
+      "studentAttendanceRate", "studentHomeworkCompletion", "attendanceRate(", "homeworkCompletion(",
+      "reviewAverage(", "buildReviewAnalytics(",
+    ]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} must not be recomputed on the client`);
+    }
+  });
+
+  it("94. a null percentage renders No data, and 0% is unreachable for it", () => {
+    /* `null` and 0 are different facts — "nobody took a register" and "attended
+     * nothing" — and the metric helpers return `null` precisely so this branch
+     * can exist. The card must not be able to print 0% for the first. */
+    assert.ok(TAB.includes("pct === null ? ("), "the card branches on null before formatting");
+    assert.ok(TAB.includes('t("No data")'));
+    assert.ok(/\{pct\}%/.test(TAB), "and the percentage is only rendered on the other branch");
+    assert.ok(!/pct \?\? 0|pct \|\| 0/.test(TAB), "null must never be coerced to zero");
+  });
+
+  it("95. the overall score is the LATEST review's, and no history is folded in", () => {
+    assert.ok(TAB.includes("const latestScore = latest ? reviewScore(latest.average) : null;"));
+    assert.ok(!/reviews\.(reduce|map)\([^)]*average/.test(TAB), "no average of averages");
+  });
+
+  it("96. no percentage is colour-graded — there is no threshold for one", () => {
+    /* `perfColor` grades a 1-5 average; nothing in this app grades a percentage,
+     * and the Attendance index renders its own rate in `var(--fg)` for exactly
+     * that reason. Inventing a band here would be inventing a rule. */
+    const card = TAB.slice(TAB.indexOf("function MetricCard"), TAB.indexOf("function NoData"));
+    assert.ok(!card.includes("perfColor"), "a percentage is not a performance band");
+    assert.ok(card.includes('color: "var(--fg)"'), "it takes the app's plain foreground");
+  });
+
+  it("97. coverage is exposed, so a thin denominator is visible rather than disguised", () => {
+    assert.ok(TAB.includes("latestMetrics.attendance.registersTaken"));
+    assert.ok(TAB.includes("latestMetrics.attendance.lessonsCompleted"));
+    assert.ok(TAB.includes('t("Registers taken")'));
+    // Secondary: smaller than the figure it qualifies.
+    assert.match(TAB, /detail && \(/);
+  });
+});
+
+describe("Student Profile Reviews — the charts are wired, not calculated", () => {
+  it("98. the charts module holds no arithmetic of its own", () => {
+    /* GEOMETRY IS NOT A BUSINESS FORMULA. A radar has to place a point
+     * somewhere, and converting a viewBox coordinate into a CSS percentage is
+     * arithmetic about pixels, not about a student. What must not be here is an
+     * AVERAGE, a RANKING, a BUCKETING or a REPORTED PERCENTAGE — those are rules
+     * a test could not reach once they were inside a component. */
+    for (const forbidden of [
+      "reviewAverage", "rankSkills", "reviewDistribution", "buildReviewHeatmap",
+      "reviewTrend(", "biggestImprovement", "previousReview", "studentAttendanceRate",
+    ]) {
+      assert.ok(!CHARTS.includes(forbidden), `${forbidden} belongs in the analytics module`);
+    }
+    // The percentage on screen is the one the domain computed, read off a prop.
+    assert.ok(CHARTS.includes("{b.pct}%"), "the legend renders the domain's own percentage");
+    assert.ok(
+      !/(count|done|attended)\s*\/\s*(total|10|SKILL_KEYS)/.test(CHARTS),
+      "no reported percentage is derived from counts here"
+    );
+  });
+
+  it("99. it reaches no other domain and opens nothing", () => {
+    for (const forbidden of [
+      "lib/attendance", "lib/homework", "lib/finance", "lib/dashboard", "lib/repo",
+      "useQuery", "useMutation", "fetch(", "Model", "dbConnect",
+    ]) {
+      assert.ok(!CHARTS.includes(forbidden), `charts.tsx must not reference ${forbidden}`);
+    }
+  });
+
+  it("100. no charting dependency was added", () => {
+    const pkg = JSON.parse(raw("package.json")) as { dependencies: Record<string, string> };
+    const deps = Object.keys(pkg.dependencies);
+    for (const lib of ["recharts", "chart.js", "d3", "victory", "@nivo/core", "apexcharts", "echarts"]) {
+      assert.ok(!deps.includes(lib), `${lib} was added — the comp draws its own SVG`);
+    }
+    // The comp's charts are inline SVG, and so are these.
+    assert.ok(CHARTS.includes("<svg"), "drawn by hand, as the design draws them");
+  });
+
+  it("101. every chart scales with its card rather than defining the card's width", () => {
+    // A viewBox plus a percentage width is what makes an SVG responsive; a
+    // pixel width on the element is what makes a page overflow.
+    assert.equal([...CHARTS.matchAll(/viewBox=/g)].length, 3, "radar, trend, donut");
+    assert.ok(CHARTS.includes('width: "100%", height: "100%"'), "the radar fills its box");
+    assert.ok(CHARTS.includes('width: "100%", height: "auto"'), "and the trend keeps its ratio");
+  });
+
+  it("102. the heatmap scrolls inside itself, so the page never widens", () => {
+    assert.ok(CHARTS.includes('overflowX: "auto"'), "the grid gets its own scroll container");
+    assert.ok(CHARTS.includes('minWidth: "min-content"'), "and may exceed the card it sits in");
+    // The card and its column can still shrink.
+    assert.ok(CHARTS.includes('overflowX: "auto", minWidth: 0'));
+  });
+
+  it("103. colour comes from the existing performance band, with no literal hex", () => {
+    assert.ok(CHARTS.includes("perfColor(a.rating)") && CHARTS.includes("perfColor(b.rating)"));
+    const hexes = [...CHARTS.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]);
+    assert.deepEqual(hexes, [], "every colour is a token or an existing band");
+  });
+});
+
+describe("Student Profile Reviews — comparison, range and empty series", () => {
+  it("104. Compare is not rendered at all when there is no previous review", () => {
+    /* A disabled Compare button would advertise a comparison that does not
+     * exist. The control is behind the data, not styled to look unavailable. */
+    assert.ok(TAB.includes("{analytics.radar.previous && ("), "the control is conditional on the data");
+    assert.ok(!/disabled=\{!analytics\.radar\.previous/.test(TAB), "not disabled — absent");
+    // And the second series is only drawn when the overlay is on AND it exists.
+    assert.ok(CHARTS.includes("const showPrevious = compare && previous !== null;"));
+  });
+
+  it("105. the previous series is the previous REVIEW, straight from the payload", () => {
+    assert.ok(TAB.includes("previous={analytics.radar.previous?.axes ?? null}"));
+    // The client never picks it — that is `previousReview`, in the pure module.
+    assert.ok(!TAB.includes("previousReview"), "the comparison is chosen server-side");
+    assert.ok(!/reviews\[1\]/.test(TAB), "and never guessed at as the second entry");
+  });
+
+  it("106. the trend window is anchored to the SERVER's application month", () => {
+    assert.ok(TAB.includes("trendWindowPoints(analytics.trend, defaultMonth, windowMonths)"));
+    assert.ok(TAB.includes("TREND_WINDOWS.map"), "6M and 12M come from the domain's own list");
+    // No client clock, anywhere.
+    for (const forbidden of ["new Date", "Date.now", "CURRENT_MONTH", "getMonth()"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} must not appear on the client`);
+    }
+  });
+
+  it("107. a single point draws a dot and no line", () => {
+    assert.ok(CHARTS.includes("{coords.length > 1 && ("), "the path is conditional");
+    assert.ok(CHARTS.includes("points.length === 1 ?"), "and a lone point is centred");
+  });
+
+  it("108. an empty windowed series says No data rather than drawing an empty chart", () => {
+    assert.ok(CHARTS.includes("if (points.length === 0)"));
+    assert.ok(CHARTS.includes('{t("No data")}'));
+  });
+
+  it("109. the distribution legend omits empty buckets but the data keeps five", () => {
+    assert.ok(CHARTS.includes("buckets.filter((b) => b.count > 0)"), "empty slices are not drawn");
+    assert.ok(TAB.includes("buckets={analytics.distribution}"), "and all five are passed in");
+    // The five come from the pure module, not from a filter on the client.
+    assert.ok(!TAB.includes("[1, 2, 3, 4, 5]"), "the buckets are not rebuilt here");
+  });
+});
+
+describe("Student Profile Reviews — the learning journey", () => {
+  it("110. each entry pairs stored words with that month's derived metrics", () => {
+    assert.ok(TAB.includes('t("Monthly learning journey")'));
+    assert.ok(TAB.includes("const metricsFor = new Map(metricsByMonth.map((m) => [m.month, m]));"));
+    assert.ok(TAB.includes("metricsFor.get(r.month)"), "a month's numbers beside that month's words");
+    assert.ok(TAB.includes("m?.attendance.pct") && TAB.includes("m?.homework.pct"));
+  });
+
+  it("111. a journey metric with no data says so, and never shows 0%", () => {
+    assert.ok(TAB.includes("pct === null ? noData : `${pct}%`"));
+    assert.ok(TAB.includes('noData={t("No data")}'));
+  });
+
+  it("112. journey prose is the teacher's own, and absent when unwritten", () => {
+    const journey = TAB.slice(TAB.indexOf('t("Monthly learning journey")'));
+    assert.ok(journey.includes('r.comment.trim() !== ""'), "empty prose renders nothing");
+    for (const forbidden of ["achievement", "🏆", "aiSummary", "summary:", "generate"]) {
+      assert.ok(!journey.includes(forbidden), `${forbidden} would be fabricated`);
+    }
+  });
+
+  it("113. nothing about the journey is persisted", () => {
+    assert.ok(!TAB.includes("useMutation({ mutationFn: (j"), "there is no journey writer");
+    // The only two mutations on this surface are still the review create and edit.
+    assert.equal([...TAB.matchAll(/useMutation\(/g)].length, 2);
+  });
+});
+
+describe("The Reviews payload carries the derived metrics", () => {
+  it("114. the student payload declares analytics and both metrics", () => {
+    const svc = code("src", "lib", "reviews-service.ts");
+    for (const field of ["analytics: ReviewAnalytics | null", "latestMetrics: StudentMonthMetrics | null", "metricsByMonth: StudentMonthMetrics[]"]) {
+      assert.ok(svc.includes(field), `the payload must declare ${field}`);
+    }
+    // `null` for a student with no reviews, so the screen shows its empty state
+    // rather than a shell of zeroed charts.
+    assert.ok(svc.includes("analytics: latest ? buildReviewAnalytics(latest, history) : null"));
+  });
+
+  it("115. the metrics are computed per request and never stored", () => {
+    const svc = code("src", "lib", "reviews-service.ts");
+    assert.ok(svc.includes("studentAttendanceRate(studentId, month, { lessons, attendance })"));
+    assert.ok(svc.includes("studentHomeworkCompletion(studentId, month, { homework })"));
+    // A Review document still has nine fields and no percentage among them.
+    const domain = code("src", "lib", "reviews.ts");
+    assert.ok(!/attendance|homeworkCompletion|pct/.test(domain), "the Review document gains nothing");
   });
 });

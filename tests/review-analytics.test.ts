@@ -857,12 +857,26 @@ describe("Gate 4.4B adds reads only", () => {
     assert.deepEqual(writes.sort(), ["ReviewModel.create", "ReviewModel.updateOne"]);
   });
 
-  it("84. no Student, Class, Lesson, Parent, Attendance or Homework write exists in Reviews", () => {
+  it("84. no Student, Class, Lesson, Parent, Attendance or Homework WRITE exists in Reviews", () => {
+    /* Gate 4.4C gave the Reviews service four more collections to READ, for the
+     * two approved derived metrics. The write boundary is unmoved, and this is
+     * the assertion of it: every verb applied to a model that is not
+     * ReviewModel must be a read. */
     for (const forbidden of [
-      "StudentModel.create", "StudentModel.updateOne", "ClassModel.", "LessonModel.",
-      "AttendanceModel.", "HomeworkModel.", "BillingModel.", "ParentModel.update",
+      "StudentModel.create", "StudentModel.updateOne", "StudentModel.deleteOne",
+      "ClassModel.create", "ClassModel.updateOne",
+      "LessonModel.create", "LessonModel.updateOne", "LessonModel.deleteOne",
+      "AttendanceModel.create", "AttendanceModel.updateOne",
+      "HomeworkModel.create", "HomeworkModel.updateOne", "HomeworkModel.deleteOne",
+      "BillingModel.", "ParentModel.update", "ParentModel.create",
     ]) {
       assert.ok(!SERVICE.includes(forbidden), `${forbidden} must not appear in the Reviews service`);
+    }
+    // And the same rule stated positively, so a verb nobody thought to list fails too.
+    const READS = ["find", "findOne", "countDocuments"];
+    for (const [, model, verb] of SERVICE.matchAll(/\b(\w+Model)\.(\w+)/g)) {
+      if (model === "ReviewModel") continue;
+      assert.ok(READS.includes(verb), `${model}.${verb} is a write on another domain`);
     }
   });
 
