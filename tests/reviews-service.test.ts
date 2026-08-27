@@ -119,12 +119,37 @@ describe("listReviewCards — what the index is shown", () => {
     assert.deepEqual(cards().map((c) => c.studentId), ["s1", "s2", "s3"]);
   });
 
-  it("4. never carries a review id, so no ghost record can be addressed", () => {
+  it("4. carries exactly one review id per card — the latest, and never a ghost's", () => {
+    /* GATE 4.4D'S REMEDIATION NARROWED THIS RULE RATHER THAN DROPPING IT. The
+     * index used to carry no review id at all, which meant a teacher looking at
+     * a student with months of history was offered nothing but "write another
+     * one". The card now names the LATEST review so it can be opened.
+     *
+     * WHAT MADE THAT SAFE IS UNCHANGED: a card exists only for a student who
+     * RESOLVES, and the id is taken from that student's own reviews. The one
+     * record that would need guarding — a review whose student is gone — raises
+     * no card to put an id on, so the disclosure this test was written to
+     * prevent is still structurally impossible. That is what is asserted now. */
     const payload = JSON.stringify({ month: APP_MONTH, cards: cards() });
-    for (const id of REVIEWS.map((r) => r.id)) {
-      assert.ok(!payload.includes(id), `${id} must not reach the index payload`);
-    }
-    assert.ok(!payload.includes("s-deleted"));
+    assert.ok(!payload.includes("rv-ghost"), "a ghost review's id must never reach the index");
+    assert.ok(!payload.includes("s-deleted"), "nor its deleted student's");
+    assert.ok(!payload.includes("rv-s4-06"), "nor an archived student's, whose card is omitted");
+
+    // s1 has May and June; the id is June's — the same review the month and the
+    // average describe, so a card cannot open one review while describing another.
+    const s1 = cards().find((c) => c.studentId === "s1")!;
+    assert.equal(s1.latestReviewId, "rv-s1-06");
+    assert.equal(s1.latestMonth, "2026-06");
+    assert.ok(!payload.includes("rv-s1-05"), "and only the latest, not the history");
+
+    // A student with nothing written has no id to offer.
+    assert.equal(cards().find((c) => c.studentId === "s2")!.latestReviewId, null);
+    assert.equal(cards().find((c) => c.studentId === "s3")!.latestReviewId, null);
+
+    /* One id per card and no more: the whole set of ids on the payload is
+     * exactly the set of latest reviews of resolvable, eligible students. */
+    const ids = cards().map((c) => c.latestReviewId).filter(Boolean);
+    assert.deepEqual(ids, ["rv-s1-06"]);
   });
 
   it("5. selects the latest review by greatest month", () => {
@@ -408,9 +433,25 @@ describe("updateReview — what an edit may touch", () => {
     );
     assert.ok(!/ghost_review|ghost_/.test(SERVICE), "no distinct public code may advertise a ghost");
     const reasons = [...SERVICE.matchAll(/reason:\s*"(\w+)"/g)].map((m) => m[1]);
+    /* `student_not_eligible` joined the literals in Gate 4.4D: the Create
+     * composer's read refuses an Archived student itself, with the same reason
+     * the create endpoint gives, so a page opened from a stale card cannot show
+     * a form the API would reject. It was always in REVIEW_ERROR — until now the
+     * only path that produced it was the create planner's. */
     assert.deepEqual([...new Set(reasons)].sort(), [
-      "not_found", "review_already_exists", "student_not_found",
+      "not_found", "review_already_exists", "student_not_eligible", "student_not_found",
     ], "the service emits only domain outcomes the error table names");
+    /* And every one of them is a member of the domain's own error union, so the
+     * service can emit no outcome a Route Handler has no status and sentence
+     * for. Read from src/lib/reviews.ts rather than imported, because this suite
+     * scans sources and holds no runtime import of the domain. */
+    const table = readFileSync(path.join(process.cwd(), "src", "lib", "reviews.ts"), "utf8");
+    for (const reason of new Set(reasons)) {
+      assert.ok(
+        new RegExp(`^\\s*${reason}:\\s*\\{ status:`, "m").test(table),
+        `${reason} is not in REVIEW_ERROR`
+      );
+    }
   });
 
   it("37. loads the review before any write, on every edit path", () => {
@@ -493,10 +534,16 @@ describe("The service writes ReviewModel and nothing else", () => {
   it("45. no lifecycle, recurrence, reconciliation or whole-database read", () => {
     for (const forbidden of [
       "advanceLessonLifecycle", "lifecycle", "recurrence", "reconciler", "reconcile",
-      "ensureRegularLessons", "generate", "repo", "getAll",
+      "ensureRegularLessons", "generate", "getAll",
     ]) {
       assert.ok(!SERVICE.includes(forbidden), `${forbidden} must not be reachable from Reviews`);
     }
+    /* `repo` is matched as a MODULE, not as a substring. Gate 4.4D added an
+     * import of ./review-report, and "review-report" contains "repo" — a bare
+     * substring test would have failed on a filename while proving nothing. What
+     * must not be reachable is the whole-database repository itself. */
+    assert.ok(!/from "\.\/repo"|from "@\/lib\/repo"|\brepo\./.test(SERVICE),
+      "the whole-database repo must not be reachable from Reviews");
   });
 
   it("46. it is server-only, and says so", () => {
@@ -504,9 +551,22 @@ describe("The service writes ReviewModel and nothing else", () => {
   });
 
   it("47. it holds no clock of its own", () => {
-    assert.ok(!/new Date\s*\(|Date\.now/.test(SERVICE), "CURRENT_MONTH is the only time source");
+    assert.ok(!/new Date\s*\(|Date\.now/.test(SERVICE), "the app clock is the only time source");
     assert.ok(SERVICE.includes("CURRENT_MONTH"));
-    assert.ok(!SERVICE.includes("TODAY_ISO"), "Reviews are monthly; a day clock would be a second source");
+    /* GATE 4.4D ADMITTED `TODAY_ISO`, AND IT IS NOT A SECOND CLOCK. The
+     * generated report carries the day it was generated on, which is a property
+     * of the DOCUMENT — no Review stores it, and nothing writes it anywhere. It
+     * comes from src/lib/constants.ts, the SAME application clock CURRENT_MONTH
+     * comes from, so the two can never disagree. What this test still forbids is
+     * a wall clock: `new Date()` and `Date.now` remain absent, above. */
+    assert.ok(
+      [...SERVICE.matchAll(/TODAY_ISO/g)].length <= 2,
+      "TODAY_ISO is the app clock read once, not a date computed per call"
+    );
+    assert.ok(
+      SERVICE.includes('import { CURRENT_MONTH, TODAY_ISO } from "./constants";'),
+      "both come from the one application clock"
+    );
   });
 
   it("48. no timestamp or status is invented", () => {

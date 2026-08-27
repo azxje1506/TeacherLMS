@@ -17,27 +17,35 @@
  * count subtitle, and for the same reason. The heading keeps its own margin, so
  * nothing renders an empty container.
  *
+ * WRITE REVIEW IS A LINK, NOT A DRAWER. Gate 4.4D moved the review form onto
+ * its own route, so this card's primary action navigates to
+ * /reviews/new?studentId={id} and this screen holds no form, no mutation and no
+ * form state at all. What it passes along is the student id and nothing else:
+ * eligibility, the selectable months and the default month are resolved by the
+ * server on the page that lands, so a card drawn before a student was archived
+ * cannot open a form the API would refuse.
+ *
+ * A STUDENT WITH REVIEWS GETS SOMEWHERE TO GO. Human verification found the
+ * card offering only "write another one" to a student who already had months of
+ * history. The secondary action opens the LATEST review — by its own id, which
+ * the card now carries — and it is deliberately not called Edit: what it opens
+ * is a record to read, and editing starts there.
+ *
  * THE SCORE IS THE LATEST REVIEW'S. No historical averaging happens anywhere:
  * `latestAverage` comes from the latest review alone (see buildReviewCards), and
  * a student with no review has no score at all rather than a zero.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
-import { useToast } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Avatar } from "@/components/students/student-ui";
-import { ReviewDrawer } from "@/components/reviews/review-drawer";
 import {
   noParentPillStyle, reviewCardStyle, reviewCountKey, reviewScore, reviewSummaryStyle,
 } from "@/components/reviews/reviews-ui";
-import {
-  createReview, fetchReviews, fetchStudentReviews, reviewKeys, ReviewApiError,
-} from "@/components/reviews/api";
-import type { ReviewCard } from "@/lib/reviews";
-import type { ReviewCreateBody } from "@/lib/schemas";
+import { fetchReviews, reviewKeys } from "@/components/reviews/api";
 
 const iconWrite = (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -45,16 +53,12 @@ const iconWrite = (
 const iconChart = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-3 3" /></svg>
 );
+const iconEye = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
+);
 
 export default function ReviewsPage() {
   const { t, fmt } = useSettings();
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  /** The student a review is being written for, or null when the drawer is shut.
-   * Create only: the index has no Edit entry point, and the card's Write review
-   * button never becomes one. */
-  const [writingFor, setWritingFor] = useState<ReviewCard | null>(null);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: reviewKeys.list,
@@ -62,47 +66,6 @@ export default function ReviewsPage() {
   });
 
   const cards = useMemo(() => data?.cards ?? [], [data]);
-
-  /* Which months this student may still be reviewed for is a fact about THAT
-   * student, so it is fetched when the drawer opens rather than multiplied
-   * across every card in the index payload. */
-  const studentId = writingFor?.studentId ?? "";
-  const monthsQuery = useQuery({
-    queryKey: reviewKeys.student(studentId),
-    queryFn: () => fetchStudentReviews(studentId),
-    enabled: studentId !== "",
-  });
-
-  /** A review changes reviews, and the Dashboard's "Reviews to write" counter.
-   *
-   * THE DASHBOARD IS MARKED STALE WITHOUT BEING FETCHED. `GET /api/dashboard`
-   * advances the lesson lifecycle, which WRITES to Lessons — so an active
-   * refetch would turn saving a review into a lesson mutation the teacher never
-   * asked for. `refetchType: "none"` marks the cache stale and lets the
-   * Dashboard fetch itself when the teacher next goes there.
-   *
-   * Nothing else is invalidated. Writing a review changes no student, class,
-   * lesson, register or assignment. */
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: reviewKeys.all });
-    qc.invalidateQueries({ queryKey: ["dashboard"], refetchType: "none" });
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (body: ReviewCreateBody) => createReview(body),
-    onSuccess: () => { invalidate(); setWritingFor(null); toast(t("Review saved")); },
-    onError: (e: Error) => {
-      toast(t(e.message), "error");
-      /* A duplicate month usually means this client's picture is out of date —
-       * the month was written elsewhere, or in another tab — so the reviews
-       * caches are refreshed and the month list the drawer offers is corrected.
-       * The drawer stays open with the teacher's words intact. No retry loop:
-       * one refetch, and the next attempt is theirs to make. */
-      if (e instanceof ReviewApiError && e.code === "review_already_exists") {
-        qc.invalidateQueries({ queryKey: reviewKeys.all });
-      }
-    },
-  });
 
   return (
     <div data-screen-label="Reviews" style={{ animation: "fadeUp .3s ease both" }}>
@@ -208,19 +171,20 @@ export default function ReviewsPage() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  {/* ALWAYS CREATE. This button opens a blank review for a month
-                    * the student does not yet have; it never turns into an edit
-                    * of an existing one. Editing arrives with the student
-                    * profile's review timeline. */}
-                  <button
-                    onClick={() => setWritingFor(c)}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {/* ALWAYS CREATE. This goes to a blank review for a month the
+                    * student does not yet have; it never turns into an edit of
+                    * an existing one, and it carries the student id and nothing
+                    * else — the months, the default and the eligibility rule are
+                    * the composer page's server-side answers. */}
+                  <Link
+                    href={`/reviews/new?studentId=${encodeURIComponent(c.studentId)}`}
                     className="btn-primary"
-                    style={{ flex: 1, minWidth: 0, height: 36, border: "none", borderRadius: 9, background: "var(--primary)", color: "var(--primary-fg)", fontSize: 12.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                    style={{ flex: 1, minWidth: 0, height: 36, border: "none", borderRadius: 9, background: "var(--primary)", color: "var(--primary-fg)", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                   >
                     {iconWrite}
                     {t("Write review")}
-                  </button>
+                  </Link>
 
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -235,6 +199,24 @@ export default function ReviewsPage() {
                     </TooltipTrigger>
                     <TooltipContent>{t("View performance")}</TooltipContent>
                   </Tooltip>
+
+                  {/* ONLY WHEN THERE IS ONE TO VIEW. A student nobody has
+                    * assessed gets the create action and nothing else — an
+                    * action that would open a record that does not exist is
+                    * worse than an action that is absent.
+                    *
+                    * NOT LABELLED EDIT: what it opens is a saved record, which
+                    * a teacher reads first and edits deliberately from there. */}
+                  {c.latestReviewId && (
+                    <Link
+                      href={`/reviews/${encodeURIComponent(c.latestReviewId)}`}
+                      className="btn-ghost"
+                      style={{ flex: "1 0 100%", minWidth: 0, height: 34, border: "1px solid var(--border)", borderRadius: 9, background: "var(--card)", color: "var(--fg-2)", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                    >
+                      {iconEye}
+                      {t("View latest review")}
+                    </Link>
+                  )}
                 </div>
               </div>
             );
@@ -242,26 +224,6 @@ export default function ReviewsPage() {
         </div>
       )}
 
-      {writingFor && (
-        <ReviewDrawer
-          open
-          review={null}
-          student={{
-            id: writingFor.studentId,
-            name: writingFor.name,
-            initials: writingFor.initials,
-            color: writingFor.color,
-            avatar: writingFor.avatar,
-            gradeLabel: writingFor.gradeLabel,
-          }}
-          parentLinked={writingFor.parentLinked}
-          months={monthsQuery.data?.months ?? []}
-          monthsLoading={monthsQuery.isLoading}
-          saving={createMutation.isPending}
-          onClose={() => setWritingFor(null)}
-          onCreate={(body) => createMutation.mutate(body)}
-        />
-      )}
     </div>
   );
 }

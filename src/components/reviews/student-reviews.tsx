@@ -14,7 +14,8 @@
  *
  *   - the "Learning analytics" header with its latest-review subtitle and the
  *     Write review action;
- *   - the "Monthly reviews" timeline, newest first, with Quick view and Edit;
+ *   - the "Monthly reviews" timeline, newest first, with View review and an
+ *     optional Quick view;
  *   - the "Strengths & focus areas" card, from the LATEST review only.
  *
  * ONE ENDPOINT. `GET /api/reviews/student/:id`, through the Gate 4.3 client.
@@ -27,26 +28,35 @@
  * `rankSkills` over the skills the payload already carries. No aggregate is
  * recomputed here and no historical average is averaged again.
  *
- * NO SECOND FORM. Create and Edit both open the Gate 4.3 `ReviewDrawer` — the
- * same fields, the same validation, the same dirty-dismiss guard, the same
- * bodies on the wire. This file decides which mode it opens in and nothing else.
+ * NO FORM AT ALL, SINCE GATE 4.4D. Create and Edit are a dedicated page now —
+ * /reviews/new?studentId={id} and /reviews/{reviewId} — because both show a live
+ * monthly report beside the fields and a 460px drawer cannot hold a document.
+ * This tab therefore holds no form, no validation, no mutation and no dirty
+ * state: its two actions are LINKS, and everything behind them is resolved by
+ * the server on the page that lands.
+ *
+ * WHY THE TIMELINE LINKS BY REVIEW ID AND NOT BY STUDENT. The Review owns the
+ * relationship. A URL carrying both could be made to disagree with the record,
+ * so the address names the review and the server decides whose it is.
+ *
+ * AND THE TIMELINE OFFERS NO EDIT. Human verification found the row actions too
+ * quiet to read as actions at all, and "Edit" was the wrong verb besides: a
+ * saved review is a record a teacher OPENS, and editing begins there, behind a
+ * deliberate press. Every row now carries one obvious primary action — View
+ * review — and Quick view stays as the quieter second, for reading a month's
+ * notes without leaving the page.
  */
 
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
-import { useToast } from "@/components/ui/toast";
-import { ReviewDrawer } from "@/components/reviews/review-drawer";
 import { reviewScore } from "@/components/reviews/reviews-ui";
 import { ScoreDonut, ScoreTrend, SkillHeatmap, SkillRadar } from "@/components/reviews/charts";
 import { hasAvailableMonth } from "@/components/reviews/form";
 import { TREND_WINDOWS, trendWindowPoints, type TrendWindow } from "@/lib/review-analytics";
-import {
-  createReview, fetchStudentReviews, reviewKeys, updateReview, ReviewApiError,
-} from "@/components/reviews/api";
+import { fetchStudentReviews, reviewKeys } from "@/components/reviews/api";
 import { rankSkills } from "@/lib/reviews";
-import type { ReviewDetail } from "@/lib/reviews-service";
-import type { ReviewCreateBody, ReviewUpdateBody } from "@/lib/schemas";
 
 const iconWrite = (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -56,6 +66,9 @@ const iconCheck = (
 );
 const iconFocus = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20v-6M12 4v2" /><circle cx="12" cy="10" r="0.5" /></svg>
+);
+const iconEye = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>
 );
 
 /* The comp's card surface for this tab: the shared card tokens with the
@@ -68,13 +81,24 @@ const panel: React.CSSProperties = {
   boxShadow: "var(--sh)", padding: "18px 20px",
 };
 
-/** The comp's link-styled row action ("Quick view" / "Edit"). */
+/** The comp's link-styled row action — now the SECONDARY one only. */
 const rowAction = (strong: boolean): React.CSSProperties => ({
   border: "none", background: "none",
   color: strong ? "var(--fg-2)" : "var(--muted)",
   fontSize: 11.5, fontWeight: strong ? 600 : 500, fontFamily: "inherit",
   cursor: "pointer", padding: 0,
 });
+
+/** The row's PRIMARY action: a real bordered control, in the app's existing
+ * ghost-button language, so it reads as something to press rather than as a
+ * caption. It is the only action that leaves the page. */
+const viewAction: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  height: 30, padding: "0 11px",
+  border: "1px solid var(--border)", borderRadius: 8, background: "var(--card)",
+  color: "var(--fg-2)", fontSize: 11.5, fontWeight: 600,
+  whiteSpace: "nowrap",
+};
 
 /** The primary action, in the comp's header geometry. */
 const primaryBtn: React.CSSProperties = {
@@ -86,14 +110,7 @@ const primaryBtn: React.CSSProperties = {
 
 export function StudentReviews({ studentId }: { studentId: string }) {
   const { t, fmt } = useSettings();
-  const { toast } = useToast();
-  const qc = useQueryClient();
 
-  /** Create is a boolean — the month is the server's to offer. Edit carries the
-   * review it opens on, which is what makes the drawer's student and month the
-   * record's own without this file having to enforce it. */
-  const [writing, setWriting] = useState(false);
-  const [editing, setEditing] = useState<ReviewDetail | null>(null);
   /** Which timeline rows have their Quick view open. Presentation state only. */
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   /** Radar overlay and trend range — both presentation state, both local. */
@@ -103,41 +120,6 @@ export function StudentReviews({ studentId }: { studentId: string }) {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: reviewKeys.student(studentId),
     queryFn: () => fetchStudentReviews(studentId),
-  });
-
-  /** A review changes reviews, and the Dashboard's "Reviews to write" counter.
-   *
-   * THE DASHBOARD IS MARKED STALE WITHOUT BEING FETCHED, for the reason the
-   * Reviews index states: `GET /api/dashboard` advances the lesson lifecycle,
-   * which WRITES to Lessons, so an active refetch would turn saving a review
-   * into a lesson mutation nobody asked for.
-   *
-   * `reviewKeys.all` covers this tab's own cache and the Reviews index in one
-   * call. Nothing else is invalidated — a review changes no student, class,
-   * lesson, register or assignment. */
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: reviewKeys.all });
-    qc.invalidateQueries({ queryKey: ["dashboard"], refetchType: "none" });
-  };
-
-  const createMutation = useMutation({
-    mutationFn: (body: ReviewCreateBody) => createReview(body),
-    onSuccess: () => { invalidate(); setWriting(false); toast(t("Review saved")); },
-    onError: (e: Error) => {
-      toast(t(e.message), "error");
-      /* A duplicate month means this client's month list is stale — the month
-       * was written elsewhere, or in another tab. One refetch corrects the
-       * options; the drawer stays open with the teacher's words intact. */
-      if (e instanceof ReviewApiError && e.code === "review_already_exists") {
-        qc.invalidateQueries({ queryKey: reviewKeys.all });
-      }
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: ReviewUpdateBody }) => updateReview(id, body),
-    onSuccess: () => { invalidate(); setEditing(null); toast(t("Review saved")); },
-    onError: (e: Error) => toast(t(e.message), "error"),
   });
 
   if (isLoading) return <SkeletonTab />;
@@ -163,8 +145,13 @@ export function StudentReviews({ studentId }: { studentId: string }) {
     );
   }
 
+  /* `parentLinked` is deliberately not read here. PROJECT_RULES requires the
+   * no-linked-parent notice to appear where a review is written, and since Gate
+   * 4.4D that is the dedicated composer — which shows it from its own payload.
+   * Restating it on this tab would be the same warning in two places, free to
+   * disagree with itself. */
   const {
-    student, reviews, months, canCreate, parentLinked,
+    student, reviews, months, canCreate,
     analytics, latestMetrics, metricsByMonth, defaultMonth,
   } = data;
 
@@ -193,22 +180,28 @@ export function StudentReviews({ studentId }: { studentId: string }) {
    * than a shell of zeroed charts. */
   const latestScore = latest ? reviewScore(latest.average) : null;
 
-  const writeButton = (style: React.CSSProperties) => (
-    <button
-      onClick={() => setWriting(true)}
-      disabled={!monthAvailable}
-      className="btn-primary"
-      style={style}
-    >
-      {iconWrite}
-      {t("Write review")}
-    </button>
-  );
-
-  const drawerStudent = {
-    id: student.id, name: student.name, initials: student.initials,
-    color: student.color, avatar: student.avatar, gradeLabel: student.gradeLabel,
-  };
+  /* THE ACTION IS A LINK WHEN THERE IS A MONTH TO WRITE, AND A DISABLED BUTTON
+   * WHEN THERE IS NOT. A student whose last twelve months are all reviewed has
+   * nothing left to create, so the action still exists and simply has nowhere to
+   * go — the app's existing `button:disabled` treatment, rather than a link to a
+   * page that would refuse. It never becomes an Edit, and no thirteenth month is
+   * invented: `months` is the server's list. */
+  const writeButton = (style: React.CSSProperties) =>
+    monthAvailable ? (
+      <Link
+        href={`/reviews/new?studentId=${encodeURIComponent(student.id)}`}
+        className="btn-primary"
+        style={style}
+      >
+        {iconWrite}
+        {t("Write review")}
+      </Link>
+    ) : (
+      <button disabled className="btn-primary" style={style}>
+        {iconWrite}
+        {t("Write review")}
+      </button>
+    );
 
   return (
     <div style={{ minWidth: 0 }}>
@@ -427,22 +420,27 @@ export function StudentReviews({ studentId }: { studentId: string }) {
                             ))}
                           </div>
                         )}
-                        <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 9, flexWrap: "wrap" }}>
+                          {/* THE ONE PRIMARY ACTION PER ROW. It opens this
+                            * record's own page, addressed by REVIEW id, which
+                            * lands in View — the student and the month are the
+                            * record's own and neither is a control there. There
+                            * is no Edit here and no Delete: editing begins on
+                            * that page, behind a deliberate press, and no
+                            * endpoint removes a review. */}
+                          <Link href={`/reviews/${encodeURIComponent(r.id)}`} style={viewAction} className="btn-ghost">
+                            {iconEye}
+                            {t("View review")}
+                          </Link>
                           {quick.length > 0 && (
                             <button
                               onClick={() => setExpanded((prev) => ({ ...prev, [r.id]: !open }))}
                               aria-expanded={open}
-                              style={rowAction(true)}
+                              style={rowAction(false)}
                             >
                               {t("Quick view")}
                             </button>
                           )}
-                          {/* EDIT LIVES HERE, and only here. It opens the Gate
-                            * 4.3 drawer on this record, whose student and month
-                            * are the record's own and neither is a control.
-                            * There is no Delete: a review is a historical record
-                            * of a month and no endpoint removes one. */}
-                          <button onClick={() => setEditing(r)} style={rowAction(false)}>{t("Edit")}</button>
                         </div>
                       </div>
                     </div>
@@ -512,34 +510,6 @@ export function StudentReviews({ studentId }: { studentId: string }) {
         </>
       )}
 
-      {/* CREATE. The months are the server's; the drawer picks the newest
-        * untaken one and leaves the taken ones visible but disabled. */}
-      {writing && (
-        <ReviewDrawer
-          open
-          review={null}
-          student={drawerStudent}
-          parentLinked={parentLinked}
-          months={months}
-          saving={createMutation.isPending}
-          onClose={() => setWriting(false)}
-          onCreate={(body) => createMutation.mutate(body)}
-        />
-      )}
-
-      {/* EDIT. No month options are passed, because an edit may not change its
-        * month — the drawer's union type refuses them outright. */}
-      {editing && (
-        <ReviewDrawer
-          open
-          review={editing}
-          student={drawerStudent}
-          parentLinked={parentLinked}
-          saving={updateMutation.isPending}
-          onClose={() => setEditing(null)}
-          onUpdate={(id, body) => updateMutation.mutate({ id, body })}
-        />
-      )}
     </div>
   );
 }

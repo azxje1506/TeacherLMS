@@ -73,9 +73,20 @@ export const cardStyle: React.CSSProperties = {
   borderRadius: "var(--r)", boxShadow: "var(--sh)",
 };
 
-/** Avatar: uploaded image when present, otherwise the tinted initials disc. */
+/** Avatar: uploaded image when present, otherwise the tinted initials disc.
+ *
+ * `className` is OPTIONAL and additive — it exists so a caller can address this
+ * element by name instead of by position. A structural selector like
+ * `.parent > *:first-child` is only ever true by accident of DOM order, and one
+ * of those silently stopped matching the avatar it was written for.
+ *
+ * NOTE FOR ANY RULE THAT TRIES TO HIDE THIS: the disc's `display:flex` is an
+ * INLINE style, so a stylesheet `display:none` loses the cascade to it. Hiding
+ * this element needs `!important` (or a wrapper). That is not a preference — it
+ * is the reason a previous responsive rule rendered as a no-op in the browser
+ * while its test happily confirmed the rule existed. */
 export function Avatar({
-  name, initials, avatar, color, size, fontSize,
+  name, initials, avatar, color, size, fontSize, className,
 }: {
   name: string;
   initials: string;
@@ -83,9 +94,11 @@ export function Avatar({
   color: string;
   size: number;
   fontSize: number;
+  className?: string;
 }) {
   return (
     <span
+      className={className}
       style={{
         minWidth: size, width: size, height: size, borderRadius: "50%",
         background: color || AVATAR_PALETTE[0], color: "#fff",

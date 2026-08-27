@@ -22,6 +22,7 @@
  */
 
 import type { ReviewCardsPayload, ReviewDetail, StudentReviewsPayload } from "@/lib/reviews-service";
+import type { ReviewComposerData } from "@/lib/review-report";
 import type { ReviewCreateBody, ReviewUpdateBody } from "@/lib/schemas";
 
 /** Query keys. Mutations invalidate `["reviews"]`, which covers the index and
@@ -30,6 +31,12 @@ export const reviewKeys = {
   all: ["reviews"] as const,
   list: ["reviews", "list"] as const,
   student: (studentId: string) => ["reviews", "student", studentId] as const,
+  /* The dedicated composer's two reads. Both sit UNDER ["reviews"], so the one
+   * `invalidateQueries({ queryKey: reviewKeys.all })` every mutation already
+   * issues refreshes them too — a saved review corrects its own page's month
+   * chips and history without a second invalidation rule. */
+  composerForStudent: (studentId: string) => ["reviews", "composer", "student", studentId] as const,
+  composerForReview: (reviewId: string) => ["reviews", "composer", "review", reviewId] as const,
 };
 
 /** An API failure that kept the server's machine-readable code.
@@ -66,6 +73,31 @@ export async function fetchReviews(): Promise<ReviewCardsPayload> {
  * to draw a grid of cards. */
 export async function fetchStudentReviews(studentId: string): Promise<StudentReviewsPayload> {
   const res = await fetch(`/api/reviews/student/${encodeURIComponent(studentId)}`);
+  if (!res.ok) await readError(res, "Couldn't load reviews");
+  return res.json();
+}
+
+/** The Create composer's context for one student.
+ *
+ * NO REVIEW ID IS INVOLVED, because a create has no record yet — which is the
+ * whole reason the dedicated page can preview before it saves. The server
+ * refuses an Archived or unresolvable student here, so the page never renders a
+ * form the API would reject. */
+export async function fetchComposerForStudent(studentId: string): Promise<ReviewComposerData> {
+  const res = await fetch(`/api/reviews/composer?studentId=${encodeURIComponent(studentId)}`);
+  if (!res.ok) await readError(res, "Couldn't load reviews");
+  return res.json();
+}
+
+/** The Edit composer's context for one persisted review.
+ *
+ * ADDRESSED TO `/api/reviews/:id/report`, NOT to a generic read of the record.
+ * That route composes a read model and passes the same interactable guard PATCH
+ * does, so a review left behind by a deleted student answers 404 exactly as a
+ * missing one does. There is still no client for a raw `GET /api/reviews/:id`,
+ * because there is still no such route. */
+export async function fetchComposerForReview(reviewId: string): Promise<ReviewComposerData> {
+  const res = await fetch(`/api/reviews/${encodeURIComponent(reviewId)}/report`);
   if (!res.ok) await readError(res, "Couldn't load reviews");
   return res.json();
 }

@@ -215,8 +215,13 @@ describe("Dismiss guard — one way out, and it asks first", () => {
      * touches `requestClose`, so the prompt cannot appear where there is nothing
      * left to lose — and every page closes exactly that way. */
     assert.ok(DRAWER.includes("if (!open) return null;"));
-    const page = read("src", "app", "(app)", "reviews", "page.tsx");
-    assert.ok(page.includes("onSuccess: () => { invalidate(); setWritingFor(null); toast(t(\"Review saved\")); }"));
+    /* GATE 4.4D MOVED THE REVIEWS EXAMPLE. The Reviews index no longer opens a
+     * drawer at all — Write review is a link to the dedicated composer — so the
+     * page that demonstrated this rule for Reviews has no save to demonstrate it
+     * with. Homework still does, and the rule it proves is the drawer's, not any
+     * one caller's. The composer's own equivalent (a save resets the dirty
+     * baseline BEFORE it navigates, so its guard has nothing to prompt about) is
+     * asserted in tests/review-composer.test.ts. */
     const homework = read("src", "app", "(app)", "homework", "page.tsx");
     assert.ok(homework.includes("onSuccess: () => { invalidate(); closeDrawer();"),
       "a save closes by state, not by a dismissal gesture");

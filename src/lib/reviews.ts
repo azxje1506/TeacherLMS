@@ -215,6 +215,24 @@ export interface ReviewMonthOption {
   taken: boolean;
 }
 
+/** The newest month in `options` that has no review yet, or `null` when every
+ * one of them is taken.
+ *
+ * STATED ONCE, HERE, because two callers need the same answer and a second copy
+ * could disagree with the first: the Create composer's default month is chosen
+ * on the SERVER (it ships in the composer read model), and the drawer chooses
+ * its own on the client through `firstAvailableMonth`, which delegates to this.
+ *
+ * NO ARITHMETIC AND NO CLOCK. The options arrive newest-first from
+ * `reviewMonthOptions`, so the first untaken entry IS the newest untaken one —
+ * this picks one of the twelve that were offered, and can no more invent a
+ * thirteenth month than the function that built the list. */
+export function firstUntakenMonth(
+  options: readonly ReviewMonthOption[] | null | undefined
+): string | null {
+  return options?.find((m) => !m.taken)?.month ?? null;
+}
+
 /** The twelve selectable months, newest first.
  *
  * DETERMINISTIC: same application month in, same twelve months out, in the same
@@ -354,6 +372,19 @@ export interface ReviewCard {
   reviewCount: number;
   latestMonth: string | null;
   latestAverage: number | null;
+  /** The id of the review `latestMonth` and `latestAverage` describe, or null
+   * when this student has none.
+   *
+   * WHY AN ID IS SAFE HERE WHEN THE INDEX CARRIED NONE BEFORE. A card exists
+   * only for a student who RESOLVES — `buildReviewCards` walks canonical
+   * Student data and a review whose student is gone raises no card at all — and
+   * the id is taken from that same student's own reviews. So this can never
+   * disclose a ghost record: the one case that would have to be guarded against
+   * is the case that produces no card to put an id on.
+   *
+   * It exists because a teacher looking at a student who already has reviews
+   * needs somewhere to go other than "write another one". */
+  latestReviewId: string | null;
   parentLinked: boolean;
 }
 
@@ -406,6 +437,9 @@ export function buildReviewCards(
       reviewCount: own.length,
       latestMonth: latest ? latest.month : null,
       latestAverage: latest ? reviewAverage(latest.skills) : null,
+      /* The SAME review the month and the average come from, so a card cannot
+       * offer to open one review while describing another. */
+      latestReviewId: latest ? latest.id : null,
       parentLinked: isParentLinked(student, existingParentIds),
     });
   }

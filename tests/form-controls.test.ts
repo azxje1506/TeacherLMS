@@ -300,32 +300,45 @@ describe("Select — every interaction state belongs to the app", () => {
     }
   });
 
-  it("20. Select disables an OPTION, never the control, and only where it was asked for", () => {
-    /* This test used to record that Select had no disabled state at all, and
-     * said that if a consumer ever passed `disabled` it should fail "and the
-     * state gets designed first". That is what happened: Sprint 8 Gate 4.3
-     * specifies a review month picker in which months already reviewed stay
-     * VISIBLE and are not choosable, so the state was designed and then built.
+  it("20. Select disables an OPTION and — since it was designed — a TRIGGER, only where asked", () => {
+    /* THIS TEST RECORDS TWO STATES BEING DESIGNED, IN ORDER, AND NOTHING MORE.
      *
-     * The invariant is therefore narrowed, not dropped. What Select grew is a
-     * per-OPTION flag taking the app's existing `button:disabled` treatment —
-     * no new token, no new visual language. What it still does NOT have is a
-     * disabled TRIGGER: nothing in the design disables a whole Select, and a
-     * consumer that wants one still has to get it designed. */
+     * It began by recording that Select had no disabled state at all, and said
+     * that a consumer passing `disabled` should fail "and the state gets
+     * designed first". That happened twice:
+     *
+     *  - Gate 4.3 designed the per-OPTION flag: a review month already written
+     *    stays VISIBLE and is not choosable;
+     *  - Gate 4.4D's remediation designed the disabled TRIGGER, for one named
+     *    case — while an edit is in progress the review's month is ownership
+     *    context, and a dropdown of other months there would be a list of ways
+     *    to lose the edit.
+     *
+     * Both take the app's existing `button:disabled` treatment: no new token, no
+     * new visual language, nothing added to globals.css. The invariant that
+     * survives is that neither is on by default and no other consumer has one. */
     assert.ok(SELECT.includes("disabled?: boolean"), "the flag lives on SelectOption");
     assert.ok(SELECT.includes("disabled={o.disabled}"), "and is applied to the option row");
     assert.ok(SELECT.includes('aria-disabled={o.disabled || undefined}'), "and published to assistive tech");
 
-    // The TRIGGER is still never disabled: the only `disabled` in the file is
-    // the option's, so the control itself cannot be switched off.
+    /* THE TRIGGER STATE IS OFF BY DEFAULT, so every caller that does not ask for
+     * it is unaffected — which is what made adding it to the shared primitive
+     * safe rather than a change to seven other screens. */
+    assert.ok(SELECT.includes("disabled = false,"), "the trigger state defaults off");
     const triggerBlock = SELECT.slice(SELECT.indexOf('className="cs-trigger"'), SELECT.indexOf("role=\"listbox\""));
-    assert.ok(!/disabled/.test(triggerBlock), "no consumer may disable the whole control");
+    assert.ok(triggerBlock.includes("disabled={disabled}"), "and is a real disabled button when asked for");
+    /* AND IT GENUINELY CANNOT OPEN — the click is refused and the listbox is not
+     * rendered, so it is shut rather than merely styled shut. */
+    assert.ok(SELECT.includes("onClick={() => { if (!disabled) setOpen((o) => !o); }}"));
+    assert.ok(SELECT.includes("{open && !disabled && ("));
 
-    // No existing consumer asks for any of it; the month picker is the one that does.
+    // No existing consumer asks for either; the review month picker is the one that does.
     const consumers = [...Object.values(DRAWERS), read("src", "components", "lessons", "calendar-ui.tsx")];
     for (const src of consumers) assert.ok(!/<Select[^/>]*disabled/.test(src));
     const reviewDrawer = read("src", "components", "reviews", "review-drawer.tsx");
     assert.ok(reviewDrawer.includes("disabled: m.taken"), "the reviewed month is the one disabled option");
+    const composer = read("src", "components", "reviews", "review-composer.tsx");
+    assert.ok(composer.includes("disabled={!monthEnabled}"), "and the edit stage is the one disabled trigger");
   });
 });
 

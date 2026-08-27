@@ -76,26 +76,53 @@ export function reviewSummaryStyle(): React.CSSProperties {
   };
 }
 
+/** How a rating control paints itself.
+ *
+ * TWO PRESENTATIONS OF ONE CONTROL, NOT TWO CONTROLS. The semantics are
+ * identical in both — a radiogroup of five, one chosen value, the same keyboard
+ * behaviour, the same `aria-checked` — and so is the palette. Only the fill
+ * rule differs, which is why this is a variant of the existing helper rather
+ * than a second one:
+ *
+ *  - "select" marks ONLY the chosen segment. This is the Gate 4.3 drawer's
+ *    treatment, unchanged.
+ *  - "fill" marks every segment up to and including the chosen one, the way the
+ *    dedicated composer's reference draws the scale — a bar the teacher fills
+ *    rather than a point they pick.
+ *
+ * NO NEW PALETTE AND NO NEW THRESHOLD in either. The colour is `perfColor` on
+ * the same 1-5 scale the app already grades an average on, taken from the CHOSEN
+ * value so a filled run is one colour rather than a gradient of five. */
+export type RatingSegmentVariant = "select" | "fill";
+
 /** One of the five segments of a skill's rating control.
  *
- * The selected segment reuses the app's EXISTING performance colour semantics —
- * `perfColor` on the same 1–5 scale it already grades an average on — rather
- * than a rating palette invented for this control. No new token, no new
- * threshold, no literal hex.
+ * `rating` is this segment's own number; `value` is the rating the skill
+ * currently holds, or `undefined` while it holds none.
  *
- * COLOUR IS NEVER THE ONLY SIGNAL. The selected segment also takes a heavier
- * weight, a coloured border and a tinted surface, and the control publishes
- * `aria-checked`, so the state survives a colourblind reader, a high-contrast
- * theme and a screen reader alike. */
-export function ratingSegmentStyle(rating: number, active: boolean): React.CSSProperties {
-  const color = perfColor(rating);
+ * COLOUR IS NEVER THE ONLY SIGNAL. A marked segment also takes a heavier weight
+ * and a coloured border, and the control publishes `aria-checked`, so the state
+ * survives a colourblind reader, a high-contrast theme and a screen reader
+ * alike. */
+export function ratingSegmentStyle(
+  rating: number,
+  value: number | undefined,
+  variant: RatingSegmentVariant = "select"
+): React.CSSProperties {
+  const chosen = typeof value === "number" && Number.isFinite(value) ? value : null;
+  const on = chosen !== null && (variant === "fill" ? rating <= chosen : rating === chosen);
+  /* The band of the CHOSEN rating, not of this segment — so the filled run reads
+   * as one score. In "select" mode a marked segment IS the chosen one, so this
+   * is the same colour that helper produced before the variant existed. */
+  const color = perfColor(chosen ?? rating);
+  const solid = variant === "fill" && on;
   return {
     flex: 1, minWidth: 0, height: 34, padding: "0 4px", borderRadius: 8,
-    fontSize: 12.5, fontWeight: active ? 700 : 500, fontFamily: "inherit",
+    fontSize: 12.5, fontWeight: on ? 700 : 500, fontFamily: "inherit",
     fontVariantNumeric: "tabular-nums",
-    border: `1px solid ${active ? color : "var(--border)"}`,
-    background: active ? "var(--card-2)" : "var(--card)",
-    color: active ? color : "var(--muted)",
+    border: `1px solid ${on ? color : "var(--border)"}`,
+    background: solid ? color : on ? "var(--card-2)" : "var(--card)",
+    color: solid ? "var(--primary-fg)" : on ? color : "var(--muted)",
     display: "flex", alignItems: "center", justifyContent: "center",
     cursor: "pointer",
   };

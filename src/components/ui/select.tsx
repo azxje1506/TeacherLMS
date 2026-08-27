@@ -42,7 +42,8 @@ const chevron = (
 );
 
 export function Select({
-  value, options, onChange, placeholder = "Select…", ariaLabel, invalid = false, height = 38,
+  value, options, onChange, placeholder = "Select…", ariaLabel,
+  invalid = false, height = 38, disabled = false,
 }: {
   value: string;
   options: SelectOption[];
@@ -51,6 +52,16 @@ export function Select({
   ariaLabel?: string;
   invalid?: boolean;
   height?: number;
+  /** The control shows its value and cannot be opened.
+   *
+   * FOR A FIELD WHOSE VALUE IS CONTEXT RATHER THAN A CHOICE — the Review
+   * composer's month while an edit is in progress, where the month is ownership
+   * and offering a list of other months would offer a way out of the edit. The
+   * trigger keeps its geometry and its value so the field stays readable; it
+   * takes the app's own `button:disabled` treatment and cannot open.
+   *
+   * Optional and false by default, so every existing caller is unaffected. */
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -91,14 +102,15 @@ export function Select({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         aria-label={ariaLabel}
-        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        onClick={() => { if (!disabled) setOpen((o) => !o); }}
         /* Geometry and value only. `color` is here because it says what the
          * trigger HOLDS — a value or a placeholder — rather than what state it
          * is in, which is the same reason an input's value colour is inline. */
         style={{
           width: "100%", height, padding: "0 11px",
           color: current ? "var(--fg)" : "var(--muted-2)",
-          fontSize: 13, fontFamily: "inherit", cursor: "pointer",
+          fontSize: 13, fontFamily: "inherit", cursor: disabled ? "default" : "pointer",
           display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, textAlign: "left",
         }}
       >
@@ -108,7 +120,7 @@ export function Select({
         {chevron}
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
           id={listId}
           role="listbox"

@@ -41,17 +41,20 @@ import {
   AttendanceModel, ClassModel, HomeworkModel, LessonModel,
   ParentModel, ReviewModel, StudentModel, mongoose,
 } from "./models";
-import { CURRENT_MONTH } from "./constants";
+import { CURRENT_MONTH, TODAY_ISO } from "./constants";
 import {
   studentAttendanceRate, studentHomeworkCompletion,
   type StudentAttendanceRate, type StudentHomeworkCompletion,
 } from "./finance";
 import { buildReviewAnalytics, type ReviewAnalytics } from "./review-analytics";
 import {
-  buildReviewCards, buildReviewHistory, canReviewStudent, isParentLinked, planReviewCreate,
-  planReviewUpdate, reviewAverage, reviewMonthOptions,
+  buildReviewCards, buildReviewHistory, canReviewStudent, firstUntakenMonth, isParentLinked,
+  planReviewCreate, planReviewUpdate, reviewAverage, reviewMonthOptions,
   type ReviewCard, type ReviewMonthOption, type ReviewOpError,
 } from "./reviews";
+import type {
+  ReviewComposerData, ReviewComposerMonth, ReviewComposerParent, ReviewHistoryEntry,
+} from "./review-report";
 import type { ReviewCreateBody, ReviewUpdateBody } from "./schemas";
 import type { AttendanceRecord, Homework, Klass, Lesson, Parent, Review, Student } from "./types";
 
@@ -158,6 +161,11 @@ export type ReviewOpResult =
 
 export type StudentReviewsResult =
   | { ok: true; payload: StudentReviewsPayload }
+  | { ok: false; reason: ReviewOpError };
+
+/** The dedicated composer's read, in either mode. */
+export type ReviewComposerResult =
+  | { ok: true; payload: ReviewComposerData }
   | { ok: false; reason: ReviewOpError };
 
 /** Shape one stored review for the wire, deriving its average. */
@@ -343,6 +351,190 @@ async function studentMonthMetrics(
     attendance: studentAttendanceRate(studentId, month, { lessons, attendance }),
     homework: studentHomeworkCompletion(studentId, month, { homework }),
   }));
+}
+
+/* --------------------------------------------------- the dedicated composer */
+
+/** The composer's read, for Create.
+ *
+ * ONE ROUND TRIP, AND IT WRITES NOTHING. Everything the dedicated Create page
+ * needs arrives here: the student, the parent the report is addressed to, the
+ * twelve selectable months with which of them are already taken, the Attendance
+ * and Homework figures for EACH of those months, and this student's own review
+ * history as month + ratings + comment.
+ *
+ * WHY ALL TWELVE MONTHS' METRICS. A create previews before it persists, so
+ * changing the month has to change the derived figures the preview shows — and
+ * a request per month change would put a network round trip behind a chip tap.
+ * Twelve months of two small metric objects is about a kilobyte, and
+ * `studentMonthMetrics` already reads each collection once and maps over the
+ * months it is given, so twelve months cost the same four reads that one does.
+ *
+ * NO REVIEW ID IS REQUIRED, because there is no review yet. That is the whole
+ * reason this is not a read of a record.
+ *
+ * ELIGIBILITY IS DECIDED HERE, NOT TRUSTED FROM THE CLIENT. An Archived student
+ * is refused with the same reason the create endpoint gives, so a page opened
+ * from a stale card cannot show a form the API would refuse to save. A student
+ * who does not resolve is `student_not_found`. */
+export async function getReviewComposerForStudent(studentId: string): Promise<ReviewComposerResult> {
+  await dbConnect();
+
+  const student = await StudentModel.findOne({ id: studentId }).select(clean).lean<Student>();
+  if (!student) return { ok: false, reason: "student_not_found" };
+  if (!canReviewStudent(student)) return { ok: false, reason: "student_not_eligible" };
+
+  return { ok: true, payload: await composerFor(student, null) };
+}
+
+/** The composer's read, for Edit — addressed by REVIEW id.
+ *
+ * GUARDED BY `loadInteractable`, the same gate PATCH passes through, so this
+ * read can disclose no more than the write can: a review that does not exist and
+ * a review left behind by a deleted student are one answer, `not_found`. No
+ * deleted student's id reaches the wire, and no distinct reason advertises that
+ * a ghost record is there.
+ *
+ * DELIBERATELY NOT A GENERIC `GET /api/reviews/:id`. What comes back is the
+ * composer's model — the student, the parent, the months, the metrics, the
+ * history — not the stored document, and the route that serves it is
+ * `/api/reviews/:id/report`.
+ *
+ * AN ARCHIVED STUDENT'S REVIEW IS READABLE AND EDITABLE. `canReviewStudent`
+ * gates writing a NEW review and is not consulted here: this record describes a
+ * month that happened, and archiving the student afterwards does not make it
+ * uncorrectable. */
+export async function getReviewComposerForReview(reviewId: string): Promise<ReviewComposerResult> {
+  await dbConnect();
+
+  const loaded = await loadInteractable(reviewId);
+  if (!loaded.ok) return { ok: false, reason: loaded.reason };
+
+  const student = await StudentModel.findOne({ id: loaded.doc.studentId }).select(clean).lean<Student>();
+  /* `loadInteractable` already established that the student resolves; this is
+   * the same fact read again for its fields, and it fails closed — with the same
+   * undifferentiated `not_found` — if it has changed underneath us. */
+  if (!student) return { ok: false, reason: "not_found" };
+
+  return { ok: true, payload: await composerFor(student, loaded.doc) };
+}
+
+/** Both modes, assembled once.
+ *
+ * ONE FUNCTION SO THE TWO SURFACES CANNOT DRIFT. Create and Edit are the same
+ * product surface; if they were shaped by two builders they would eventually
+ * disagree about what a month option is or which history a comparison searches.
+ * The mode changes three things and nothing else — which months are offered,
+ * which month is current, and whether that month may move.
+ *
+ * THE MONTH LISTS DIFFER BY MODE, ON PURPOSE:
+ *
+ *  - CREATE offers exactly the twelve-month window. A thirteenth month is not
+ *    invented, and a month older than the window is not offered, because a
+ *    create for one would be refused (`isSelectableMonth`).
+ *  - EDIT offers that window PLUS any month this student already has a review
+ *    for, so the chips cover the whole history and — critically — so a
+ *    historical review being corrected always finds its own month in the list.
+ *    Nothing there is selectable; the chips navigate between existing reviews.
+ *
+ * NO WRITE OF ANY KIND, and no other domain's write path is touched: this reads
+ * Students, Parents, Reviews, and — through `studentMonthMetrics` — Classes,
+ * Lessons, Attendance and Homework. It advances no lifecycle, reconciles
+ * nothing, generates nothing and calls no Dashboard. */
+async function composerFor(student: Student, review: Review | null): Promise<ReviewComposerData> {
+  const reviews = await ReviewModel.find({ studentId: student.id }).select(clean).lean<Review[]>();
+  const history = buildReviewHistory(reviews, student.id); // newest first
+
+  /* The parent is read for its NAME, not merely for its existence — the report
+   * is addressed to a family. A `parentId` that matches no document yields null
+   * and `parentLinked: false`, which is the honest answer and the one
+   * PROJECT_RULES requires reviews to state clearly. Nothing is repaired. */
+  const parentDoc = student.parentId
+    ? await ParentModel.findOne({ id: student.parentId })
+        .select("id name relationship -_id")
+        .lean<Pick<Parent, "id" | "name" | "relationship">>()
+    : null;
+  const parentLinked = isParentLinked(student, new Set(parentDoc ? [parentDoc.id] : []));
+  const parent: ReviewComposerParent | null = parentDoc && parentLinked
+    ? { name: parentDoc.name, relationship: parentDoc.relationship ?? "" }
+    : null;
+
+  /* Which review, if any, holds each month — built once, so the option list does
+   * not search the history per month. */
+  const reviewByMonth = new Map(history.map((r) => [r.month, r]));
+
+  const windowMonths = reviewMonthOptions(CURRENT_MONTH, history.map((r) => r.month));
+  const inWindow = new Set(windowMonths.map((m) => m.month));
+  /* Edit only: the months this student has a review for that fall OUTSIDE the
+   * twelve-month create window. Newest first, like everything else here. */
+  const olderMonths = review === null
+    ? []
+    : [...new Set(history.map((r) => r.month))].filter((m) => !inWindow.has(m)).sort().reverse();
+
+  const monthKeys = [...windowMonths.map((m) => m.month), ...olderMonths];
+  const metrics = await studentMonthMetrics(student.id, monthKeys);
+  const metricsByMonth = new Map(metrics.map((m) => [m.month, m]));
+
+  const options: ReviewComposerMonth[] = monthKeys.map((month) => {
+    const own = reviewByMonth.get(month) ?? null;
+    const m = metricsByMonth.get(month);
+    return {
+      month,
+      taken: own !== null,
+      reviewId: own ? own.id : null,
+      /* `studentMonthMetrics` returns one entry per month it was given, in the
+       * order it was given, so a lookup here always hits. The fallbacks are the
+       * empty-denominator shape — pct `null`, which every consumer renders as
+       * "No data" — so an impossible miss still cannot invent a 0%. */
+      attendance: m?.attendance ?? { attended: 0, total: 0, pct: null, registersTaken: 0, lessonsCompleted: 0 },
+      homework: m?.homework ?? { done: 0, total: 0, pct: null },
+    };
+  });
+
+  const entries: ReviewHistoryEntry[] = history.map((r) => ({
+    month: r.month, skills: r.skills, comment: r.comment ?? "",
+  }));
+
+  return {
+    mode: review === null ? "create" : "edit",
+    student: {
+      id: student.id,
+      name: student.name,
+      initials: student.initials,
+      color: student.avatarColor,
+      avatar: student.avatar,
+      gradeLabel: student.gradeLabel,
+      status: student.status,
+    },
+    parent,
+    parentLinked,
+    month: {
+      /* CREATE defaults to the newest month with no review yet, and to `null`
+       * when all twelve are taken — which is how the page knows there is no
+       * create left to make. The rule is `firstUntakenMonth` in the pure domain,
+       * so this server-side default and the drawer's client-side one cannot
+       * disagree. EDIT is simply the record's own month. */
+      current: review === null ? firstUntakenMonth(options) : review.month,
+      options,
+      immutable: review !== null,
+    },
+    review: {
+      id: review ? review.id : null,
+      skills: review ? review.skills : {},
+      comment: review ? review.comment ?? "" : "",
+      strengths: review ? review.strengths ?? "" : "",
+      improvements: review ? review.improvements ?? "" : "",
+      goals: review ? review.goals ?? "" : "",
+      parentNotes: review ? review.parentNotes ?? "" : "",
+      average: review ? reviewAverage(review.skills) : 0,
+    },
+    history: entries,
+    appMonth: CURRENT_MONTH,
+    /* The application date, for the generated document's own "generated on"
+     * line. It is a property of THE DOCUMENT: no Review stores it, and nothing
+     * in this module writes it anywhere. */
+    appDate: TODAY_ISO,
+  };
 }
 
 /* ------------------------------------------------------------------- create */

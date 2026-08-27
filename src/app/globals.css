@@ -569,6 +569,344 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   [data-theme].print-report .report-sheet{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;margin:0 !important;border:none !important;box-shadow:none !important;border-radius:0 !important}
 }
 
+/* ==========================================================================
+   The dedicated Review composer  (Gate 4.4D)
+   ==========================================================================
+   Two surfaces live here: the DOCUMENT (`.report-sheet` and its blocks), which
+   is the monthly report and must read the same under any theme and on paper,
+   and the PAGE (`.rvc-*`), which is the split editor/preview composer.
+
+   Everything below is layout and palette scoping. No colour, radius, shadow or
+   type scale is invented: the document values are the comp's own report-sheet
+   figures, and the page reuses the app's existing tokens.
+
+   ---- The document is light-locked -----------------------------------------
+   A report is printed and handed to a family, so it is a white sheet with dark
+   ink in every theme — but the components inside it (the skill radar, the
+   performance colours) are written against the app's tokens, which under a dark
+   theme resolve to values that are invisible on white.
+
+   Rather than teach every one of those components about a "document mode", the
+   SHEET redeclares the tokens. Custom properties inherit from the nearest
+   declaring ancestor, so everything inside gets the light-document palette and
+   nothing outside is affected. One rule, no component changes, and it holds for
+   the screen preview, the mobile overlay and Gate 4.4E's print alike. */
+.report-sheet{
+  --bg:#f7f7f8;--card:#ffffff;--card-2:#fafafa;
+  --fg:#18181b;--fg-2:#3f3f46;--muted:#71717a;--muted-2:#a1a1aa;
+  --border:#e8e8ec;--border-2:#efeff1;--hover:#f4f4f5;--primary-fg:#ffffff;
+  --green:#16a34a;--green-soft:#f0fdf4;--amber:#d97706;--amber-soft:#fffbeb;
+  --sky:#0284c7;--sky-soft:#f0f9ff;
+  background:#ffffff;color:#18181b;
+  border:1px solid var(--border);border-radius:12px;
+  padding:36px 40px;max-width:760px;margin:0 auto;box-shadow:var(--sh);
+}
+/* The accent is the one token left inheriting, so an accent PREFERENCE still
+   brands the document — except under a dark theme, whose accent is lightened for
+   a dark background and would be washed out on white. There it is pinned to the
+   light default. */
+[data-theme="dark"] .report-sheet{--primary:#d42525;--accent:#d14242;--accent-soft:#fdecec}
+
+/* The comp's own report header and footer geometry. The 2px rule is the sheet's
+   masthead; the footer is the neutral one — no author is named anywhere,
+   because nothing in this data model records who wrote a review. */
+.report-sheet .rp-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+  border-bottom:2px solid var(--accent);padding-bottom:14px;margin-bottom:22px;
+}
+.report-sheet .rp-foot{
+  border-top:1px solid var(--border);margin-top:26px;padding-top:13px;
+  font-size:11px;color:var(--muted-2);
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+}
+/* A sheet narrower than a phone still has to hold a document. Below the phone
+   breakpoint the generous print padding is what would otherwise squeeze the
+   content column to nothing. */
+@media (max-width:620px){
+  .report-sheet{padding:22px 18px !important;border-radius:10px !important}
+}
+
+/* ---- The composer page ----------------------------------------------------
+   The page bleeds to the edges of the content column so the split's divider and
+   the sticky header run the full width, the way the reference draws them. The
+   three margins mirror `.app-main`'s three paddings exactly and are declared in
+   the same media blocks, so the two cannot drift. */
+.rvc{margin:-28px -32px -48px}
+
+/* ---- The composer header --------------------------------------------------
+   Sticky BENEATH the app header (60px, z-index 20), at a lower z-index so the
+   shell always wins — and BELOW the confirm dialog's 90/91, which is what keeps
+   an unsaved-changes prompt a modal layer over this row rather than something
+   that could ever push Back or the student's name aside.
+
+   The row is: Back | avatar + identity | actions. Human verification found the
+   identity squeezed to nothing as the window narrowed, because all three were
+   competing for one line. Below 768px it is two rows instead — see the phone
+   block further down — and the identity gets a line of its own. */
+.rvc-head{
+  position:sticky;top:60px;z-index:15;
+  min-height:60px;padding:11px 22px;
+  background:var(--bg);border-bottom:1px solid var(--border);
+}
+.rvc-head-nav{display:flex;align-items:center;gap:14px;min-width:0}
+/* The identity is the FLEXIBLE child: the actions and Back are fixed-size, so
+   what is left over belongs to the student's name. */
+.rvc-head-id{display:flex;align-items:center;gap:11px;flex:1;min-width:0}
+/* The text column, not the avatar, is what absorbs a narrow row: `min-width:0`
+   is what lets the name ellipsis instead of forcing the row wider than the
+   viewport, and `flex:1` is what makes it the child that gives way. */
+.rvc-id-text{flex:1;min-width:0}
+.rvc-head-actions{display:flex;align-items:center;gap:8px;flex:none}
+.rvc-id-name{
+  font-size:14.5px;font-weight:600;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rvc-id-grade,.rvc-id-period{
+  font-size:12px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* One context line at a time: the grade above 768px, the review's month below
+   it (see the phone block) — where the month matters more than the school and
+   the grade would only compete with the name for room. */
+.rvc-id-period{display:none}
+.rvc-dirty{font-size:12px;font-weight:600;color:var(--amber);white-space:nowrap}
+
+/* ==========================================================================
+   ACTION-REGION OWNERSHIP — the complementary pair
+   ==========================================================================
+   WHAT WENT WRONG, TWICE. The Review actions were rendered in both the header
+   and the phone's bottom bar, and the header copies were tagged with a class
+   that a media query set to `display:none`. In the browser they never went
+   away: `primaryBtn` and `ghostBtn` in review-composer.tsx carry
+   `display:"inline-flex"` as an INLINE style, and an inline declaration
+   outranks any stylesheet rule that is not `!important`. `.btn-primary` and
+   `.btn-ghost` declare no display of their own, so there was nothing else in
+   the cascade to lose to. The rules existed, matched their elements, and were
+   overridden — which is exactly what a source-scanning test cannot see. View
+   showed `Edit review` in the header AND in the footer at the same time.
+
+   WHAT FIXES IT. Visibility is no longer a property of a button. Each copy is
+   wrapped in a plain element that carries NO inline style — so a stylesheet
+   rule is uncontested — and the two wrappers are switched here, as a pair,
+   in one place:
+
+     > 620px   desktop region shown   ·   mobile region hidden
+     <= 620px  desktop region hidden  ·   mobile region shown
+
+   Both halves are stated together so source order cannot produce a half-state,
+   and 620px is the ONLY line: there is no band where the header owns some
+   actions and the bar owns others. "Both visible" is unreachable, not merely
+   unlikely.
+
+   Anything added to either region inherits the switch for free, and nothing
+   inside a region needs to know a breakpoint exists. */
+.rvc-actions-desktop{display:flex;align-items:center;gap:8px;flex:none;min-width:0}
+
+/* The mobile region is the sticky bar. Same construction as the Attendance
+   register's save bar: it sits on the page's own bottom edge, blurs what is
+   behind it and keeps a 44px target. It is `sticky` rather than `fixed`, so it
+   holds its own place at the end of the document and the last field scrolls
+   CLEAR of it instead of under it, and its bottom padding clears the device
+   safe-area inset so the action is never behind a home indicator. */
+.rvc-actions-mobile{
+  display:none;align-items:center;flex-wrap:wrap;gap:12px;
+  position:sticky;bottom:0;z-index:16;
+  padding:12px 14px;
+  padding-bottom:calc(12px + env(safe-area-inset-bottom,0px));
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(8px);border-top:1px solid var(--border);
+}
+
+@media (max-width:620px){
+  .rvc-actions-desktop{display:none}
+  .rvc-actions-mobile{display:flex}
+}
+
+/* ---- Desktop: the reference's split ---------------------------------------
+   Two equal columns, both `minmax(0,...)` so a wide child pays for itself
+   instead of pushing the page sideways. The divider is the left pane's own
+   border, so there is no third element to keep in step. */
+.rvc-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+.rvc-editor{min-width:0;padding:22px clamp(16px,3vw,40px) 56px;border-right:1px solid var(--border)}
+.rvc-editor-inner{max-width:620px;margin:0 auto;min-width:0}
+/* ---- The month field -------------------------------------------------------
+   Capped on a roomy screen, where a full-width month picker would be a very wide
+   control holding one short value. On a phone the cap is dropped entirely (see
+   the phone block) so the trigger is the width of the form it sits in rather
+   than a narrow control floating inside it — which is what human verification
+   found. The Select's own trigger is already width:100% of this wrapper, and its
+   listbox is positioned left:0/right:0 against it, so both follow. */
+.rvc-month{max-width:320px;min-width:0}
+.rvc-preview{min-width:0;padding:22px clamp(16px,2.5vw,32px) 56px}
+
+/* The preview holds still while the editor scrolls — which is what makes it a
+   live preview rather than a second thing to scroll to. It sticks below the app
+   header AND this page's own header (60 + 60), and it scrolls internally when a
+   report is taller than what is left of the viewport. */
+@media (min-width:1100px){
+  .rvc-preview{
+    position:sticky;top:120px;
+    max-height:calc(100vh - 140px);overflow-y:auto;
+  }
+  /* Above the breakpoint the preview is always on screen, so the control that
+     reveals it does not exist. Stated as its own min-width query rather than as
+     a default a narrower rule overrides, so neither shape depends on source
+     order to win — the same construction the header's search control uses. */
+  .rvc-preview-btn{display:none !important}
+}
+
+/* ---- Tablet: one column, preview beneath ----------------------------------
+   An A4 document and a form cannot share 700px without both becoming unusable,
+   so the report goes below the editor rather than beside it. No tab system and
+   no second interaction: the page simply stacks, which is what the content
+   column already does everywhere else at this width. */
+@media (max-width:1099px){
+  .rvc{margin:-20px -18px -40px}
+  .rvc-split{grid-template-columns:minmax(0,1fr)}
+  .rvc-editor{border-right:none;border-bottom:1px solid var(--border);padding-bottom:28px}
+  .rvc-editor-inner{max-width:none}
+  .rvc-preview{position:static;max-height:none;overflow:visible}
+  /* 768–1099: Back, the avatar, the name and the review action all stay. The
+     SECONDARY context is what gives way — it is the least load-bearing thing in
+     the row, and keeping it was what squeezed the name. */
+  .rvc-head{padding:11px 16px}
+  .rvc-head-nav{gap:10px}
+  .rvc-id-grade{font-size:11.5px;opacity:.85}
+}
+
+/* ---- Phone: the editor is the page, the preview is an overlay -------------
+   Below 620px the inline preview is removed from the document entirely — not
+   hidden beside it — because an A4 sheet in a 375px column is a horizontal
+   scrollbar waiting to happen. The report opens in the full-screen overlay
+   instead, which is the surface the comp already defines and the one the print
+   rules above already know how to unwrap. */
+/* ---- Phone header: identity gets its own row -------------------------------
+   768px, not 620px — the header runs out of room well before the content column
+   does, and two components with different content have no reason to change
+   shape at the same width (the same argument the app header makes for its own
+   1100/768 pair).
+
+   Back, Preview, the student's identity and Save cannot share one narrow row
+   without all four becoming unreadable. So: row one is navigation and actions,
+   row two is who this review is about, and the primary action moves to the
+   bottom of the screen where a thumb is.
+
+   THE AVATAR GOES, NOT THE NAME. A 34px tint tells a teacher nothing the name
+   does not; a truncated name tells them nothing at all. */
+@media (max-width:767px){
+  .rvc-head{padding:10px 14px}
+  .rvc-head-nav{flex-wrap:wrap;gap:8px}
+  .rvc-head-id{
+    order:2;flex:1 0 100%;
+    /* THE IDENTITY GETS ITS OWN ROW, so the avatar no longer competes with Back
+       and the actions for width — and it keeps a real gap. Human verification
+       found the avatar and the name packed against each other here; 10px is the
+       identity gap this app uses everywhere else at this size. */
+    gap:10px;
+  }
+  .rvc-id-grade{display:none}
+  .rvc-id-period{display:block}
+  .rvc-head-actions{order:1;margin-left:auto}
+  /* BACK becomes its icon; PREVIEW KEEPS ITS WORDS.
+     A back chevron is a universal control and reads on its own. Preview is not:
+     below 1100 the report is the one thing on this screen a teacher cannot see,
+     and an unlabelled eye asks them to guess which of two icons opens it. So it
+     stays icon + label at every width where it exists — it is only ever absent
+     above 1100, where the report is already on screen beside the form.
+     It keeps `btn-ghost` and the row's own 36px target: a secondary control, at
+     a tappable size, never competing with the stage's primary action. */
+  .rvc-back .rvc-btn-label{display:none}
+  .rvc-back{padding:0 10px !important}
+  /* NO ACTION RULES LIVE HERE ANY MORE. This band used to hide the header's
+     save per stage and switch the bar on for two of the three, which is what
+     split ownership across 620/767 and made a half-state possible at all. Both
+     rules were also inert — see the cascade note above the region pair. Action
+     ownership is now decided in exactly one place, at 620px, and this block
+     shapes the HEADER ROW and nothing else. */
+}
+
+@media (max-width:620px){
+  .rvc{margin:-16px -14px -40px}
+  .rvc-preview{display:none !important}
+
+  /* ---- The top row is NAVIGATION, and only navigation --------------------
+     Back and Preview. Preview earns its place there because it changes
+     PRESENTATION rather than persistence — it opens the report and writes
+     nothing. Every action that writes is in .rvc-actions-desktop, which the
+     region pair above switches off at this width in the same rule that switches
+     the bar on. There is nothing to hide here. */
+
+  /* ---- The student gets a block, not a slot ------------------------------
+     THE AVATAR GOES, NOT THE NAME. A 34px tint tells a teacher nothing the name
+     does not, and at this width keeping both is what crushed the name — so the
+     avatar is what is paid. Nothing shrinks a touch target to buy the room.
+
+     TWO THINGS ABOUT THIS ONE RULE.
+
+     It addresses the avatar BY NAME. The previous selector was
+     `.rvc-head-id > *:first-child` — "whatever happens to be first", which is a
+     fact about DOM order rather than about the avatar, and which silently
+     becomes wrong the moment anything is inserted before it.
+
+     And it needs `!important`, which is load-bearing rather than lazy: the
+     Avatar component's root carries `display:flex` as an INLINE style, and an
+     inline declaration beats a plain stylesheet `display:none`. Without it this
+     rule matches the right element and still loses — which is precisely what
+     the browser showed. `display:none` also removes the disc from the flex
+     layout entirely, so no gap, margin or reserved width survives it.
+
+     With the row to itself, no avatar beside it and no button to collide with,
+     the name no longer has to ellipsis to survive: it WRAPS. Truncation here is
+     destructive — two students can truncate to the same string — and a
+     genuinely extremely long name costs a second line rather than its identity.
+     The identity block keeps the base rule's min-width:0, so it can never force
+     the header wider than the viewport. */
+  .rvc-student-avatar{display:none !important}
+  /* Belt and braces: with the only other child gone the gap is moot, but stating
+     it means no space can be reserved for something that is not there. */
+  .rvc-head-id{gap:0}
+  .rvc-id-name{
+    white-space:normal;overflow:visible;text-overflow:clip;
+    overflow-wrap:anywhere;line-height:1.35;
+  }
+  .rvc-id-period{
+    white-space:normal;overflow:visible;text-overflow:clip;
+    overflow-wrap:anywhere;line-height:1.4;margin-top:1px;
+  }
+
+  /* The month field fills the form. A 320px cap inside a 347px column reads as a
+     control that failed to lay out rather than one that was designed. */
+  .rvc-month{max-width:none}
+
+  /* The bar itself is switched on by the region pair above, at every stage —
+     View included, which is what makes the persisted review read as a document
+     with one way to start changing it.
+
+     Edit shows two actions. The unsaved marker takes a line of its own above
+     them so it can never squeeze Cancel editing and Save changes into each
+     other at 375px; Cancel keeps its ghost emphasis and its own width, and Save
+     takes the rest of the row (flex:1, in the component). */
+  .rvc-actions-mobile .rvc-dirty{flex:1 0 100%}
+  /* AND THE PAGE MAKES ROOM. The bar is sticky, so it holds its own place at the
+     end of the document; this bottom padding is what keeps the last input clear
+     of its top edge while the page is still scrolling — 76px is the bar's own
+     height plus the gap the form uses between fields. */
+  .rvc-editor{padding:18px 14px calc(76px + env(safe-area-inset-bottom,0px));border-bottom:none}
+}
+
+/* The full-screen report overlay. Fixed over everything, its own scroll, and no
+   scrim — it REPLACES the page rather than floating above a dimmed one, because
+   there is nothing behind it to keep in view. Above the drawer's 80/81 and below
+   the confirm dialog's 90/91, so a discard prompt still lands on top. */
+.review-overlay{
+  position:fixed;inset:0;z-index:85;
+  background:var(--bg);display:flex;flex-direction:column;
+  animation:overlayFade .2s ease both;
+}
+.review-overlay .rvc-head{position:static;top:auto}
+.report-body{flex:1;min-height:0;display:flex;flex-direction:column}
+.report-scroll{flex:1;min-height:0;overflow-y:auto;padding:18px 14px 40px;background:var(--bg)}
+
 /* ---- Interaction-state helpers ----
    The design comp expresses focus/hover via runtime-only style-focus / style-hover
    attributes. These classes reproduce those exact states for the React port so we

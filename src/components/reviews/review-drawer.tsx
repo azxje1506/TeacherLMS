@@ -29,6 +29,20 @@
  * which names six fields and no others, and the server, which refuses any key
  * outside them.
  *
+ * THE FIELDS ARE NOT DRAWN HERE ANY MORE. Gate 4.4D added a dedicated full-page
+ * composer for Create and Edit, and rather than let two surfaces hold two copies
+ * of the same ten radiogroups and five textareas, they were extracted whole into
+ * review-form-fields.tsx and BOTH render that. Nothing about this panel changed:
+ * the same fields, the same names, the same placeholders, the same keyboard
+ * behaviour, the same "drawer" geometry. What changed is that there is now one
+ * of them.
+ *
+ * THIS DRAWER HAS NO REMAINING CONSUMER. Gate 4.4D routes the Reviews index, the
+ * Student Profile and the review timeline to the dedicated composer, so nothing
+ * opens this panel any more. It is retained, unrouted, for Gate 4.5 to remove —
+ * deleting a working component in the same gate that replaces it would put two
+ * risks in one change.
+ *
  * THE CLIENT NEVER COMPUTES A MONTH. The twelve selectable months and which of
  * them are taken arrive from the server (`GET /api/reviews/student/:id`). This
  * component picks one of them or none; it holds no clock, and it cannot offer a
@@ -42,23 +56,15 @@ import { useSettings } from "@/lib/settings-context";
 import { Drawer } from "@/components/ui/drawer";
 import { Select } from "@/components/ui/select";
 import { Avatar } from "@/components/students/student-ui";
-import { ratingSegmentStyle } from "@/components/reviews/reviews-ui";
+import { ReviewProseFields, ReviewSkillFields } from "@/components/reviews/review-form-fields";
 import {
   emptyValues, firstAvailableMonth, hasAvailableMonth, toCreateBody, toUpdateBody, valuesFrom,
   type ReviewFormValues,
 } from "@/components/reviews/form";
-import { REVIEW_RATING_MAX, REVIEW_RATING_MIN, SKILL_KEYS, SKILL_LABEL } from "@/lib/reviews";
 import { reviewCreateSchema } from "@/lib/schemas";
 import type { ReviewMonthOption } from "@/lib/reviews";
 import type { ReviewDetail } from "@/lib/reviews-service";
 import type { ReviewCreateBody, ReviewUpdateBody } from "@/lib/schemas";
-
-/** The five points of the scale, smallest first. Derived from the domain's own
- * bounds so the control cannot offer a rating the schema would refuse. */
-const RATINGS = Array.from(
-  { length: REVIEW_RATING_MAX - REVIEW_RATING_MIN + 1 },
-  (_, i) => REVIEW_RATING_MIN + i
-);
 
 /** Edit mode offers no months at all — one shared empty array, so the reference
  * is stable across renders. */
@@ -73,13 +79,6 @@ const field = (invalid: boolean): React.CSSProperties => ({
   borderRadius: 9, background: "var(--card)", color: "var(--fg)",
   fontSize: 13, fontFamily: "inherit", outline: "none",
 });
-
-/* Derived from `field`, exactly as the student, parent, class and homework
- * drawers derive theirs, so a change to the family reaches the textarea too. */
-const areaStyle: React.CSSProperties = {
-  ...field(false), height: "auto", minHeight: 76, padding: "10px 12px",
-  lineHeight: 1.5, resize: "vertical",
-};
 
 const labelStyle: React.CSSProperties = { display: "block", fontSize: 12.5, fontWeight: 500, marginBottom: 6 };
 const errStyle: React.CSSProperties = { fontSize: 11.5, color: "var(--accent)", marginTop: 5 };
@@ -143,7 +142,7 @@ export function ReviewDrawer(props: ReviewDrawerProps) {
    * written, which it attaches to `comment`. It suits an edit too: the student
    * and month are carried from the record, so they satisfy it without being
    * editable, and `toUpdateBody` is what keeps them off the wire. */
-  const { register, control, handleSubmit, reset, setValue, getValues, formState: { errors, isDirty } } =
+  const { register, control, handleSubmit, reset, setValue, formState: { errors, isDirty } } =
     useForm<ReviewFormValues>({
       resolver: zodResolver(reviewCreateSchema) as never,
       defaultValues: emptyValues(student.id, ""),
@@ -171,8 +170,6 @@ export function ReviewDrawer(props: ReviewDrawerProps) {
      * reset a form somebody has already started typing into. */
     if (next) reset(emptyValues(student.id, next));
   }, [open, editing, month, isDirty, months, reset, student.id]);
-
-  const skills = useWatch({ control, name: "skills" }) ?? getValues("skills");
 
   /* A create needs a month it is allowed to write. While the months are loading
    * there is nothing to save yet; once they have landed, a student whose last
@@ -262,116 +259,23 @@ export function ReviewDrawer(props: ReviewDrawerProps) {
           </div>
         )}
 
-        {/* The ten skills, in canonical SKILLS order. */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {SKILL_KEYS.map((key) => {
-            const label = t(SKILL_LABEL[key] ?? key);
-            const value = skills?.[key];
-            return (
-              <div key={key}>
-                <label style={labelStyle} id={`rv-skill-${key}`}>{label}</label>
-                <div
-                  role="radiogroup"
-                  aria-labelledby={`rv-skill-${key}`}
-                  style={{ display: "flex", gap: 6, minWidth: 0 }}
-                >
-                  {RATINGS.map((rating) => {
-                    const active = value === rating;
-                    return (
-                      <button
-                        key={rating}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        aria-label={`${label} ${rating}`}
-                        /* Roving tabindex: one stop per skill, then the arrow
-                         * keys a radiogroup is expected to answer to. */
-                        tabIndex={active ? 0 : -1}
-                        onKeyDown={(e) => {
-                          const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1
-                            : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
-                          if (step === 0) return;
-                          e.preventDefault();
-                          const next = Math.min(
-                            REVIEW_RATING_MAX,
-                            Math.max(REVIEW_RATING_MIN, (value ?? rating) + step)
-                          );
-                          setValue(`skills.${key}`, next, { shouldValidate: true, shouldDirty: true });
-                          (e.currentTarget.parentElement?.children[next - REVIEW_RATING_MIN] as HTMLElement)?.focus();
-                        }}
-                        onClick={() => setValue(`skills.${key}`, rating, { shouldValidate: true, shouldDirty: true })}
-                        style={ratingSegmentStyle(rating, active)}
-                      >
-                        {rating}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Teacher comment. The group rule — at least one of comment, strengths,
-          * improvements or goals — reports here, on the first teacher-facing
-          * prose field, so one message is shown rather than four duplicates.
-          * None of the four carries a required marker, because none of them is
-          * individually required. */}
-        <div>
-          <label style={labelStyle} htmlFor="rv-comment">{t("Teacher comment")}</label>
-          <textarea
-            id="rv-comment"
-            className="ring"
-            placeholder={t("Write an overall reflection on the month…")}
-            style={{ ...areaStyle, borderColor: errors.comment ? "var(--accent)" : "var(--border)" }}
-            {...register("comment")}
-          />
-          {errors.comment && <div role="alert" style={errStyle}>{t(errors.comment.message ?? "")}</div>}
-        </div>
-
-        <div>
-          <label style={labelStyle} htmlFor="rv-strengths">{t("Strengths")}</label>
-          <textarea
-            id="rv-strengths"
-            className="ring"
-            placeholder={t("What is this student doing well?")}
-            style={areaStyle}
-            {...register("strengths")}
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle} htmlFor="rv-improvements">{t("Areas for improvement")}</label>
-          <textarea
-            id="rv-improvements"
-            className="ring"
-            placeholder={t("Where should we focus next?")}
-            style={areaStyle}
-            {...register("improvements")}
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle} htmlFor="rv-goals">{t("Learning goals")}</label>
-          <textarea
-            id="rv-goals"
-            className="ring"
-            placeholder={t("Goals for next month…")}
-            style={areaStyle}
-            {...register("goals")}
-          />
-        </div>
-
-        <div>
-          <label style={labelStyle} htmlFor="rv-parent-notes">{t("Parent notes")}</label>
-          <textarea
-            id="rv-parent-notes"
-            className="ring"
-            placeholder={t("A private note for the family…")}
-            style={areaStyle}
-            {...register("parentNotes")}
-          />
-        </div>
+        {/* The ten ratings and the five prose fields — ONE implementation,
+          * shared with the dedicated composer, in this panel's own geometry.
+          * The group prose rule reports inside ReviewProseFields, on `comment`. */}
+        <ReviewSkillFields
+          control={control}
+          register={register}
+          setValue={setValue}
+          errors={errors}
+          variant="drawer"
+        />
+        <ReviewProseFields
+          control={control}
+          register={register}
+          setValue={setValue}
+          errors={errors}
+          variant="drawer"
+        />
       </form>
     </Drawer>
   );

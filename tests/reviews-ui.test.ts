@@ -57,9 +57,17 @@ const TAB = code("src", "components", "reviews", "student-reviews.tsx");
 const PROFILE = code("src", "app", "(app)", "students", "[id]", "page.tsx");
 /** Gate 4.4C: the analytics charts. */
 const CHARTS = code("src", "components", "reviews", "charts.tsx");
+/** Gate 4.4D: the ten ratings and five prose boxes, extracted so the drawer and
+ * the dedicated composer render ONE implementation rather than two copies. */
+const FIELDS = code("src", "components", "reviews", "review-form-fields.tsx");
+/** Gate 4.4D: the dedicated full-page composer, and the report it previews. */
+const COMPOSER = code("src", "components", "reviews", "review-composer.tsx");
+const REPORT_VIEW = code("src", "components", "reviews", "monthly-review-report.tsx");
 const CLIENT_FILES: Array<[string, string]> = [
   ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER], ["student-reviews.tsx", TAB],
   ["charts.tsx", CHARTS], ["api.ts", API], ["form.ts", FORM], ["reviews-ui.ts", UI],
+  ["review-form-fields.tsx", FIELDS], ["review-composer.tsx", COMPOSER],
+  ["monthly-review-report.tsx", REPORT_VIEW],
 ];
 
 const DICT = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
@@ -280,7 +288,16 @@ describe("Review score — absence is not a low mark", () => {
   });
 
   it("22. perfLabel and perfColor are called in exactly one guarded place", () => {
-    for (const [name, src] of [["page.tsx", PAGE], ["review-drawer.tsx", DRAWER]] as const) {
+    /* GATE 4.4D WIDENED THE LOOP. Two more surfaces now show a score — the
+     * composer's summary card and the generated report — and neither may grade
+     * a number itself: the label and the colour arrive already resolved on the
+     * report DTO, which is what stops one screen from disagreeing with the
+     * document beside it about what a 3.1 means. */
+    for (const [name, src] of [
+      ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER],
+      ["review-composer.tsx", COMPOSER], ["monthly-review-report.tsx", REPORT_VIEW],
+      ["review-form-fields.tsx", FIELDS],
+    ] as const) {
       assert.ok(!src.includes("perfLabel"), `${name} must not call perfLabel directly`);
       assert.ok(!src.includes("perfColor"), `${name} must not call perfColor directly`);
     }
@@ -291,7 +308,14 @@ describe("Review score — absence is not a low mark", () => {
   });
 
   it("23. the rating control reuses the existing performance colours, defining none", () => {
-    assert.ok(UI.includes("perfColor(rating)"));
+    /* GATE 4.4D GAVE THE CONTROL A SECOND PRESENTATION, NOT A SECOND PALETTE.
+     * The composer's reference fills every segment up to the chosen rating
+     * rather than marking only the chosen one, so the colour is now taken from
+     * the CHOSEN value — which makes a filled run one colour instead of a
+     * gradient of five, and which in "select" mode is the same colour the helper
+     * produced before, because there a marked segment IS the chosen one. */
+    assert.ok(UI.includes("perfColor(chosen ?? rating)"));
+    assert.ok(UI.includes('export type RatingSegmentVariant = "select" | "fill";'));
     for (const threshold of ["4.5", "3.8", "3.0", "2.2"]) {
       assert.ok(!UI.includes(threshold), `reviews-ui.ts restates threshold ${threshold}`);
     }
@@ -304,9 +328,16 @@ describe("Review score — absence is not a low mark", () => {
   });
 
   it("24. colour is never the only signal of a selected rating", () => {
-    assert.ok(UI.includes("fontWeight: active ? 700 : 500"), "weight changes too");
-    assert.ok(UI.includes("border: `1px solid ${active ? color"), "the border changes too");
-    assert.ok(DRAWER.includes("aria-checked={active}"), "and the state is published to assistive tech");
+    assert.ok(UI.includes("fontWeight: on ? 700 : 500"), "weight changes too");
+    assert.ok(UI.includes("border: `1px solid ${on ? color"), "the border changes too");
+    assert.ok(FIELDS.includes("aria-checked={active}"), "and the state is published to assistive tech");
+    /* AND IT IS PUBLISHED THE SAME WAY IN BOTH VARIANTS. The fill variant paints
+     * the segments below the chosen one, but it does not CLAIM they are checked:
+     * a radiogroup has exactly one checked option, and assistive technology is
+     * told the same thing on the drawer and on the composer. */
+    assert.equal([...FIELDS.matchAll(/aria-checked=/g)].length, 1);
+    assert.ok(FIELDS.includes("const active = value === rating;"),
+      "checked is the chosen rating in both variants, never the filled run");
   });
 
   it("25. the count noun comes from the design's own dictionary entries", () => {
@@ -478,11 +509,17 @@ describe("Review copy — provenance", () => {
 
 describe("Review mutations — what they invalidate", () => {
   it("30. the Dashboard is marked stale WITHOUT being refetched", () => {
+    /* THE SURFACE MOVED IN GATE 4.4D, THE RULE DID NOT. Saving a review is the
+     * composer's job now — the index and the profile tab hold no mutation at all
+     * — so this is asserted where the write happens. */
     assert.ok(
-      /invalidateQueries\(\{\s*queryKey:\s*\["dashboard"\],\s*refetchType:\s*"none",?\s*\}\)/.test(PAGE),
+      /invalidateQueries\(\{\s*queryKey:\s*\["dashboard"\],\s*refetchType:\s*"none",?\s*\}\)/.test(COMPOSER),
       "GET /api/dashboard advances the lesson lifecycle and WRITES to Lessons — "
       + "a review must never trigger it"
     );
+    for (const [name, src] of [["page.tsx", PAGE], ["student-reviews.tsx", TAB]] as const) {
+      assert.ok(!src.includes("useMutation"), `${name} holds no write since Gate 4.4D`);
+    }
   });
 
   it("31. the Dashboard is never fetched from a Reviews surface", () => {
@@ -490,14 +527,33 @@ describe("Review mutations — what they invalidate", () => {
       assert.ok(!src.includes("/api/dashboard"), `${name} must not call the dashboard`);
       assert.ok(!src.includes("fetchDashboard"), name);
     }
-    // The only mention of the dashboard anywhere is the stale-marking key.
-    assert.equal([...PAGE.matchAll(/dashboard/g)].length, 1);
+    // The only mention of the dashboard anywhere is the composer's one
+    // stale-marking key — and the read-only surfaces mention it not at all.
+    assert.equal([...COMPOSER.matchAll(/dashboard/g)].length, 1);
+    assert.equal([...PAGE.matchAll(/dashboard/g)].length, 0);
+    assert.equal([...TAB.matchAll(/dashboard/g)].length, 0);
   });
 
   it("32. reviews are the only cache actually refreshed", () => {
-    const keys = [...PAGE.matchAll(/queryKey:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
+    const keys = [
+      ...PAGE.matchAll(/queryKey:\s*([^,\n}]+)/g),
+      ...TAB.matchAll(/queryKey:\s*([^,\n}]+)/g),
+      ...COMPOSER.matchAll(/queryKey:\s*([^,\n}]+)/g),
+      ...code("src", "app", "(app)", "reviews", "new", "page.tsx").matchAll(/queryKey:\s*([^,\n}]+)/g),
+      ...code("src", "app", "(app)", "reviews", "[reviewId]", "page.tsx").matchAll(/queryKey:\s*([^,\n}]+)/g),
+    ].map((m) => m[1].trim());
     const unique = [...new Set(keys)].sort();
-    assert.deepEqual(unique, ['["dashboard"]', "reviewKeys.all", "reviewKeys.list", "reviewKeys.student(studentId)"]);
+    /* Every one of these is a Reviews key, except the Dashboard's — which is
+     * only ever marked stale, never fetched (test 30). Both composer keys live
+     * UNDER ["reviews"], so `reviewKeys.all` refreshes them with one call. */
+    assert.deepEqual(unique, [
+      '["dashboard"]',
+      "reviewKeys.all",
+      "reviewKeys.composerForReview(reviewId)",
+      "reviewKeys.composerForStudent(studentId)",
+      "reviewKeys.list",
+      "reviewKeys.student(studentId)",
+    ]);
   });
 
   it("33. no unrelated domain is invalidated — a review changes none of them", () => {
@@ -510,15 +566,37 @@ describe("Review mutations — what they invalidate", () => {
   });
 
   it("34. a duplicate month refreshes the reviews caches and does not retry", () => {
-    assert.ok(PAGE.includes('e.code === "review_already_exists"'));
-    assert.ok(PAGE.includes("ReviewApiError"));
-    assert.ok(!/retry:/.test(PAGE), "no retry option — a refused create is answered once");
+    assert.ok(COMPOSER.includes('e.code === "review_already_exists"'));
+    assert.ok(COMPOSER.includes("ReviewApiError"));
+    assert.ok(!/retry:\s*\d|retry:\s*true/.test(COMPOSER),
+      "no retry option — a refused create is answered once");
+    /* The composer's two READS do set `retry: false`, which is the opposite
+     * concern: a 404 for a ghost review and a 422 for an archived student are
+     * final answers, and retrying them three times would delay the refusal the
+     * teacher needs to see. */
+    for (const route of [["new"], ["[reviewId]"]]) {
+      const src = code("src", "app", "(app)", "reviews", ...route, "page.tsx");
+      assert.ok(src.includes("retry: false"), `${route[0]} must not retry a refusal`);
+    }
   });
 
-  it("35. a successful create closes the drawer and says so with existing copy", () => {
-    assert.ok(PAGE.includes('toast(t("Review saved"))'));
-    assert.ok(PAGE.includes("setWritingFor(null)"));
-    assert.ok(!PAGE.includes("router.push"), "a save never navigates away");
+  it("35. a successful create lands on the persisted review, and an edit stays put", () => {
+    /* GATE 4.4D REPLACED THE DRAWER'S "close on save" WITH A ROUTE. A create now
+     * REPLACES itself with the record it produced — replace, not push, so Back
+     * cannot return to a create page that would offer to write the month that
+     * was just written — and an edit stays exactly where it is. Neither goes to
+     * the Dashboard. */
+    assert.equal([...COMPOSER.matchAll(/toast\(t\("Review saved"\)\)/g)].length, 2);
+    assert.ok(COMPOSER.includes("router.replace(`/reviews/${saved.id}`)"), "create lands on the record");
+    assert.ok(!COMPOSER.includes("router.push(`/reviews/${saved"), "and never pushes a duplicate");
+    assert.ok(!/\/dashboard"/.test(COMPOSER), "a save never navigates to the Dashboard");
+    /* The edit mutation's success handler resets the baseline and does nothing
+     * else — no navigation of any kind. */
+    const editSuccess = COMPOSER.slice(
+      COMPOSER.indexOf("const updateMutation"),
+      COMPOSER.indexOf("const saving =")
+    );
+    assert.ok(!editSuccess.includes("router."), "an edit stays on its own page");
   });
 });
 
@@ -541,14 +619,39 @@ describe("Reviews API client — what it can and cannot call", () => {
     }
   });
 
-  it("38. has no fetch-by-review-id function", () => {
+  it("38. has no generic fetch-by-review-id — the composer read is a guarded report", () => {
     assert.ok(!/fetchReview\b/.test(API), "GET /api/reviews/:id does not exist and must not be called");
     const gets = [...API.matchAll(/fetch\(`?\/api\/reviews([^`")]*)/g)].map((m) => m[1]);
     for (const suffix of gets) {
       assert.ok(
-        suffix === "" || suffix.startsWith("/student/") || suffix.startsWith("/${encodeURIComponent(id"),
+        suffix === ""
+        || suffix.startsWith("/student/")
+        || suffix.startsWith("/composer?studentId=")
+        /* Gate 4.4D: the Edit composer's read. The capture stops at the first
+         * `)`, so the whitelist names the prefix and the /report suffix is
+         * asserted separately below. */
+        || suffix.startsWith("/${encodeURIComponent(reviewId")
+        || suffix.startsWith("/${encodeURIComponent(id"),
         `unexpected reviews endpoint: ${suffix}`
       );
+    }
+    /* THE ONLY READ ADDRESSED BY REVIEW ID IS THE COMPOSED REPORT. It is NOT a
+     * raw read of the record: the route builds a read model, and it passes the
+     * same interactable guard PATCH does — so a review left behind by a deleted
+     * student answers 404 exactly as a missing one does, and no deleted
+     * student's id is disclosed by the difference between two messages. */
+    assert.ok(
+      API.includes("fetch(`/api/reviews/${encodeURIComponent(reviewId)}/report`)"),
+      "the edit read is the guarded report, not the stored document"
+    );
+    // And no route file anywhere declares a bare GET on /api/reviews/[id].
+    const byId = code("src", "app", "api", "reviews", "[id]", "route.ts");
+    assert.ok(!/export async function GET/.test(byId), "a raw read of Review storage must not exist");
+    const report = code("src", "app", "api", "reviews", "[id]", "report", "route.ts");
+    assert.ok(report.includes("await requireSession();"), "and the report read is authenticated");
+    assert.ok(report.includes("getReviewComposerForReview(id)"), "through the guarded service read");
+    for (const verb of ["POST", "PATCH", "PUT", "DELETE"]) {
+      assert.ok(!report.includes(`export async function ${verb}`), `the report read is read-only (${verb})`);
     }
   });
 
@@ -598,15 +701,37 @@ describe("The Reviews client holds no business logic", () => {
     assert.ok(PAGE.includes("reviewScore(c.latestAverage)"));
   });
 
-  it("44. the drawer's scale comes from the domain's own bounds", () => {
-    assert.ok(DRAWER.includes("REVIEW_RATING_MAX") && DRAWER.includes("REVIEW_RATING_MIN"));
-    assert.ok(!/\[1, ?2, ?3, ?4, ?5\]/.test(DRAWER), "the five points are derived, not retyped");
+  it("44. the rating scale comes from the domain's own bounds", () => {
+    assert.ok(FIELDS.includes("REVIEW_RATING_MAX") && FIELDS.includes("REVIEW_RATING_MIN"));
+    assert.ok(!/\[1, ?2, ?3, ?4, ?5\]/.test(FIELDS), "the five points are derived, not retyped");
+    // And neither surface keeps a scale of its own beside the shared one.
+    for (const [name, src] of [["review-drawer.tsx", DRAWER], ["review-composer.tsx", COMPOSER]] as const) {
+      assert.ok(!/const RATINGS =/.test(src), `${name} must not restate the scale`);
+    }
   });
 
   it("45. the ten skills are rendered from the canonical list, in canonical order", () => {
-    assert.ok(DRAWER.includes("SKILL_KEYS.map"));
-    assert.ok(DRAWER.includes("SKILL_LABEL["));
-    assert.ok(!/"listening"|"speaking"|"pronunciation"/.test(DRAWER), "no skill key is retyped");
+    assert.ok(FIELDS.includes("SKILL_KEYS.map"));
+    assert.ok(FIELDS.includes("SKILL_LABEL["));
+    for (const [name, src] of CLIENT_FILES) {
+      assert.ok(!/"listening"|"speaking"|"pronunciation"/.test(src), `${name} retypes a skill key`);
+    }
+  });
+
+  it("45b. there is exactly ONE implementation of the ten ratings and five prose boxes", () => {
+    /* THE POINT OF THE EXTRACTION. Gate 4.4D added a second surface that edits a
+     * review; without this there would now be two copies of the same controls —
+     * two places for a placeholder to drift and two keyboard implementations to
+     * keep in step. Both surfaces render the shared components and neither
+     * declares a field of its own. */
+    assert.equal([...FIELDS.matchAll(/<textarea/g)].length, 5, "five prose boxes, in one file");
+    assert.equal([...FIELDS.matchAll(/role="radio"/g)].length, 1, "one rating segment, mapped ten times");
+    for (const [name, src] of [["review-drawer.tsx", DRAWER], ["review-composer.tsx", COMPOSER]] as const) {
+      assert.ok(src.includes("<ReviewSkillFields"), `${name} renders the shared ratings`);
+      assert.ok(src.includes("<ReviewProseFields"), `${name} renders the shared prose fields`);
+      assert.ok(!src.includes("<textarea"), `${name} must not declare a field of its own`);
+      assert.ok(!src.includes('role="radio"'), `${name} must not declare a rating control of its own`);
+    }
   });
 });
 
@@ -615,10 +740,25 @@ describe("The Reviews client holds no business logic", () => {
  * ====================================================================== */
 
 describe("Gate 4.3 stays inside its phase", () => {
-  it("46. the index offers Create only — no edit entry point on a card", () => {
-    assert.ok(PAGE.includes("review={null}"), "the drawer is always opened in create mode");
+  it("46. the index offers Create, plus a way to READ the latest review — never Edit", () => {
+    /* SINCE GATE 4.4D THE CARD LINKS RATHER THAN OPENING A PANEL. The primary
+     * action carries the STUDENT id and can only ever start a create.
+     *
+     * THE REMEDIATION ADDED A SECOND ACTION, because a student with months of
+     * history was being offered nothing but "write another one". It opens the
+     * LATEST review — and it is deliberately not called Edit: what it opens is a
+     * saved record, which lands in View and is edited from there. */
+    assert.ok(PAGE.includes("href={`/reviews/new?studentId=${encodeURIComponent(c.studentId)}`}"));
+    assert.ok(PAGE.includes("href={`/reviews/${encodeURIComponent(c.latestReviewId)}`}"));
+    assert.ok(PAGE.includes('t("View latest review")'));
+    assert.ok(!/t\("Edit"\)/.test(PAGE), "no card offers Edit");
     assert.ok(!PAGE.includes("onUpdate"), "no update is reachable from a card");
     assert.ok(!PAGE.includes("updateReview"), "the page imports no update client");
+
+    /* AND ONLY WHEN THERE IS ONE TO OPEN. A student nobody has assessed has no
+     * `latestReviewId`, so the action is absent rather than pointing at a record
+     * that does not exist. */
+    assert.ok(PAGE.includes("{c.latestReviewId && ("));
   });
 
   it("47. the drawer nevertheless supports Edit, ready for the profile timeline", () => {
@@ -708,7 +848,7 @@ describe("Reviews — the mobile geometry contract", () => {
   });
 
   it("57. no drawer field states a width of its own", () => {
-    assert.match(DRAWER, /width: "100%", minWidth: 0, maxWidth: "100%"/, "the field family");
+    assert.match(FIELDS, /width: "100%", minWidth: 0, maxWidth: "100%"/, "the field family");
     assert.ok(DRAWER.includes('flexDirection: "column", minWidth: 0'), "and the form itself");
   });
 
@@ -720,7 +860,7 @@ describe("Reviews — the mobile geometry contract", () => {
      * far past what "1".."5" needs. Nothing in the row is nowrap-with-a-floor,
      * which is the shape that failed for Attendance's four labelled segments. */
     assert.ok(UI.includes("flex: 1, minWidth: 0"), "each segment shrinks with the row");
-    assert.ok(DRAWER.includes('display: "flex", gap: 6, minWidth: 0'), "and so does the group");
+    assert.ok(FIELDS.includes('display: "flex", gap: 6, minWidth: 0'), "and so does the group");
     const panel = 375 - 44;
     const segment = (panel - 4 * 6) / 5;
     assert.ok(segment > 44, `a segment is ${segment.toFixed(1)}px`);
@@ -882,21 +1022,37 @@ describe("Student Profile Reviews — the timeline", () => {
     }
   });
 
-  it("69. every row offers Edit, and nothing anywhere offers Delete", () => {
-    assert.ok(TAB.includes("onClick={() => setEditing(r)}"), "Edit is per-row");
-    assert.ok(TAB.includes('t("Edit")'));
+  it("69. every row offers ONE obvious action — View review — and nothing offers Delete", () => {
+    /* Human verification found the row actions too quiet to read as actions, and
+     * "Edit" was the wrong verb besides: a saved review is a record a teacher
+     * OPENS, and editing begins there behind a deliberate press. */
+    assert.ok(TAB.includes("href={`/reviews/${encodeURIComponent(r.id)}`}"), "one link per row");
+    assert.ok(TAB.includes('t("View review")'));
+    assert.ok("View review" in DICT, "which is translated");
+    // It is a real control, not a caption: bordered, in the app's ghost language.
+    assert.ok(TAB.includes("style={viewAction}") && TAB.includes('className="btn-ghost"'));
+    assert.ok(TAB.includes("const viewAction: React.CSSProperties"));
+
+    /* NO EDIT FROM THE TIMELINE, and Quick view is demoted so it cannot compete
+     * with the primary action. */
+    assert.ok(!/t\("Edit"\)/.test(TAB), "editing starts on the review's own page");
+    assert.ok(TAB.includes("style={rowAction(false)}"), "Quick view is the quieter second");
     assert.ok(!/deleteReview|"Delete"|ConfirmDialog/.test(TAB), "a review is a historical record");
   });
 
-  it("70. Edit opens the Gate 4.3 drawer, and no second form exists", () => {
-    assert.ok(TAB.includes("<ReviewDrawer"), "the shared drawer");
-    assert.equal([...TAB.matchAll(/<ReviewDrawer/g)].length, 2, "one create, one edit — both the same component");
+  it("70. Edit goes to the dedicated composer, and no second form exists", () => {
+    /* GATE 4.4D REPLACED THE DRAWER IN THIS FLOW. Both of this tab's actions are
+     * now links — Write review carries the STUDENT id, Edit carries the REVIEW
+     * id — and the tab itself holds no form of any kind. */
+    assert.ok(!TAB.includes("ReviewDrawer"), "the drawer is no longer opened from the profile");
+    assert.ok(TAB.includes("href={`/reviews/new?studentId=${encodeURIComponent(student.id)}`}"), "create by student");
+    assert.ok(TAB.includes("href={`/reviews/${encodeURIComponent(r.id)}`}"), "edit by review");
     for (const forbidden of ["useForm", "<textarea", "<input", "register(", "zodResolver"]) {
       assert.ok(!TAB.includes(forbidden), `${forbidden} would be a second Review form`);
     }
-    // The month is not passed on an edit, so it cannot become a control.
-    const edit = TAB.slice(TAB.indexOf("review={editing}"));
-    assert.ok(!edit.includes("months={"), "an edit may not change its month");
+    /* AND EDIT NEVER CARRIES A STUDENT. The Review owns the relationship; a URL
+     * carrying both could be made to disagree with the record. */
+    assert.ok(!/\/reviews\/\$\{[^}]*\}\?studentId/.test(TAB), "an edit link names no student");
   });
 });
 
@@ -998,13 +1154,16 @@ describe("Student Profile Reviews — the boundary", () => {
     }
   });
 
-  it("81. its mutations refresh Reviews and mark the Dashboard stale without fetching it", () => {
-    assert.ok(
-      /invalidateQueries\(\{\s*queryKey:\s*\["dashboard"\],\s*refetchType:\s*"none",?\s*\}\)/.test(TAB),
-      "GET /api/dashboard advances the lesson lifecycle and WRITES to Lessons"
-    );
+  it("81. the tab writes nothing at all, and reads exactly one endpoint", () => {
+    /* GATE 4.4D MADE THIS SURFACE READ-ONLY. Creating and editing moved to the
+     * dedicated composer, so there is no mutation here to invalidate anything —
+     * which is a stronger guarantee than the one this test used to make. The
+     * Dashboard rule now lives where the write does (test 30). */
+    for (const forbidden of ["useMutation", "useQueryClient", "invalidateQueries", "createReview", "updateReview"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} belongs to the composer, not this tab`);
+    }
     const keys = [...TAB.matchAll(/queryKey:\s*([^,\n}]+)/g)].map((m) => m[1].trim());
-    assert.deepEqual([...new Set(keys)].sort(), ['["dashboard"]', "reviewKeys.all", "reviewKeys.student(studentId)"]);
+    assert.deepEqual([...new Set(keys)].sort(), ["reviewKeys.student(studentId)"]);
   });
 
   it("82. the analytics blocks the amendment approved are all present", () => {
@@ -1023,19 +1182,57 @@ describe("Student Profile Reviews — the boundary", () => {
   });
 
   it("82b. what is STILL deferred is still absent, and still absent whole", () => {
-    /* The amendment approved charts, not generated prose, and it did not bring
-     * Gate 4.4D's dedicated page or 4.4E's export forward. */
-    for (const block of [
-      "aiSummary", "achievement", "concern", "View all", "Print", "PDF", "jspdf",
-      "MonthlyReviewReport", "report-sheet", "window.print",
-    ]) {
-      assert.ok(!TAB.includes(block), `${block} is not part of Gate 4.4C`);
+    /* GATE 4.4D DELIVERED THE DEDICATED PAGE AND THE REPORT, so those two names
+     * leave this list. Generated prose never enters it: no stored field carries
+     * an AI summary, an achievement or a concern, and no deterministic rule
+     * produces one, so none is derived on ANY Reviews surface. Print and PDF
+     * remain Gate 4.4E's, and 4.4D ships no dead control for either. */
+    for (const [name, src] of [
+      ["student-reviews.tsx", TAB],
+      ["review-composer.tsx", COMPOSER],
+      ["monthly-review-report.tsx", REPORT_VIEW],
+    ] as const) {
+      for (const block of ["aiSummary", "achievement", "concern", "jspdf", "window.print", "onPrint"]) {
+        assert.ok(!src.includes(block), `${block} is in no Sprint 8 surface`);
+      }
+      assert.ok(!/Coming soon|arrives in a later sprint/.test(src), `${name}: nothing is a dead shell`);
     }
-    assert.ok(!/Coming soon|arrives in a later sprint/.test(TAB), "and nothing is a dead shell");
-    // Edit still opens the drawer: the dedicated route is Gate 4.4D's, and a
-    // link to a page that does not exist would be a broken link.
-    assert.ok(TAB.includes("onClick={() => setEditing(r)}"), "Edit stays on the drawer for now");
-    assert.ok(!TAB.includes("/reviews/${"), "no navigation to an unbuilt route");
+    /* NO LIFECYCLE ANYWHERE EITHER. The reference comp shows publication
+     * language; Sprint 8 Reviews have no Draft, Published or Final, so the
+     * report says "Generated on" and carries no status. */
+    for (const [name, src] of [["review-composer.tsx", COMPOSER], ["monthly-review-report.tsx", REPORT_VIEW]] as const) {
+      for (const word of ["Published", "publishedOn", "publish", "Final", "lifecycle"]) {
+        assert.ok(!src.includes(word), `${name} must carry no lifecycle (${word})`);
+      }
+      /* "DRAFT" IS A REAL WORD ON THIS SCREEN AND IT IS NOT A STATUS. The
+       * composer builds a report from the form's UNSAVED values — that is what
+       * makes the preview live — so `draft` and `ReviewReportDraft` mean
+       * "not yet posted", never "awaiting publication". What must not exist is a
+       * status FIELD or a status the teacher can see, so those are what is
+       * asserted: no `status` property, and no lifecycle word rendered. */
+      assert.ok(!/\bstatus\s*[:=]/.test(src), `${name} must declare no status field`);
+      assert.ok(!/t\("(Draft|Published|Final)"\)/.test(src), `${name} must render no lifecycle word`);
+    }
+    /* NOR DOES THE REPORT DTO HAVE ANYWHERE TO PUT ONE. The assertion is scoped
+     * to `MonthlyReviewReport` itself: the composer's STUDENT does carry a
+     * status — Active / Trial / Paused / Archived, the field the Reviews index
+     * has always carried and the one Create eligibility is decided from — and
+     * that is a fact about a person, not a workflow state of a document. */
+    const REPORT_MODEL = code("src", "lib", "review-report.ts");
+    const dto = REPORT_MODEL.slice(
+      REPORT_MODEL.indexOf("export interface MonthlyReviewReport"),
+      REPORT_MODEL.indexOf("function ratingOf")
+    );
+    assert.ok(dto.length > 200, "the report interface was found");
+    assert.ok(!/\bstatus\b/.test(dto), "MonthlyReviewReport declares no status");
+    assert.ok(!/publishedOn|isPublished|published/i.test(REPORT_MODEL), "and nothing publishes");
+    /* The one status the composer model carries is the STUDENT's, and it is the
+     * existing StudentStatus rather than a Review state of any kind. */
+    assert.ok(REPORT_MODEL.includes("status: StudentStatus;"));
+    assert.equal([...REPORT_MODEL.matchAll(/\bstatus\b/g)].length, 1);
+    assert.ok(REPORT_VIEW.includes('t("Generated on")'), "neutral document metadata instead");
+    // The tab itself still holds neither the report nor a print control.
+    assert.ok(!TAB.includes("MonthlyReviewReport") && !TAB.includes("report-sheet"));
   });
 
   it("83. the profile page gained a branch, and lost none", () => {
@@ -1061,12 +1258,21 @@ describe("Student Profile Reviews — the boundary", () => {
     }
   });
 
-  it("85. no duplicate parent warning is added to the tab — the drawer carries it", () => {
-    assert.ok(TAB.includes("parentLinked={parentLinked}"), "it is passed through to the drawer");
-    assert.ok(!TAB.includes("noParentPillStyle"), "and not restated as a pill on the profile");
-    assert.ok(!TAB.includes("No parent linked"), "the informational sentence stays in the drawer");
-    // And no parent state gates a create or an edit.
-    assert.ok(!/parentLinked &&|!parentLinked \?|disabled=\{!parentLinked/.test(TAB));
+  it("85. the no-parent notice appears once, where a review is written", () => {
+    /* PROJECT_RULES requires a feature involving parent communication to say
+     * clearly when a student has no linked parent. Since Gate 4.4D that place is
+     * the composer, which reads `parentLinked` from its own payload. The tab
+     * states it nowhere — the same warning in two places is free to disagree
+     * with itself. */
+    assert.ok(COMPOSER.includes("data.parentLinked"), "the composer reads it");
+    assert.ok(COMPOSER.includes('t("No linked parent")'), "and says so");
+    assert.ok(!TAB.includes("parentLinked"), "the tab does not restate it");
+    assert.ok(!TAB.includes("noParentPillStyle"));
+    // And no parent state gates a create or an edit, on either surface.
+    for (const [name, src] of [["student-reviews.tsx", TAB], ["review-composer.tsx", COMPOSER]] as const) {
+      assert.ok(!/disabled=\{!.*parentLinked|!parentLinked \?/.test(src),
+        `${name}: a missing parent blocks nothing`);
+    }
   });
 });
 
@@ -1337,9 +1543,14 @@ describe("Student Profile Reviews — the learning journey", () => {
   });
 
   it("113. nothing about the journey is persisted", () => {
-    assert.ok(!TAB.includes("useMutation({ mutationFn: (j"), "there is no journey writer");
-    // The only two mutations on this surface are still the review create and edit.
-    assert.equal([...TAB.matchAll(/useMutation\(/g)].length, 2);
+    /* Stronger since Gate 4.4D: this surface holds no mutation whatsoever, so
+     * there is nothing here that could write a journey, an achievement or a
+     * cached metric even by accident. */
+    assert.equal([...TAB.matchAll(/useMutation\(/g)].length, 0);
+    /* And the composer's two writes are the review create and the review edit —
+     * no third mutation, and neither touches another domain. */
+    assert.equal([...COMPOSER.matchAll(/useMutation\(/g)].length, 2);
+    assert.equal([...COMPOSER.matchAll(/mutationFn:/g)].length, 2);
   });
 });
 

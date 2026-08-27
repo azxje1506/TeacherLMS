@@ -8,7 +8,12 @@ import { fromMinutes, toMinutes } from "./calc";
 import { months as i18nMonths } from "./i18n";
 import { RATE_VND_PER_USD } from "./i18n";
 
-const EM = "—"; // em dash — the shared "no value" placeholder
+/** The em dash — this app's one placeholder for "no value".
+ *
+ * EXPORTED so a screen that has to render the absence of something renders the
+ * SAME character the formatters do. A second literal somewhere else is a second
+ * answer to "what does missing look like", and they drift. */
+export const EM = "—";
 
 /* timeFormat is 12h so every rendered time reads the way the browser's native
  * <input type="time"> does for these teachers (06:00 PM) — that control follows

@@ -713,5 +713,16 @@
   "Pick a month": "Chọn tháng",
   "Rate every skill": "Chấm điểm tất cả kỹ năng",
   "Ratings are whole numbers": "Điểm đánh giá là số nguyên",
-  "Ratings run from 1 to 5": "Điểm đánh giá từ 1 đến 5"
+  "Ratings run from 1 to 5": "Điểm đánh giá từ 1 đến 5",
+  "Preview": "Xem trước",
+  "Generated on": "Ngày tạo",
+  "optional": "không bắt buộc",
+  "This student already has a review for every month in the window.": "Học sinh này đã có đánh giá cho tất cả các tháng trong khoảng thời gian cho phép.",
+  "Edit review": "Chỉnh sửa đánh giá",
+  "Cancel editing": "Hủy chỉnh sửa",
+  "Reviewed": "Đã đánh giá",
+  "No review": "Chưa có đánh giá",
+  "View review": "Xem đánh giá",
+  "View latest review": "Xem đánh giá mới nhất",
+  "A review's month is fixed when it is created.": "Tháng của một đánh giá được cố định khi tạo."
 }
