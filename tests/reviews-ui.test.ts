@@ -792,10 +792,16 @@ describe("Gate 4.3 stays inside its phase", () => {
     assert.ok(PROFILE.includes("<StudentReviews studentId={id} />"));
   });
 
-  it("50. models.ts still declares no Review compound index", () => {
+  it("50. models.ts declares the Review compound index, and no UI file does", () => {
+    /* WAS the pre-rollout state: no declaration anywhere. Gate 5.1 created the
+     * index in production, Gate 5.2 declared it, and its exact spec is pinned in
+     * tests/reviews-service.test.ts (65, 65a-e). The half that matters HERE is
+     * that storage stayed out of the UI layer. */
     const models = code("src", "lib", "models.ts");
-    assert.ok(!models.includes("ReviewSchema.index"));
-    assert.ok(!/studentId:\s*1/.test(models));
+    assert.ok(models.includes("ReviewSchema.index"), "the model file owns it");
+    for (const src of [PROFILE, PAGE, TAB, COMPOSER]) {
+      assert.ok(!/\.index\(|createIndex|dropIndex/.test(src), "a screen states no storage concern");
+    }
   });
 
   it("51. the Reviews client is the four files Gate 4.3 added plus the one Gate 4.4 adds", () => {

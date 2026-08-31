@@ -717,9 +717,14 @@ describe("Gate 4.4D stays inside its phase", () => {
     assert.ok(patch.includes("reviewUpdateSchema.safeParse(body)"));
   });
 
-  it("44. no index is declared and no DDL is issued", () => {
+  it("44. the index is declared in models.ts alone, and no DDL is issued", () => {
+    /* WAS "no index is declared". Gate 5.1 created the (studentId, month) unique
+     * index in production and Gate 5.2 declared it; its exact spec is pinned in
+     * tests/reviews-service.test.ts (65, 65a-e). What this test still guards is
+     * the composer's side of it: the UI, the report view and the service issue no
+     * DDL of their own and know nothing about indexes. */
     const models = code("src", "lib", "models.ts");
-    assert.ok(!models.includes("ReviewSchema.index"));
+    assert.ok(models.includes("ReviewSchema.index"), "declared where the schemas live");
     for (const src of [SERVICE, COMPOSER, REPORT_VIEW]) {
       assert.ok(!/createIndex|\.index\(|dropIndex/.test(src));
     }

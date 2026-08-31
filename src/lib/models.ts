@@ -122,6 +122,38 @@ const ReviewSchema = new Schema<Review>(
   opts
 );
 
+/* One Review per (studentId, month) — the ownership rule, enforced by the
+ * database rather than only by the service.
+ *
+ * THE INDEX ALREADY EXISTS IN PRODUCTION. It was created explicitly, by name, in
+ * Sprint 8 Gate 5.1; this declaration is the source half of that pair and must
+ * describe it EXACTLY — same key, same order, same uniqueness, same name. It is
+ * not the thing that creates it.
+ *
+ * WHY THAT ORDER MATTERS. `dbConnect` leaves mongoose's `autoIndex` at its
+ * default, which is ON, so a declared index is built implicitly the first time
+ * the model is used — in every process, including a deploy. Declaring first
+ * would therefore have been an unauthorised deploy-time DDL that failed
+ * asynchronously if any duplicate pair existed. Against an index that already
+ * exists with an identical spec, the implicit build is a no-op.
+ *
+ * THE NAME IS EXPLICIT, not mongoose's derived `studentId_1_month_1`, so source
+ * and production can be compared by a string rather than by a convention.
+ *
+ * NO `sparse`, NO `partialFilterExpression`. Every Review has both fields (the
+ * schemas refuse a create without them), including the ghost reviews whose
+ * student no longer resolves — those are preserved records, and they occupy
+ * their pair like any other.
+ *
+ * The field-level `studentId` and `month` indexes above stay. `studentId_1` is
+ * now a redundant prefix of this one, but dropping it is a separate production
+ * mutation needing its own authorisation; `month_1` is a suffix and this index
+ * cannot serve it at all. */
+ReviewSchema.index(
+  { studentId: 1, month: 1 },
+  { unique: true, name: "review_student_month_unique" }
+);
+
 const ActivitySchema = new Schema<ActivityItem>(
   {
     id: { type: String, required: true, unique: true, index: true },

@@ -382,11 +382,28 @@
   Two Roboto weights (Apache-2.0) ship as static assets in `public/fonts/` with
   their licence — jsPDF's built-in fonts are Latin-1 and cannot encode
   Vietnamese. No rasterizing capture library was added.
-- **Production rollout has not been executed.** Nothing is deployed, no
-  production Review has been created or edited, and the `(studentId, month)`
-  unique index has not been created — that is Gate 5's, because declaring it is a
-  production DDL change. Sprint 8 is **not closed**, and Gate 4.5 must be re-run
-  as the final integration/readiness gate over the amended implementation.
+- **The `(studentId, month)` unique index now exists in production**, as
+  `review_student_month_unique` on `etlms.reviews`, key `{studentId:1, month:1}`.
+  It was created explicitly and by name in Gate 5.1, and `models.ts` declares the
+  matching index as of Gate 5.2. **That order is the point, not an accident:**
+  `dbConnect` leaves mongoose's `autoIndex` at its default, which is on, so a
+  schema declaration is built implicitly the first time the model is used — in
+  every process, including a deploy. Declaring first would therefore have been a
+  deploy-time DDL nobody authorised, failing asynchronously on the connection if
+  a duplicate pair existed. Against an index that already exists with an
+  identical spec, the implicit build is a no-op. It also fixes the rollback
+  order: revert the declaration and deploy that *before* dropping the index.
+  The redundant `studentId_1` prefix index was deliberately **not** dropped —
+  that is another production mutation with its own authorisation — and `month_1`
+  must be kept, being a suffix the compound index cannot serve.
+  The service's own `(studentId, month)` pre-check stays: the index is the
+  concurrency guarantee for a two-tab race, the pre-check is the error path a
+  teacher reads, and one does not replace the other.
+- **Production rollout has not been executed.** Nothing is deployed and **no
+  production Review has been created, edited or deleted** — the index was DDL and
+  moved no document, which is why the collection's digest is identical either
+  side of it. Rollout, deployment and production verification are still
+  outstanding, and Sprint 8 is **not closed**.
 
 ## Unreleased — Homework MVP (Sprint 7)
 - Homework index: the assignment cards with their class colour, status badge,

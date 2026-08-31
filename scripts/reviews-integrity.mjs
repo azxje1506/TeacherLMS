@@ -17,8 +17,10 @@
  * an index or migrate anything, and there must never be one: this script's
  * output is only trustworthy because it cannot be the thing that changed what it
  * is measuring. It does not create the (studentId, month) unique index — it
- * reports whether that index COULD be created, which is a different job and a
- * different authorisation (Gate 5.3).
+ * reported whether that index COULD be created, which was a different job under
+ * a different authorisation. Gate 5.1 has since created it explicitly, as
+ * `review_student_month_unique`; the duplicate report below is now a standing
+ * check that the invariant still holds rather than a precondition.
  *
  * THE CONSTRUCTION. SHA-256 over `JSON.stringify` of every document in the
  * `reviews` collection, sorted by the domain's own `id` — the natural key, not
@@ -41,13 +43,18 @@ dotenv.config({ path: ".env.local" });
 /* ===========================================================================
  * 1. THE ACCEPTED BASELINE — DELIBERATELY NOT BANKED YET.
  *
- * `null` is the correct value for the whole of Gate 4.5, and it is a statement
- * rather than an omission: Sprint 8 has written NOTHING to production, so there
- * is no authorised write for a baseline to be the record of. Banking one now
- * would mean copying whatever the collection happens to hold and calling it
- * accepted — which is exactly the failure this file exists to prevent.
+ * `null` is still the correct value, and it is a statement rather than an
+ * omission: Sprint 8 has written NO DOCUMENT to production, so there is no
+ * authorised write for a baseline to be the record of. Banking one now would
+ * mean copying whatever the collection happens to hold and calling it accepted —
+ * which is exactly the failure this file exists to prevent.
  *
- * HOW TO BANK IT, in Gate 5.2 / 5.5 / 5.7 and nowhere else:
+ * GATE 5.1'S INDEX IS NOT A REASON TO BANK. Creating
+ * `review_student_month_unique` was DDL: it changed how the collection is
+ * indexed and not one byte of what it holds, which is why the digest below is
+ * unchanged across it. This baseline is about DOCUMENTS.
+ *
+ * HOW TO BANK IT, when a document write is finally authorised and nowhere else:
  *
  *   1. run this script and read the observed pair off the output;
  *   2. confirm the move is ATTRIBUTABLE to the one authorised write — the same
@@ -151,11 +158,12 @@ try {
 
   /* ------------------------------------------------ duplicate (studentId, month)
    *
-   * THE UNIQUE INDEX PRECONDITION. `createIndex({studentId:1, month:1},
-   * {unique:true})` fails outright if any pair occurs twice, so this is the
-   * question Gate 5.3 must ask immediately before the DDL — and a duplicate is
-   * a hard failure here whatever else matches, because it means the rule the
-   * service enforces in application code was violated in the data. */
+   * THE UNIQUE INDEX INVARIANT. `createIndex({studentId:1, month:1},
+   * {unique:true})` fails outright if any pair occurs twice, which is the
+   * question Gate 5.1 asked immediately before its DDL. The index now exists, so
+   * a duplicate here would mean something stranger than a rule violation — but
+   * it stays a hard failure whatever else matches, because the check costs
+   * nothing and an index can be dropped by somebody who is not reading this. */
   const seen = new Map();
   for (const d of docs) {
     const key = `${d.studentId} ${d.month}`;
@@ -187,7 +195,7 @@ try {
     console.log(`             count  ${countOk ? "OK" : "MISMATCH"} · digest ${digestOk ? "OK" : "MISMATCH"}`);
     if (!countOk || !digestOk) fail("production differs from the accepted Sprint 8 baseline");
   } else {
-    console.log("baseline   : NOT BANKED — Sprint 8 has authorised no production write yet.");
+    console.log("baseline   : NOT BANKED — Sprint 8 has authorised no document write yet.");
     console.log("             This run is OBSERVATIONAL. See section 1 of this file.");
   }
 

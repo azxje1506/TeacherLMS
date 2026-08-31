@@ -598,11 +598,27 @@ describe("The service writes ReviewModel and nothing else", () => {
  * Persistence safety — the Gate 4 invariant
  * ====================================================================== */
 
-describe("No Review index is declared anywhere", () => {
-  it("51. models.ts declares no compound (studentId, month) Review index", () => {
-    assert.ok(!MODELS.includes("ReviewSchema.index"));
-    assert.ok(!/ReviewSchema[\s\S]*?\.index\(/.test(MODELS));
-    assert.ok(!/studentId:\s*1/.test(MODELS), "no compound index key appears in the model file");
+describe("Duplicate protection is three layers, and the index replaces none of them", () => {
+  /* WAS "No Review index is declared anywhere", the Gate 4 invariant. Gate 5.1
+   * created the index in production and Gate 5.2 declared it, so the question
+   * this block asks has changed: not "is the index absent" but "did the index
+   * arriving quietly delete a layer above it".
+   *
+   * The three layers answer three different questions and none is redundant:
+   *
+   *   1. the month options the server sends mark a taken month as taken, so the
+   *      ordinary path never offers a duplicate to begin with;
+   *   2. the service pre-checks (studentId, month) and returns the domain
+   *      outcome — this is the PRODUCT error path, the one a teacher reads;
+   *   3. the unique index is the CONCURRENCY guarantee, for the two-tab race the
+   *      pre-check cannot see, and its E11000 maps to the identical outcome.
+   *
+   * Deleting (2) because (3) exists would trade a sentence a teacher understands
+   * for a driver exception, and would do it only under load. */
+
+  it("51. the index is declared in models.ts, and only there", () => {
+    assert.ok(MODELS.includes("ReviewSchema.index"), "the model file declares it");
+    assert.ok(!SERVICE.includes(".index("), "the service does not");
   });
 
   it("52. the service declares no index and issues no DDL", () => {
@@ -613,8 +629,33 @@ describe("No Review index is declared anywhere", () => {
     }
   });
 
-  it("53. the service is nevertheless ready for the index that Gate 5 will add", () => {
-    assert.ok(SERVICE.includes("isDupKey"), "a duplicate-key error already maps to the domain outcome");
+  it("53. layer 2 — the service still pre-checks the pair before writing", () => {
+    /* The index existing is not a reason to stop asking. Pinned by the shape of
+     * the check rather than by a comment: a month already taken is refused with
+     * the domain outcome, before any insert is attempted. */
+    assert.ok(
+      /review_already_exists/.test(SERVICE),
+      "the duplicate outcome is still produced by the service"
+    );
+    const preCheck = /month[\s\S]{0,400}?review_already_exists/.test(SERVICE);
+    assert.ok(preCheck, "and it is still reached from a (studentId, month) lookup");
+  });
+
+  it("54. layer 3 — E11000 still maps to the same outcome, not to a 500", () => {
+    assert.ok(SERVICE.includes("isDupKey"), "a duplicate-key error maps to the domain outcome");
+    assert.match(
+      SERVICE,
+      /isDupKey\(e\)[\s\S]{0,120}review_already_exists/,
+      "the race and the pre-check produce ONE answer, so a client cannot tell them apart"
+    );
+  });
+
+  it("55. and the public answer is still a 409 carrying the machine code", () => {
+    const route = readFileSync(
+      path.join(process.cwd(), "src", "app", "api", "reviews", "route.ts"), "utf8"
+    );
+    assert.match(route, /code: "review_already_exists"/);
+    assert.ok(!route.includes("11000"), "the driver's error number never reaches a client");
   });
 });
 
@@ -719,14 +760,16 @@ describe("The Reviews integrity tool is read-only, and stays that way", () => {
       assert.ok(INTEGRITY.includes(`${fact}`), `the probe must report ${fact}`);
     }
     // A duplicate pair is a HARD failure: it is the one condition that makes the
-    // Gate 5.3 unique index impossible.
+    // Gate 5.1 unique index impossible.
     assert.match(INTEGRITY, /duplicates\.length > 0[\s\S]{0,300}fail\(/);
   });
 
-  it("62. NO accepted baseline is banked — Sprint 8 has authorised no write", () => {
-    /* `null` is the correct value for the whole of Gate 4.5 and it is a
-     * statement, not an omission. The day it stops being null, a production
-     * write must have been authorised and verified first. */
+  it("62. NO accepted baseline is banked — Sprint 8 has authorised no document write", () => {
+    /* `null` is still the correct value and it is a statement, not an omission.
+     * GATE 5.1'S INDEX DID NOT CHANGE THAT: creating it was DDL, which moved no
+     * document, which is why the digest is identical either side of it. The day
+     * this stops being null, a DOCUMENT write must have been authorised and
+     * verified first. */
     assert.match(INTEGRITY, /const ACCEPTED_BASELINE = null;/);
   });
 
@@ -747,44 +790,124 @@ describe("The Reviews integrity tool is read-only, and stays that way", () => {
   });
 });
 
-describe("Production index sequencing — what Gate 5 must do first", () => {
-  it("65. models.ts still declares no compound Review index", () => {
-    assert.ok(!/ReviewSchema[\s\S]*?\.index\(/.test(MODELS));
-    assert.ok(!MODELS.includes("studentId: 1"), "no compound key spec appears anywhere in the model file");
+describe("Source / production index parity — the Gate 5.1 index, declared", () => {
+  /* THE INDEX EXISTS IN PRODUCTION. Gate 5.1 created it explicitly, by name, on
+   * `etlms.reviews`. Gate 5.2 added the matching declaration. These tests exist
+   * because the two halves can now DRIFT: a declaration that disagrees with the
+   * live index is worse than no declaration at all, because `autoIndex` would
+   * try to build the difference on the next deploy.
+   *
+   * THE PRODUCTION SIDE, recorded here as the contract these assertions pin:
+   *
+   *     collection etlms.reviews
+   *     name       review_student_month_unique
+   *     key        { studentId: 1, month: 1 }
+   *     options    { unique: true }        (not sparse, no partialFilterExpression)
+   */
+  const PRODUCTION_INDEX_NAME = "review_student_month_unique";
+
+  it("65. models.ts declares exactly one compound Review index", () => {
+    const declarations = [...MODELS.matchAll(/ReviewSchema\.index\(/g)];
+    assert.equal(declarations.length, 1, "exactly one — not zero, and never a second");
+  });
+
+  it("65a. the declared key is studentId THEN month, in that order", () => {
+    /* ORDER IS THE INDEX. `{month:1, studentId:1}` is a different index that
+     * enforces the same uniqueness but cannot serve a studentId-prefixed query,
+     * and mongoose would try to build it ALONGSIDE the live one. */
+    const decl = /ReviewSchema\.index\(\s*\{([^}]*)\}/.exec(MODELS);
+    assert.ok(decl, "the declaration is findable");
+    const keys = [...decl[1].matchAll(/(\w+)\s*:\s*(-?1)/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(keys, [["studentId", "1"], ["month", "1"]]);
+  });
+
+  it("65b. it is unique, and carries the exact production name", () => {
+    const opts = /ReviewSchema\.index\(\s*\{[^}]*\}\s*,\s*\{([^}]*)\}/.exec(MODELS);
+    assert.ok(opts, "the options object is findable");
+    assert.match(opts[1], /unique:\s*true/, "a non-unique declaration would enforce nothing");
+    assert.ok(
+      opts[1].includes(`name: "${PRODUCTION_INDEX_NAME}"`),
+      `the name must be exactly ${PRODUCTION_INDEX_NAME} — mongoose's derived ` +
+      "studentId_1_month_1 would not match the index production actually holds"
+    );
+  });
+
+  it("65c. no option drifts in beyond unique and name", () => {
+    /* `sparse` or a `partialFilterExpression` would describe a DIFFERENT index
+     * from the one that exists, and would also be wrong on the facts: every
+     * Review has both fields, ghost reviews included. */
+    const opts = /ReviewSchema\.index\(\s*\{[^}]*\}\s*,\s*\{([^}]*)\}/.exec(MODELS)![1];
+    for (const forbidden of ["sparse", "partialFilterExpression", "background", "collation", "expireAfterSeconds"]) {
+      assert.ok(!opts.includes(forbidden), `${forbidden} is not part of the production index`);
+    }
+    const declaredOptions = [...opts.matchAll(/(\w+)\s*:/g)].map((m) => m[1]).sort();
+    assert.deepEqual(declaredOptions, ["name", "unique"]);
+  });
+
+  it("65d. the field-level studentId and month indexes are untouched", () => {
+    /* Gate 5.2 is parity, not DDL cleanup. `studentId_1` is now a redundant
+     * prefix of the compound index and `month_1` is a suffix it cannot serve;
+     * dropping either is a separate production mutation with its own
+     * authorisation, so the declarations both stay. */
+    assert.match(MODELS, /studentId: \{ type: String, index: true \}/);
+    assert.match(MODELS, /month: \{ type: String, index: true \}/);
+  });
+
+  it("65e. no OTHER schema gained an index declaration alongside it", () => {
+    const allIndexCalls = [...MODELS.matchAll(/(\w+Schema)\.index\(/g)].map((m) => m[1]);
+    assert.deepEqual(allIndexCalls, ["ReviewSchema"], "this gate declared one index, on one schema");
   });
 
   it("66. mongoose autoIndex is left at its default, which is ON", () => {
-    /* THIS IS THE FACT THAT DECIDES THE SEQUENCING. `dbConnect` does not pass
-     * `autoIndex: false`, and mongoose's default is `true` — so every index a
-     * schema DECLARES is built implicitly the first time the model is used, in
-     * every process, including a Vercel deploy.
+    /* THIS IS THE FACT THAT DECIDED THE SEQUENCING, and it still governs
+     * rollback. `dbConnect` does not pass `autoIndex: false`, and mongoose's
+     * default is `true` — so every index a schema DECLARES is built implicitly
+     * the first time the model is used, in every process, including a Vercel
+     * deploy.
      *
-     * Therefore adding `ReviewSchema.index({studentId:1, month:1},{unique:true})`
-     * to source is not an inert declaration: it is a deploy-time DDL nobody
-     * authorised, and if a duplicate pair existed it would fail asynchronously
-     * on the connection rather than anywhere a human would see it.
+     * That is why Gate 5.1 created the index EXPLICITLY first and Gate 5.2 only
+     * then declared it: declaring first would have been a deploy-time DDL nobody
+     * authorised, failing asynchronously on the connection if a duplicate pair
+     * existed. Against an index that already exists with an identical spec — the
+     * state the parity tests above pin — the implicit build is a no-op.
      *
-     * Gate 5 must therefore create the index EXPLICITLY first (5.3), and only
-     * then add the declaration — at which point the implicit build is a no-op
-     * against an index that already exists with the same spec.
+     * IT ALSO FIXES THE ROLLBACK ORDER: revert the declaration and deploy that
+     * BEFORE dropping the index, or the next process start rebuilds it.
      *
-     * If someone later sets autoIndex:false, this fails, and the sequencing
-     * recommendation has to be made again rather than inherited. */
+     * Changing autoIndex is a broader infrastructure decision and is out of
+     * Sprint 8's scope. If someone later sets it, this fails, and the reasoning
+     * gets made again rather than inherited. */
     assert.ok(!/autoIndex/.test(DB), "src/lib/db.ts must not silently change this without a decision");
     assert.ok(DB.includes("mongoose.connect("), "and the connection is still the one place it would go");
   });
 
-  it("67. the one-shot DDL script does not exist yet", () => {
-    // Gate 4.5 prepares the approach; it does not ship the tool that performs it.
+  it("67. no DDL script ships in the repository", () => {
+    /* Gate 5.1 performed the one authorised DDL from a throwaway script OUTSIDE
+     * the repository, deliberately. A committed create-index tool is a loaded
+     * gun: the index exists, and the only remaining use for such a script would
+     * be to run DDL nobody authorised. */
     for (const name of [
       "reviews-create-index.mjs", "reviews-index.mjs", "create-review-index.mjs",
     ]) {
       assert.ok(
         !existsSync(path.join(process.cwd(), "scripts", name)),
-        `${name} is a Gate 5 artefact, not a Gate 4.5 one`
+        `${name} must not be committed — the DDL was a one-shot, not a tool`
       );
     }
-    assert.ok(!("reviews:index" in PKG.scripts), "no index script is wired up yet");
+    assert.ok(!("reviews:index" in PKG.scripts), "and no index script is wired up");
+  });
+
+  it("67a. no source path can create, sync or drop an index at runtime", () => {
+    /* The declaration is the ONLY index instruction in the codebase. A stray
+     * `syncIndexes()` would be especially dangerous now: it drops indexes the
+     * schema does not declare, which would take `studentId_1` and `month_1`
+     * with it — a production mutation by side effect. */
+    for (const file of ["reviews-service.ts", "db.ts"]) {
+      const src = readFileSync(path.join(process.cwd(), "src", "lib", file), "utf8");
+      for (const forbidden of ["createIndex", "syncIndexes", "ensureIndexes", "dropIndex"]) {
+        assert.ok(!src.includes(forbidden), `${forbidden} must not appear in ${file}`);
+      }
+    }
   });
 
   it("68. no smoke fixture or disposable Review data ships in the repo", () => {

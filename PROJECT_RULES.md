@@ -277,7 +277,7 @@ The permission is for explicit corrections only. Automatic processes — lifecyc
 
 **Still deliberately absent, and absent whole rather than stubbed:** an **AI summary**, an **achievement** line and a **concern** line. No stored field carries any of them and no deterministic rule produces one, so none is derived on any Reviews surface — including the printed and exported document, which cannot contain a section the screen does not have. **Global Search** is likewise deferred: the header seam exists and forwards to nothing. None of these is drawn as a disabled placeholder that would suggest it already works.
 
-**The `(studentId, month)` unique index is not yet created in production.** The rule is enforced by the service today; declaring the index is a production DDL change and belongs to Gate 5, not to a feature gate.
+**The `(studentId, month)` unique index now exists in production**, as `review_student_month_unique`, created explicitly in Gate 5.1; the matching schema declaration was added in Gate 5.2. Creating it was a production DDL change, which is why it belonged to Gate 5 rather than to a feature gate, and why it happened in that order — production first, declaration second, because `autoIndex` is left at its default and a declaration alone would have built it implicitly on the next deploy. **The service's own `(studentId, month)` check remains**: the index is the concurrency guarantee, the service is the error path a teacher actually reads. Nothing about the rule changed — only where it is now also enforced.
 
 ## Calendar
 Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendance status indicator for past lessons. Clicking a lesson opens the drawer (never navigates away). Drag-and-drop reschedules.

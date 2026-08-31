@@ -834,9 +834,17 @@ describe("Reviews · the pure module stays pure", () => {
     assert.deepEqual([...new Set(imports)].sort(), ["./calc", "./constants", "./types"]);
   });
 
-  it("declares no Review index — that is a production change, not a domain one", () => {
-    assert.ok(!MODELS.includes("ReviewSchema.index"));
-    assert.ok(!/ReviewSchema[\s\S]*?\.index\(/.test(MODELS));
-    assert.ok(!CORE.includes(".index("));
+  it("declares no Review index — the index lives in models.ts, not the domain", () => {
+    /* WAS: an assertion that models.ts declared none either, which was the
+     * correct state up to Gate 4.5. Gate 5.1 created the index in production and
+     * Gate 5.2 declared it, so the models.ts half is now the OPPOSITE invariant
+     * and is pinned in tests/reviews-service.test.ts (65, 65a-e) where the
+     * production contract is written down.
+     *
+     * What survives here is the half that never changed: the DOMAIN module is
+     * pure. It holds the ownership rule as a rule — a duplicate is refused by
+     * the planner — and knows nothing about how a database enforces it. */
+    assert.ok(!CORE.includes(".index("), "the pure module states no storage concern");
+    assert.ok(MODELS.includes("ReviewSchema.index"), "the model file owns it instead");
   });
 });

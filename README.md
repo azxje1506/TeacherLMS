@@ -170,9 +170,13 @@ card per item — strongest skills, focus areas, biggest improvement — with th
 skill names wrapping rather than being shortened, in the same structure on
 screen, on paper and in the file.
 
-This has **not** been deployed, run against production, or verified in a hosted
-app. **No production Review has been created, edited or deleted**, and the
-`(studentId, month)` unique index has **not** been created — that is Gate 5's.
+This has **not** been deployed or verified in a hosted app, and **no production
+Review has been created, edited or deleted**. One production change has been
+made: the `(studentId, month)` unique index — `review_student_month_unique` —
+was created explicitly in Gate 5.1, and `models.ts` declares the matching index
+as of Gate 5.2. That was DDL and moved no document, which is why the digest below
+is unchanged either side of it. Rollout and production verification are still
+outstanding and Sprint 8 is **not closed**.
 The read-only production check is `npm run reviews:integrity`; it reports the
 collection's count, digest, month histogram, ghost-review count and any duplicate
 `(studentId, month)` pairs, and it runs **observationally**. Global Search
