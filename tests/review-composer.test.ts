@@ -513,7 +513,7 @@ describe("Gate 4.4D · the dirty guard", () => {
     /* CLOSING RETURNS TO THE EXACT UNSAVED STATE, because the form is never
      * unmounted: the overlay is rendered BESIDE it, gated on a boolean, not in
      * place of it. */
-    assert.ok(COMPOSER.includes("{previewOpen && <PreviewOverlay report={report} onClose={() => setPreviewOpen(false)} />}"));
+    assert.match(COMPOSER, /\{previewOpen && \(\s*<PreviewOverlay report=\{report\} onClose=\{\(\) => setPreviewOpen\(false\)\} actions=\{reportActions\} \/>/);
   });
 });
 
@@ -564,23 +564,28 @@ describe("Gate 4.4D · the flows that reach it", () => {
     ] as const) {
       assert.ok(!src.includes("ReviewDrawer"), `${name} must not open the drawer`);
     }
-    /* IT IS RETAINED, UNROUTED, FOR GATE 4.5. Deleting a working component in
-     * the same gate that replaces it would put two risks in one change — so the
-     * file still exists, still compiles, and is reachable from nothing. This
-     * assertion is the record of that decision: when 4.5 removes it, this line
-     * is what has to be revisited. */
-    assert.ok(has("src", "components", "reviews", "review-drawer.tsx"), "still present, for 4.5");
+    /* AND IN 4.4E IT WAS DELETED. 4.4D kept it unrouted on purpose — removing a
+     * working component in the same gate that replaces it would have put two
+     * risks in one change — and this gate, with the composer verified in a
+     * browser, finished the job. Nothing in src/ imported it by then. */
+    assert.ok(!has("src", "components", "reviews", "review-drawer.tsx"), "and is now gone");
     const importers = ["src/app/(app)/reviews/page.tsx", "src/components/reviews/student-reviews.tsx"];
     for (const f of importers) {
       assert.ok(!readFileSync(path.join(process.cwd(), f), "utf8").includes("review-drawer"), f);
     }
   });
 
-  it("34. and there are not two competing Review forms — the fields are shared", () => {
-    const DRAWER = code("src", "components", "reviews", "review-drawer.tsx");
-    assert.ok(DRAWER.includes("ReviewSkillFields") && DRAWER.includes("ReviewProseFields"));
+  it("34. and there is ONE Review form, over the shared fields", () => {
     assert.ok(COMPOSER.includes("ReviewSkillFields") && COMPOSER.includes("ReviewProseFields"));
     assert.equal([...FIELDS.matchAll(/<textarea/g)].length, 5, "five prose boxes exist once");
+    /* The shared field family survived the drawer's removal — it was extracted
+     * in 4.4D precisely so the two forms could not drift, and it is now simply
+     * the composer's. Nothing else in Reviews renders a rating or a prose box. */
+    const others = ["student-reviews.tsx", "monthly-review-report.tsx", "reviews-ui.ts"];
+    for (const f of others) {
+      const src = code("src", "components", "reviews", f);
+      assert.ok(!src.includes("<textarea"), `${f} renders no prose box of its own`);
+    }
   });
 });
 
@@ -661,16 +666,36 @@ describe("Gate 4.4D · the composer reads", () => {
  * ====================================================================== */
 
 describe("Gate 4.4D stays inside its phase", () => {
-  it("41. no Print or Export control ships, functional or otherwise", () => {
-    for (const [name, src] of [
-      ["review-composer.tsx", COMPOSER], ["monthly-review-report.tsx", REPORT_VIEW],
-      ["composer-states.tsx", STATES],
-    ] as const) {
-      for (const forbidden of ["window.print", "jspdf", "html2canvas", 't("Print")', 't("Export PDF")']) {
-        assert.ok(!src.includes(forbidden), `${name} must not ship ${forbidden} in 4.4D`);
-      }
-      assert.ok(!/disabled.*Print|Coming soon/.test(src), `${name}: no dead control either`);
+  it("41. Print and Export PDF ship in 4.4E — and only from the composer", () => {
+    /* 4.4D asserted the OPPOSITE: that no Print or Export control existed, so
+     * neither could ship as a dead button ahead of the gate that built it. 4.4E
+     * built it, so this inverts — and stays narrow, because the report itself
+     * must still hold no control of any kind. */
+    assert.ok(COMPOSER.includes('t("Print")'));
+    assert.ok(COMPOSER.includes('t(exporting ? "Exporting…" : "Export PDF")'),
+      "the export label states which of the two things is happening");
+    assert.ok(COMPOSER.includes("printReportOverlay"), "and the composer owns the print route");
+    for (const key of ["Print", "Export PDF", "Exporting…"]) {
+      assert.ok(key in DICT, `${key} must be translated`);
     }
+    for (const [name, src] of [
+      ["monthly-review-report.tsx", REPORT_VIEW], ["composer-states.tsx", STATES],
+    ] as const) {
+      for (const forbidden of ["window.print", "jspdf", 't("Print")', 't("Export PDF")']) {
+        assert.ok(!src.includes(forbidden), `${name} must not ship ${forbidden}`);
+      }
+    }
+    /* THE DOCUMENT ITSELF STAYS INERT. It is printed untouched, so a control
+     * inside it would end up on the paper — the report has no button, link or
+     * input, and that is what lets the print stylesheet unwrap it as-is. */
+    for (const forbidden of ["<button", "<a ", "<input", "onClick"]) {
+      assert.ok(!REPORT_VIEW.includes(forbidden), `the report must contain no ${forbidden}`);
+    }
+    /* NO DEAD CONTROL ANYWHERE. Both actions work in all three stages; nothing
+     * is drawn disabled-with-a-promise. */
+    assert.ok(!/Coming soon/.test(COMPOSER));
+    // And no rasterizing capture library was added to get here — see review-pdf.ts.
+    assert.ok(!raw("package.json").includes("html2canvas"));
   });
 
   it("42. the header keeps its actions region for 4.4E, and labels each stage", () => {
@@ -1027,9 +1052,13 @@ describe("Gate 4.4D final remediation", () => {
 
 describe("Gate 4.4D · the responsive contract", () => {
   it("46. the desktop split is a two-track grid with no intrinsic floor", () => {
-    assert.match(CSS, /\.rvc-split\{display:grid;grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
-    /* `minmax(0,...)` on BOTH tracks is what stops a wide child — an A4 sheet, a
-     * long student name — from pushing the page sideways. */
+    assert.match(CSS, /\.rvc-split\{display:grid;grid-template-columns:minmax\(400px,2fr\) minmax\(0,3fr\)/);
+    /* THE PREVIEW IS THE DOMINANT TRACK — it holds an A4 document, and the
+     * editor's form has a natural width of its own. The editor's `minmax` floor
+     * is what stops the ratio from squeezing the rating controls; the preview's
+     * `minmax(0,...)` is what stops a wide child — an A4 sheet, a long student
+     * name — from pushing the page sideways. Both are asserted in the workspace
+     * suite at the end of this file. */
     assert.ok(CSS.includes(".rvc-editor{min-width:0"));
     assert.ok(CSS.includes(".rvc-preview{min-width:0"));
   });
@@ -1334,6 +1363,161 @@ describe("Gate 4.4D remediation · action-region ownership at 620px", () => {
     assert.ok(!P620.includes(".rvc-head-id{order:"), "and 620 only drops the avatar");
     assert.ok(!P620.includes(".rvc-id-grade{display:none}"), "the context swap is the 767 block's too");
     // And the desktop split is untouched by any of it.
-    assert.ok(CSS.includes(".rvc-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr)"));
+    assert.ok(CSS.includes(".rvc-split{display:grid;grid-template-columns:minmax(400px,2fr) minmax(0,3fr)"));
+  });
+});
+
+/* =========================================================================
+ * The composer's desktop workspace — a document-sized preview
+ * ======================================================================
+ * WHY THIS SUITE EXISTS. The right half of this screen is an A4 DOCUMENT, and it
+ * was being drawn at 74% of the width the printed one has: at 1920px the shell's
+ * 1400px cap and an even split left a 668px preview pane holding a 604px sheet,
+ * whose 524px content column is nothing like the printed 703px. A preview that
+ * wraps its paragraphs somewhere the real report does not is not previewing the
+ * real report.
+ *
+ * These tests pin the GEOMETRY CONTRACT — the cap, the ratio, the editor's floor
+ * and the fact that none of it leaks onto any other screen — by computing the
+ * same numbers the browser will. They cannot prove what a monitor shows; that is
+ * §19's job. They can prove the arithmetic is still what was agreed.
+ */
+
+describe("Gate 4.4E · the composer's desktop workspace", () => {
+  /** The app shell's own geometry, read from the component rather than assumed. */
+  const SHELL = code("src", "components", "shell", "app-shell.tsx");
+  const SIDEBAR = code("src", "components", "shell", "sidebar.tsx");
+
+  const shellCap = Number(SHELL.match(/maxWidth: (\d+)/)![1]);
+  const shellPad = Number(SHELL.match(/padding: "(\d+)px (\d+)px/)![2]);
+  const sidebarW = Number(SIDEBAR.match(/collapsed \? \d+ : (\d+)/)![1]);
+
+  /** The composer's own cap, from the rule that lifts the shell's. */
+  const wide = mediaBlock("(min-width:1100px)", ".app-main:has(>.rvc)");
+  const composerCap = Number(wide.match(/max-width:(\d+)px !important/)![1]);
+  /** The split, and the editor's floor. */
+  const split = CSS.match(/\.rvc-split\{display:grid;grid-template-columns:minmax\((\d+)px,(\d+)fr\) minmax\(0,(\d+)fr\)/);
+  const [editorFloor, editorFr, previewFr] = split!.slice(1).map(Number);
+  /** The sheet's own bound, and its padding, from the report stylesheet. */
+  const sheetCap = Number(CSS.match(/padding:36px (\d+)px;max-width:(\d+)px/)![2]);
+  const sheetPad = Number(CSS.match(/padding:36px (\d+)px;max-width:\d+px/)![1]);
+  /** The printed document's content column: A4 less `@page{margin:12mm}`, less
+   * the sheet's own print padding, which print sets to zero. */
+  const PRINTED_COLUMN = (210 - 24) * (96 / 25.4);
+
+  /** What the browser will compute at a given viewport, sidebar expanded. */
+  function geometry(viewport: number) {
+    const box = Math.min(composerCap, viewport - sidebarW) - shellPad * 2;
+    const editor = Math.max(editorFloor, (box * editorFr) / (editorFr + previewFr));
+    const preview = box - editor;
+    // .rvc-preview padding: clamp(16px,2.5vw,32px)
+    const previewPad = Math.max(16, Math.min(viewport * 0.025, 32));
+    const sheet = Math.min(sheetCap, preview - previewPad * 2);
+    return { box, editor, preview, sheet, column: sheet - sheetPad * 2 };
+  }
+
+  it("100. the composer lifts the shell's ordinary content cap — and only there", () => {
+    assert.equal(shellCap, 1400, "the shell's cap is what every other page gets");
+    assert.ok(composerCap > shellCap, `the composer's ${composerCap}px exceeds it`);
+    assert.ok(composerCap >= 1680 && composerCap <= 1800,
+      `${composerCap}px is inside the agreed 1680-1800 band`);
+
+    /* SCOPED TO A PAGE THAT ACTUALLY HOLDS A COMPOSER. `:has(>.rvc)` cannot match
+     * anywhere else, so no list or form screen changes width. */
+    assert.ok(wide.includes(".app-main:has(>.rvc){"), "reached through :has, from the composer itself");
+    assert.equal(CSS.split(".app-main:has").length - 1, 1, "declared exactly once");
+    assert.ok(!/\.app-main\{[^}]*max-width/.test(CSS), "and the shell's own cap is untouched");
+    assert.ok(COMPOSER.includes('className="rvc" data-stage={stage}'), "the composer root carries .rvc");
+
+    /* THE `!important` IS LOAD-BEARING: the shell sets its cap as an INLINE
+     * style, which beats any stylesheet rule without it. */
+    assert.ok(SHELL.includes("maxWidth: 1400"), "the cap really is inline");
+    assert.ok(wide.includes("!important"), "so the override must be !important");
+  });
+
+  it("101. the preview is the dominant pane, and the editor keeps a floor", () => {
+    const share = previewFr / (editorFr + previewFr);
+    assert.ok(share >= 0.55 && share <= 0.62,
+      `the preview takes ${(share * 100).toFixed(0)}% — the target is about 60`);
+    assert.ok(previewFr > editorFr, "the document is the larger half");
+    assert.ok(editorFloor >= 380, `the editor cannot shrink past ${editorFloor}px`);
+
+    /* THE FLOOR IS NOT A REDUCTION. It is what the editor pane already had at
+     * 1100px under the old even split, so no width loses room it used to have. */
+    const oldAt1100 = (Math.min(shellCap, 1100 - sidebarW) - shellPad * 2) / 2;
+    assert.ok(editorFloor <= oldAt1100 + 10,
+      `the floor (${editorFloor}px) is about what 1100px already gave (${oldAt1100.toFixed(0)}px)`);
+
+    /* AND IT IS ENOUGH FOR THE CONTROLS. A skill row is a label, a 12px gap and a
+     * five-segment scale with a 240px basis; the month field caps at 320px. */
+    assert.ok(FIELDS.includes('flex: "0 1 240px"'), "the rating scale's basis");
+    assert.ok(CSS.includes(".rvc-month{max-width:320px"), "and the month field's cap");
+    const editorPad = 40; // clamp(16px,3vw,40px) at its maximum
+    assert.ok(editorFloor - editorPad * 2 >= 320,
+      `the floor leaves ${editorFloor - editorPad * 2}px of content — the month field needs 320`);
+    /* And at the padding the floor actually gets — `clamp(16px,3vw,40px)` is 33px
+     * at 1100px, not its 40px maximum — there is real room over. */
+    assert.ok(editorFloor - 33 * 2 > 320, "with the padding a 1100px screen really uses");
+  });
+
+  it("102. at desktop widths the sheet approaches the printed document", () => {
+    /* THE POINT OF THE WHOLE CHANGE: the preview's content column against the
+     * printed one. Anything much under it wraps paragraphs differently and the
+     * preview stops describing the report. */
+    const at = (v: number) => geometry(v).column / PRINTED_COLUMN;
+    assert.ok(at(1920) > 0.93, `at 1920 the column is ${(at(1920) * 100).toFixed(0)}% of the printed one`);
+    assert.ok(at(1600) > 0.85, `at 1600 it is ${(at(1600) * 100).toFixed(0)}%`);
+    assert.ok(at(1440) > 0.72, `at 1440 it is ${(at(1440) * 100).toFixed(0)}%`);
+
+    /* AND IT IS A REAL IMPROVEMENT, not a restatement: the same arithmetic under
+     * the old cap and even split is what human verification called too narrow. */
+    const before = (() => {
+      const box = Math.min(shellCap, 1920 - sidebarW) - shellPad * 2;
+      const preview = box / 2;
+      return Math.min(sheetCap, preview - 32 * 2) - sheetPad * 2;
+    })();
+    assert.ok(geometry(1920).column > before * 1.25,
+      `1920 goes from ${before.toFixed(0)}px to ${geometry(1920).column.toFixed(0)}px of column`);
+  });
+
+  it("103. the sheet stays bounded and centred — never stretched, never scaled", () => {
+    /* It grows to its own maximum and stops; the pane's leftover width becomes
+     * air on both sides rather than a wider document. */
+    assert.ok(geometry(1920).sheet <= sheetCap && geometry(2560).sheet <= sheetCap,
+      "the sheet never exceeds its own bound");
+    assert.equal(geometry(2560).sheet, sheetCap, "and reaches it on a wide screen");
+    assert.ok(CSS.includes("max-width:760px;margin:0 auto"), "bounded and centred by its own rule");
+    /* NO TRANSFORM SCALING anywhere near the preview: a scaled sheet leaves a
+     * layout box that lies about the size of what is drawn in it. */
+    const composerCss = CSS.slice(CSS.indexOf(".rvc{"));
+    assert.ok(!/\.rvc[^{]*\{[^}]*transform:\s*scale/.test(composerCss), "no scaled preview");
+    assert.ok(!/zoom:/.test(composerCss), "and no zoom");
+    /* BOTH TRACKS FLOOR AT A MINIMUM THEY CAN HONOUR, so a wide child pays for
+     * itself instead of pushing the page sideways. */
+    assert.ok(split![0].includes("minmax(0,3fr)"), "the preview track can shrink to zero");
+  });
+
+  it("104. an ultrawide screen is capped, not stretched", () => {
+    const wideBox = geometry(2560).box;
+    assert.equal(wideBox, composerCap - shellPad * 2, "the workspace stops at its cap");
+    assert.equal(geometry(3440).box, wideBox, "and does not grow past it");
+    /* The editor stops growing too — it has a natural width of its own. */
+    assert.ok(CSS.includes(".rvc-editor-inner{max-width:620px"), "the form is bounded inside its pane");
+  });
+
+  it("105. nothing below 1100px changes", () => {
+    /* The tablet block still collapses the split to one column, and it sits
+     * later in the stylesheet, so it wins at equal specificity. */
+    const tablet = mediaBlock("(max-width:1099px)", ".rvc-split");
+    assert.ok(tablet.includes(".rvc-split{grid-template-columns:minmax(0,1fr)}"),
+      "one column below the breakpoint");
+    assert.ok(CSS.indexOf(tablet) > CSS.indexOf(".rvc-split{display:grid"),
+      "and that block is declared after the desktop rule, so it wins at equal specificity");
+    /* The wide cap is inside a min-width query, so it cannot reach a phone. */
+    assert.ok(CSS.includes("@media (min-width:1100px){"), "the cap is gated at the same breakpoint");
+    /* And none of the surfaces §13 protects were touched. */
+    for (const untouched of [".rvc-preview-btn", ".rvc-actions-mobile", ".rvc-overlay-head", ".rvc-month"]) {
+      assert.ok(CSS.includes(untouched), `${untouched} is still declared`);
+    }
   });
 });

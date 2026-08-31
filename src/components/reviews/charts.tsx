@@ -79,7 +79,11 @@ export function SkillRadar({ current, previous, compare }: SkillRadarProps) {
   const showPrevious = compare && previous !== null;
 
   return (
-    <div style={{ position: "relative", width: "100%", maxWidth: 224, margin: "10px auto 0", aspectRatio: "1" }}>
+    /* `skill-radar` is a hook, not a style: the print stylesheet caps this
+     * wrapper to reclaim vertical budget on paper. Nothing on screen reads it,
+     * and the analytics dashboard's radar is unaffected because the rule is
+     * scoped to a report sheet being printed. */
+    <div className="skill-radar" style={{ position: "relative", width: "100%", maxWidth: 224, margin: "10px auto 0", aspectRatio: "1" }}>
       <svg
         viewBox="0 0 280 280"
         role="img"

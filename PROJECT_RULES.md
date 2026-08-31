@@ -231,6 +231,54 @@ The permission is for explicit corrections only. Automatic processes — lifecyc
 
 **No timestamps.** Nothing records when an assignment was last changed, so no "last updated" is shown anywhere. A derived one would be a guess presented as a fact.
 
+## Reviews
+
+**A Review belongs to a Student and a month, and to nothing else.** It is the teacher's assessment of how one student's month went: ten skill ratings and the words about them. There is no `classId` and no `lessonId` on a Review, deliberately — a student who is taught in two classes had one month, not two, and a review is not a record of a session. Moving, cancelling or regenerating a lesson has no effect on any review, and writing a review changes no student, parent, class, lesson, register, assignment or bill.
+
+**The month is always the teacher's explicit statement.** The server never substitutes the current month for a payload that omitted one: which month a review is about is a claim, not a default. The client never computes a month either — the selectable months arrive from the server, and the form picks one of them or none.
+
+**The selectable window is the application month plus the previous eleven** — twelve months ending at the present. Both edges are refusals, for different reasons: a **future** month has not been taught yet, so there is nothing to report on; a month **twelve or more back** is beyond the year the teacher works in, and writing a fresh review into it would be inventing a record rather than correcting one. A month a student already has stays **visible in the list, marked as taken**, because a teacher needs to see that June is done rather than wonder where it went.
+
+**One review per student per month.** `(studentId, month)` is unique. A second create for a month that is already taken is refused as a conflict; it never silently becomes an edit.
+
+**Student status gates Review Create — and this is a deliberate divergence from Attendance and Homework.** A new review may be written only for a student who is **Active**, **Trial** or **Paused**. Attendance does not consult student status at all (an enrolled student is in the room, whatever their status) and Homework does not either (an enrolled student is given the work). Reviews is different because a review is an *assessment authored about a person*, not a record of something that happened to them: **Archived** means that student has been filed away, and there is no month of theirs left to report on. The rule fails closed — a status this build does not recognise is not a permission, and neither is a student who does not resolve.
+
+**The gate is on Create, and only on Create.** An Archived student's existing reviews stay **visible and editable**: they describe months that happened, and archiving the student afterwards does not make those records uncorrectable.
+
+**Ghost reviews are preserved, and unreachable.** A review whose student no longer exists is never erased — it is the only record that the assessment was ever made. It is also never shown, never counted into a card, and never disclosed: it raises no row on the Reviews index, the student payload that would carry it 404s, and a guessed id is refused with the **same** answer a genuinely missing review gets. A distinct error would advertise the existence of a record nobody may see. Being unseen is not being forgotten.
+
+**Exactly ten dimensions, every time, in canonical order:** listening, speaking, reading, writing, grammar, vocabulary, pronunciation, confidence, participation, homework. Each is an **integer from 1 to 5** — the scale has five points, not nine, and an unrated skill is a refusal rather than a silent zero. A review missing a dimension is refused; so is one carrying an eleventh.
+
+**The average is the arithmetic mean of those ten, equally weighted, and is never stored.** No skill counts for more than another, the divisor is the vocabulary rather than however many keys a document happens to hold, and the value is derived on demand. Storing it would be a second copy of the same fact, free to drift from the first. **There is no lifetime or rolling average anywhere**: a card's score is the latest review's alone.
+
+**At least one assessment note must be written.** Each of comment, strengths, improvements and goals is optional on its own — a teacher who says everything in the comment should not have to repeat it under three headings — but at least one of the four must survive trimming. **`parentNotes` does not satisfy this**: it is a message addressed to the family, not the teacher's account of the month, so a review carrying only parent notes has recorded no assessment at all.
+
+**Ownership is immutable.** An edit may change the ten ratings and the five text fields, and nothing else: `id`, `studentId` and `month` are fixed at creation. A review that names the wrong student, or the wrong month, is a different review — it is written again, not corrected. Historical correction of the *content* is otherwise unrestricted: no month lock, no warning, and the twelve-month window is irrelevant to an edit because the record already exists and correcting it invents nothing.
+
+**No Delete.** A review is a historical record of a month. Nothing in the application removes one — not by hiding a button, but because no endpoint exists that could.
+
+**No lifecycle and no timestamps.** A review has no status: there is no Draft, no Published, no Final, and no workflow of any kind. It is written or it is not. Nothing records when one was written or last changed, so no "last updated" is shown anywhere — a derived one would be a guess presented as a fact.
+
+**Parent linkage is informational and never blocking.** A student may legitimately have no linked parent, and reviews are one of the features required to say so clearly (see Student & Parents). A `parentId` matching no Parent document is *not* a link, and is shown as such. It blocks nothing: a review may be created and edited for a student with no parent, and nothing is notified.
+
+**Nothing about a review is derived from other domains.** Ratings are not inferred from attendance, from homework completion, from a previous review, from the student's status or from their class, and no starting value is a suggestion computed from data. A review is the teacher's judgement; a prefilled score would be the system putting words in their mouth.
+
+**The composer is one surface with three stages: Create, View and Edit.** A saved review opens as something a teacher **reads** — the values, the report, no save control — and becomes editable only when they say so. Create has no view stage; there is nothing saved to look at yet. **The stage is screen state and nothing else**: it is never persisted, never sent and never read back, there is no `/edit` address, and it is not a lifecycle (see *No lifecycle*, above). Create lives at `/reviews/new?studentId=…` and a saved review at `/reviews/{reviewId}` — the edit address names the review and never the student, because the Review owns that relationship and a URL must not be able to disagree with the record about whose it is.
+
+**Leaving with unsaved work always asks first, and asks once.** Closing the composer, switching the Create month and cancelling an edit are the three ways to lose typed work, and all three raise the same single confirmation. A pristine form leaves silently, and a successful save is never dirty.
+
+**Attendance and homework figures on a review are read-only, and are the server's.** They arrive per month on the composer's read model, already derived by the domains that own them. The review neither stores nor recomputes them: typing cannot move them, and changing the month moves them only because a different month genuinely has different figures. An empty denominator is **`No data`**, never `0%` — "nobody took a register" and "this student attended nothing" are different facts.
+
+**The report is generated, never stored.** One `MonthlyReviewReport` is derived from the ten ratings and five fields currently on screen plus those server figures, and it is the single source for all three outputs: the **live preview**, **Print** and **Export PDF**. Nothing about it is persisted — no generated-on timestamp, no rendered copy, no cached document — and generating one writes nothing.
+
+**Print and Export PDF act on the draft, not on the record.** Both work in all three stages, including a Create that has never been saved and an Edit with unsaved changes: the document is a generated artifact of the composer's current state, not proof that a Review exists. Neither saves, neither clears dirty state, and neither requires a save first. **`Generated on` is document metadata** taken from the application day; it is not a Review timestamp and creates none.
+
+**Analytics are derived on demand and stored nowhere.** The Student Profile's Reviews tab carries the overall-score group, attendance and homework summaries, a skill radar with a previous-month comparison, a score trend, a score-distribution donut, a skill heatmap, the monthly learning journey, and the strengths / focus-areas ranking. Every one is computed from reviews that already exist; none writes, and none introduces a stored aggregate.
+
+**Still deliberately absent, and absent whole rather than stubbed:** an **AI summary**, an **achievement** line and a **concern** line. No stored field carries any of them and no deterministic rule produces one, so none is derived on any Reviews surface — including the printed and exported document, which cannot contain a section the screen does not have. **Global Search** is likewise deferred: the header seam exists and forwards to nothing. None of these is drawn as a disabled placeholder that would suggest it already works.
+
+**The `(studentId, month)` unique index is not yet created in production.** The rule is enforced by the service today; declaring the index is a production DDL change and belongs to Gate 5, not to a feature gate.
+
 ## Calendar
 Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendance status indicator for past lessons. Clicking a lesson opens the drawer (never navigates away). Drag-and-drop reschedules.
 

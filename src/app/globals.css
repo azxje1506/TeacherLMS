@@ -552,22 +552,157 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   @page{margin:12mm}
   html,body{height:auto !important;overflow:visible !important;background:#fff !important}
   .no-print{display:none !important}
-  /* Only rewrite the page when a review is actually open, so global Ctrl+P from
-     any other screen prints that screen instead of a forced blank page. */
-  [data-theme].print-review{display:block !important;min-height:0 !important;height:auto !important;background:#fff !important}
-  [data-theme].print-review > *{display:none !important}
-  [data-theme].print-review > .review-overlay{display:block !important}
+  /* Only rewrite the page when a review is actually being printed, so a global
+     Ctrl+P from any other screen prints that screen instead of a forced blank
+     page.
+
+     THE CLASS GOES ON <body>, AND THAT IS THE FIX. This block was written in
+     Gate 4.4D against `[data-theme]`, which is <html> — but the report overlay
+     is portalled to document.body, so `[data-theme] > .review-overlay` demanded
+     the overlay be a child of <html> and never matched, while
+     `[data-theme] > *` hid <body> itself. It would have printed a blank sheet.
+     Nothing had ever set the class, so nothing ever ran it; this gate is the
+     first time these rules execute at all. */
+  body.print-review{display:block !important;min-height:0 !important;height:auto !important;background:#fff !important}
+  body.print-review > *{display:none !important}
+  body.print-review > .review-overlay{display:block !important}
   .review-overlay{position:static !important;inset:auto !important;height:auto !important;overflow:visible !important;background:#fff !important;animation:none !important}
   .report-body{display:block !important;overflow:visible !important;height:auto !important}
   .report-scroll{position:static !important;overflow:visible !important;height:auto !important;padding:0 !important;background:#fff !important;display:block !important}
   .report-sheet{position:static !important;max-width:none !important;width:100% !important;margin:0 !important;border:none !important;box-shadow:none !important;border-radius:0 !important;overflow:visible !important}
-  /* Keep logical blocks whole across page breaks; header/footer print once each. */
-  .report-sheet .rp-block,.report-sheet .rp-head,.report-sheet .rp-foot{break-inside:avoid !important;page-break-inside:avoid !important}
-  /* Reports page: sheet is nested deep, so hide via visibility and reposition. */
-  [data-theme].print-report *{visibility:hidden !important}
-  [data-theme].print-report .report-sheet,[data-theme].print-report .report-sheet *{visibility:visible !important}
-  [data-theme].print-report .report-sheet{position:absolute !important;left:0 !important;top:0 !important;width:100% !important;max-width:none !important;margin:0 !important;border:none !important;box-shadow:none !important;border-radius:0 !important}
+  /* Keep logical blocks whole across page breaks; the masthead prints once. */
+  .report-sheet .rp-block,.report-sheet .rp-head{break-inside:avoid !important;page-break-inside:avoid !important}
+  /* ---- The document keeps its colours on paper ----------------------------
+     Browsers drop background fills when printing unless the page asks them not
+     to, and the skill bars ARE backgrounds: each is a div whose width is the
+     rating and whose `background` is the performance colour. Without this the
+     filled portion prints white inside a white track — human verification found
+     exactly that, a colourless row of grey tracks.
+
+     Scoped to the report sheet and its descendants, never the app: this is a
+     statement that THIS DOCUMENT's colour carries meaning, not a global demand
+     that the browser ink everything. It also covers the radar's fills and the
+     score pill, which are the same kind of ink.
+
+     Both spellings are needed — `print-color-adjust` is the standard, and the
+     `-webkit-` prefix is what shipping Chrome and Safari still read. */
+  .report-sheet,.report-sheet *{
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+  /* The overlay's own chrome — Close, Print, Export PDF — is interactive and
+     must not appear on paper. `.no-print` above is what removes it. */
+
+  /* ---- The print layout, and the document it is trying to be ----------------
+     THE DOWNLOADED PDF IS THE BASELINE. Human comparison settled it: the file is
+     the report this product wants, and print's job is to look like the same
+     document, not to be a compressed version of it. So the numbers below are
+     derived from the renderer's own metrics rather than from whatever fitted.
+
+     WHAT THIS DOES NOT DO. The URL, the date, the page number and the site name
+     that appear at the edges of a print preview are the BROWSER's own headers
+     and footers. They are user-agent chrome, drawn outside the page box, and no
+     stylesheet or script can remove or reposition them — only the person
+     printing can, via the print dialog's "Headers and footers" checkbox. The
+     `.rp-foot` rule further down is about the REPORT's own footer, which is
+     app content and a completely different thing — and print hides it outright.
+
+     ---- THE RHYTHM ----------------------------------------------------------
+     Three steps, and the RELATIONSHIP is what matters — a major boundary is
+     visibly larger than anything inside a section, and a heading sits closer to
+     what it titles than to what precedes it:
+
+         major section gap      17px    (the file's 4.5mm, exactly)
+         heading to its content 10px    (the file's 2.8mm is 10.6px)
+         inside a group        6-10px
+
+     The major step is the renderer's own 4.5mm converted at 96dpi rather than
+     rounded up to 20px. That is not a compression away from the approved rhythm
+     — it is the approved rhythm, stated exactly, and it returns 27px of page. */
+  body.print-review .report-sheet{padding:0 !important;border:none !important}
+  body.print-review .report-sheet .rp-head{padding-bottom:9px !important;margin-bottom:17px !important}
+  body.print-review .report-sheet .rp-block{margin-bottom:17px !important}
+  /* A section title sits close to what it titles. The rule under it stays — it
+     is what separates one section from the next, and it is the same divider the
+     exported PDF draws — and the type scale is untouched: this is the gap, not
+     the words. */
+  body.print-review .report-sheet .rp-block-title{margin-bottom:10px !important;padding-bottom:5px !important}
+  /* FOUR CELLS, ONE ROW. The sheet's auto-fit grid asks for 180px a cell, which
+     gives three columns on A4 and wraps the fourth onto a second row for no
+     reason — the four values are a name, a month, a grade and a name. Four equal
+     columns of ~158px hold them all and return a whole row. */
+  body.print-review .report-sheet .rp-meta{
+    grid-template-columns:repeat(4,minmax(0,1fr)) !important;row-gap:10px !important;
+  }
+  /* ---- The skills row, at the file's proportions ---------------------------
+     The exported PDF splits the content column 56/44 and draws a 52mm web; the
+     screen's auto-fit grid splits it 50/50 and the radar was capped at 168px,
+     whose web is only 120px — 32mm, under two thirds of the file's. Beside the
+     PDF the printed radar read as a decoration rather than a chart.
+
+     56/44 here too, and a 224px box, whose web is 160px = 42mm. The cap is what
+     it is because the ten axis labels are HTML text at their own size, anchored
+     at 45% of the box and growing outward: at 224px the widest label reaches
+     about 16px past its column, which the 20px gutter absorbs. */
+  body.print-review .report-sheet .rp-skills-row{grid-template-columns:56fr 44fr !important}
+  body.print-review .report-sheet .skill-radar{max-width:224px !important;margin-top:4px !important}
+  /* Ten bar rows: tight, because they are one group. */
+  body.print-review .report-sheet .rp-skill-bars{gap:6px !important}
+  /* The three summary cards keep their row on paper: A4 is far wider than the
+     210px the auto-fit grid asks for, so they never stack, and the block costs
+     one card's height however long a tie list is. */
+  body.print-review .report-sheet .rp-summary{gap:8px !important}
+  body.print-review .report-sheet .rp-summary-card{padding:8px 10px !important}
+  /* The two boxed blocks give back a little of their own padding. */
+  body.print-review .report-sheet .rp-tile{padding:10px 14px !important}
+  body.print-review .report-sheet .rp-goals{padding:11px 16px !important}
+
+  /* ---- The report footer is NOT printed by the browser --------------------
+     ---- THE FINAL CONTRACT, AFTER FOUR ARCHITECTURES FAILED IN A BROWSER ----
+     Browser print omits `.rp-foot` entirely. The element still renders on the
+     screen preview, and the downloaded PDF still draws its own anchored footer;
+     only this output drops it.
+
+     WHY. Every attempt to give the printed footer a position was disproved by
+     real Chrome/Edge verification — a repeated `position:fixed` footer with an
+     `@page` band, which cost every page 9mm and did not repeat; a
+     `min-height:250mm` floor, which sat below nearly every real report and so
+     never engaged; and a viewport-relative floor with the footer on
+     `margin-top:auto`, which turned a few millimetres of overflow into a
+     footer-only second page, because a guaranteed minimum height is a
+     guaranteed minimum overflow. Left in plain flow it stopped forcing a page,
+     but it then sat wherever the content happened to end, which is not a
+     footer either.
+
+     So the product decision is that browser print carries no app footer at
+     all. Nothing here reserves space for one, anchors one, or floors the
+     sheet: the printed sheet sizes entirely from its own content, and
+     pagination is the browser's.
+
+     THE DOWNLOADED PDF IS THE FAMILY-FACING DOCUMENT, and it is where the
+     anchored footer lives — drawn in millimetres at the bottom of every page,
+     deterministically. Browser print is a convenience rendering of the same
+     report: same content, same hierarchy, natural pagination, no app footer.
+     What a browser prints at the page edges — URL, date, page number, site
+     title — is user-agent chrome and is a different footer entirely. */
+  body.print-review .report-sheet .rp-foot{display:none !important}
+  /* NOTHING IN THE CHAIN MAY CONSTRAIN THE SHEET — the printed DOM is
+     body > .review-overlay > .report-body > .report-scroll > .report-sheet, and
+     any of them capping height or clipping overflow would clip a long report or
+     fragment the document wrongly. They are unwrapped above; restating the
+     guarantee here is what natural pagination depends on, and a test pins it. */
+  body.print-review,
+  body.print-review .review-overlay,
+  body.print-review .report-body,
+  body.print-review .report-scroll{height:auto !important;max-height:none !important;overflow:visible !important}
 }
+/* REMOVED IN GATE 4.4E: a second `.print-report` strategy that hid the whole
+   page by `visibility` and repositioned a deeply nested `.report-sheet`. It had
+   no consumer anywhere in src/, it was never executed, and its sibling rules in
+   this block turned out to be broken (see the <body> note above) — so it was a
+   second, unverified print path competing with the one this gate ships. Print
+   now has exactly one route: the report overlay, which is the surface the
+   composer already portals to <body>. */
 
 /* ==========================================================================
    The dedicated Review composer  (Gate 4.4D)
@@ -702,6 +837,70 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    inside a region needs to know a breakpoint exists. */
 .rvc-actions-desktop{display:flex;align-items:center;gap:8px;flex:none;min-width:0}
 
+/* ---- The REPORT actions (Print, Export PDF) --------------------------------
+   A second complementary pair, on a different axis and for a different reason.
+   These are not persistence actions: they act on the document, not the record,
+   and they work in all three stages including a Create that was never saved.
+
+   THE LINE IS 1100, NOT 620, because it is the line the REPORT changes shape at.
+   At 1100 and up the report is permanently in the right pane, so its actions
+   belong beside it in the header — and `.rvc-preview-btn` does not exist there,
+   because there is nothing to preview. Below 1100 the report is not
+   continuously visible: the actions go with it, into the Preview overlay, which
+   is the surface that opens it.
+
+   So the two copies are complementary by CONSTRUCTION, not by a hide rule: the
+   overlay cannot open at a width where the header copy is shown, because the
+   only control that opens it is itself hidden there. Both are rendered from one
+   `reportActions` definition in review-composer.tsx. */
+.rvc-actions-report{display:none;align-items:center;gap:8px;flex:none;min-width:0}
+@media (min-width:1100px){
+  .rvc-actions-report{display:flex}
+}
+/* ---- The preview overlay's own header -------------------------------------
+   Title, report actions, Close. It has its own layout rather than borrowing the
+   composer header's, because it carries different things: no student identity,
+   no persistence action, and one control (Close) that must never move.
+
+   ABOVE 620 it is one row — title, then the actions, then Close on the right.
+   The TITLE is the flexible child and the buttons are fixed, which is the
+   correct ownership: a button that shrinks stops being tappable, while a title
+   that shrinks simply wraps.
+
+   AT 620 AND BELOW it is two rows: title and Close first, the two report actions
+   underneath. Human verification found all four competing for one 375px row —
+   `Monthly Progress Report` was rendering a word fragment per line beside three
+   nowrap buttons. Nothing here shrinks a touch target to buy the room; the row
+   count changes instead. */
+.rvc-overlay-head{display:flex;align-items:center;gap:10px;min-width:0}
+.rvc-overlay-title{flex:1;min-width:0}
+.rvc-overlay-name{
+  font-size:14.5px;font-weight:600;letter-spacing:-.01em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rvc-overlay-sub{
+  font-size:12px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.rvc-overlay-actions{display:flex;align-items:center;gap:8px;flex:none;min-width:0}
+.rvc-overlay-close{flex:none}
+
+@media (max-width:620px){
+  .rvc-overlay-head{flex-wrap:wrap;row-gap:10px}
+  /* Row one: the title takes what Close does not, and wraps at SPACES — two
+     natural lines is fine, one word per line is the defect being fixed, so the
+     composer's `overflow-wrap:anywhere` is deliberately not inherited here. */
+  .rvc-overlay-title{flex:1 1 auto;order:0}
+  .rvc-overlay-name{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:normal;line-height:1.3}
+  .rvc-overlay-sub{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.35}
+  .rvc-overlay-close{order:1}
+  /* Row two: both report actions, sharing the width evenly and keeping a 40px
+     target. They are the reason the row ran out of space, so they are what
+     moves — Close stays with the title, where a thumb expects it. */
+  .rvc-overlay-actions{order:2;flex:1 0 100%;justify-content:stretch}
+  .rvc-overlay-actions>button{flex:1;min-width:0;height:40px}
+}
+
 /* The mobile region is the sticky bar. Same construction as the Attendance
    register's save bar: it sits on the page's own bottom edge, blurs what is
    behind it and keeps a 44px target. It is `sticky` rather than `fixed`, so it
@@ -726,7 +925,57 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    Two equal columns, both `minmax(0,...)` so a wide child pays for itself
    instead of pushing the page sideways. The divider is the left pane's own
    border, so there is no third element to keep in step. */
-.rvc-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+/* ---- The composer's own workspace, and its split -------------------------
+   ---- WHY THIS SURFACE GETS ITS OWN WIDTH -------------------------------
+   Every other page in this app is a list or a form, and `.app-main`'s 1400px cap
+   is right for those: it keeps a table's line length readable. The composer is
+   not one of those. Its right half is an A4 DOCUMENT, and a document rendered
+   at 74% of its real width is not a preview of anything — the line wrapping is
+   wrong, so the report on screen breaks its paragraphs somewhere the printed
+   one does not.
+
+   THE MEASUREMENT. At 1920px, with the 248px sidebar, the old geometry gave
+   the composer 1400px, split evenly: a 668px preview pane holding a 604px
+   sheet, whose content column is 524px against the printed document's 703px.
+   With the split below and this cap lifted the same screen gives the preview
+   965px and the sheet reaches its own 760px maximum — a 680px content column,
+   97% of the real one.
+
+   1760px IS THE CAP, and it binds late by design: 1760 + a 248px sidebar is
+   about 2000px, so every ordinary desktop uses its full width and only an
+   ultrawide is held back. Past that the editor would be stretched across
+   hundreds of pixels it has no use for, and the sheet — capped at 760px —
+   would just drift further from it.
+
+   IT REACHES `.app-main` THROUGH `:has()`, scoped to a page that actually
+   contains a composer, so no other screen's width changes. The `!important` is
+   not decoration: the shell sets `maxWidth:1400` as an INLINE style, and an
+   inline declaration beats any stylesheet rule without it. This repository has
+   shipped three rules that lost that cascade silently. */
+@media (min-width:1100px){
+  .app-main:has(>.rvc){max-width:1760px !important}
+}
+
+/* ---- The split ------------------------------------------------------------
+   THE PREVIEW IS THE DOMINANT PANE, at 2fr/3fr — 40/60 — because it holds a
+   real document and the editor holds a form that has a natural width of its
+   own (`.rvc-editor-inner` caps at 620px, so past that the editor gains nothing
+   and the sheet gains everything).
+
+   THE 400px FLOOR IS WHAT KEEPS THE EDITOR HONEST. Below the width where 40%
+   is comfortable the editor stops shrinking and takes it from the preview
+   instead, because a form you cannot use is worse than a document you have to
+   scroll. 400px is what that pane ALREADY has at 1100px under the old even
+   split, so nothing narrows anywhere: it is a floor, not a reduction. Inside
+   it a skill row is a label, a 12px gap and five 42px rating segments; the
+   month field sits under its 320px cap; the summary tiles fall to two across.
+
+   BOTH TRACKS ARE `minmax(…,0)` ON THEIR MINIMUM so a wide child pays for
+   itself instead of pushing the page sideways — the report sheet is bounded
+   and centred by its own `max-width` and `margin:0 auto`, and nothing here
+   scales it with a transform, which would leave the layout box lying about
+   the size of what is drawn in it. */
+.rvc-split{display:grid;grid-template-columns:minmax(400px,2fr) minmax(0,3fr);align-items:start}
 .rvc-editor{min-width:0;padding:22px clamp(16px,3vw,40px) 56px;border-right:1px solid var(--border)}
 .rvc-editor-inner{max-width:620px;margin:0 auto;min-width:0}
 /* ---- The month field -------------------------------------------------------

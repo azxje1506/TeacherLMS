@@ -52,7 +52,6 @@ const FORM_DRAWERS: Record<string, string> = {
   parents: read("src", "components", "parents", "parent-drawer.tsx"),
   classes: read("src", "components", "classes", "class-drawer.tsx"),
   homework: read("src", "components", "homework", "homework-drawer.tsx"),
-  reviews: read("src", "components", "reviews", "review-drawer.tsx"),
 };
 
 /* =========================================================================
@@ -305,7 +304,7 @@ describe("Dismiss guard — the whole drawer inventory is covered", () => {
      * renders the shared panel must be one this suite knows about. */
     const consumers = [
       "students/student-drawer.tsx", "parents/parent-drawer.tsx", "classes/class-drawer.tsx",
-      "homework/homework-drawer.tsx", "reviews/review-drawer.tsx",
+      "homework/homework-drawer.tsx",
     ];
     for (const rel of consumers) {
       const src = read("src", "components", ...rel.split("/"));
@@ -338,7 +337,7 @@ describe("Dismiss guard — the whole drawer inventory is covered", () => {
      * writes its value programmatically — the rating segments, the homework
      * class/scope pickers — would otherwise leave the form looking pristine
      * after a real change. Every such call opts in. */
-    for (const rel of ["homework/homework-drawer.tsx", "reviews/review-drawer.tsx"]) {
+    for (const rel of ["homework/homework-drawer.tsx"]) {
       const src = read("src", "components", ...rel.split("/"));
       // `[^;]` already spans newlines, so no dotAll flag is needed.
       const calls = [...src.matchAll(/setValue\([^;]*?\);/g)].map((m) => m[0]);
@@ -352,14 +351,19 @@ describe("Dismiss guard — the whole drawer inventory is covered", () => {
 
   it("27. a server-supplied default becomes the baseline, never a change", () => {
     /* Reviews opens with ten ratings at 3 and a default month the SERVER chose.
-     * Neither is something the teacher did, so opening the drawer and closing it
-     * immediately must not claim unsaved work. The month is applied with `reset`,
-     * which moves the baseline, rather than `setValue`, which would move the
-     * value away from it. */
-    const src = FORM_DRAWERS.reviews;
-    assert.match(src, /if \(next\) reset\(emptyValues\(student\.id, next\)\);/);
+     * Neither is something the teacher did, so opening the screen and leaving it
+     * immediately must not claim unsaved work.
+     *
+     * RETARGETED IN GATE 4.4E: this rule used to be the Review drawer's, and the
+     * drawer is deleted. The composer keeps it and states it more strictly —
+     * `seed` sets the form AND the dirty baseline together, so a default can
+     * never read as an edit, and the effect is guarded on the record's identity
+     * so a background refetch cannot overwrite work in progress. */
+    const src = read("src", "components", "reviews", "review-composer.tsx");
+    assert.ok(src.includes("baselineRef.current = values;"), "the seed moves the baseline with the values");
     assert.ok(!/setValue\("month"/.test(src), "the default month must not read as an edit");
-    assert.ok(src.includes("|| isDirty) return;"), "and it must never overwrite work in progress");
+    assert.ok(src.includes("if (seededFor.current === identity) return;"),
+      "and it must never overwrite work in progress");
   });
 
   it("28. the one exempt panel is exempt because it has nothing to lose", () => {

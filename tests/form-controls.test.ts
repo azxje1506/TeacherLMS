@@ -335,8 +335,12 @@ describe("Select — every interaction state belongs to the app", () => {
     // No existing consumer asks for either; the review month picker is the one that does.
     const consumers = [...Object.values(DRAWERS), read("src", "components", "lessons", "calendar-ui.tsx")];
     for (const src of consumers) assert.ok(!/<Select[^/>]*disabled/.test(src));
-    const reviewDrawer = read("src", "components", "reviews", "review-drawer.tsx");
-    assert.ok(reviewDrawer.includes("disabled: m.taken"), "the reviewed month is the one disabled option");
+    /* Gate 4.4E deleted the Review drawer, so the composer is now the sole
+     * consumer of BOTH designed states — a disabled option and a disabled
+     * trigger. Narrow this test, never drop it: it is the running record of what
+     * this primitive was designed to do. */
+    const composerState = read("src", "components", "reviews", "composer-state.ts");
+    assert.ok(composerState.includes("disabled:"), "the reviewed month is the one disabled option");
     const composer = read("src", "components", "reviews", "review-composer.tsx");
     assert.ok(composer.includes("disabled={!monthEnabled}"), "and the edit stage is the one disabled trigger");
   });

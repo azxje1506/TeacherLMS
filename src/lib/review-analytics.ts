@@ -306,33 +306,91 @@ export function biggestImprovement(
  * WHAT IS NOT HERE IS THE POINT. The design also shows a "concern" line and the
  * profile journey shows an "achievement" callout. Neither has a stored field and
  * neither has an approved rule, so neither is derived, guessed or generated —
- * there is no property on this type for a screen to render. */
+ * there is no property on this type for a screen to render.
+ *
+ * ---- WHY THIS IS TWO ARRAYS RATHER THAN TWO SKILLS -------------------------
+ *
+ * It used to be `strongest: SkillRating | null` and `weakest: SkillRating | null`,
+ * each the head of `rankSkills`. That is a deterministic answer to a question
+ * the ratings often cannot answer. Given
+ *
+ *     Listening 4 · Speaking 4 · Reading 4 · Writing 3 · Grammar 3
+ *
+ * it printed "Best skill: Listening" and "Weakest skill: Writing" on a document
+ * that goes home to a family — naming one of three equals as the winner, and one
+ * of two equals as the problem, on the strength of nothing but the position of a
+ * key in the SKILLS constant. The tie-break was stable and the sentence was
+ * false. So the shape now carries EVERY skill holding the extreme rating, and a
+ * surface that renders it cannot invent a single winner, because there is no
+ * single value for it to render.
+ */
 export interface TeacherSummary {
-  /** Highest-rated skill of the latest review, canonical tie-break. */
-  strongest: SkillRating | null;
-  /** Lowest-rated skill of the latest review, canonical tie-break. */
-  weakest: SkillRating | null;
+  /** Every skill of the latest review holding the HIGHEST rating, in canonical
+   * SKILLS order. Empty when there are no ratings — and empty when every skill
+   * is equal, see `allEqual`. */
+  strongest: SkillRating[];
+  /** Every skill holding the LOWEST rating, in canonical SKILLS order. Empty on
+   * the same two conditions.
+   *
+   * NOT "weakest". The teacher-facing word for the lowest-rated dimensions of a
+   * real child is the one this app already uses on the profile card and in the
+   * report's own feedback heading: focus, areas for improvement. */
+  focusAreas: SkillRating[];
   /** Largest positive movement against the previous review, or `null`. */
   improvement: SkillDelta | null;
+  /** True when all ten ratings hold the same value.
+   *
+   * THE NEUTRAL STATE. "Strongest: all ten" beside "Focus areas: all ten" is a
+   * contradiction that adds no information, so both arrays are EMPTY here and
+   * this flag is what a surface renders instead. Making it structural rather
+   * than a rule each screen has to remember is what stops one surface from
+   * getting it wrong. */
+  allEqual: boolean;
+  /** The rating they all hold, when `allEqual`; otherwise `null`. */
+  equalRating: number | null;
 }
 
-/** Strongest, weakest and biggest improvement — and nothing else.
+/** Strongest, focus areas and biggest improvement — and nothing else.
  *
- * Strongest and weakest REUSE `rankSkills`, the same ranking the strengths and
- * focus-areas card already draws, taking the head of each list. They are not
- * a second ordering: a card showing "Listening" at the top of Top strengths and
- * a summary naming a different strongest skill would be one screen disagreeing
- * with itself. */
+ * BOTH SETS REUSE `rankSkills`, the same ranking the profile's strengths and
+ * focus-areas card already draws: it orders by rating and breaks ties on the
+ * canonical SKILLS order, so filtering its own extreme value out of each list
+ * keeps EVERY tied skill and keeps them in canonical display order. Canonical
+ * order still decides how ties are DISPLAYED; it no longer decides which one is
+ * true.
+ *
+ * `count` is the whole vocabulary, because "which skills are highest" can
+ * legitimately answer with all ten — which is exactly the case `allEqual`
+ * intercepts before it can be rendered as a distinction. */
 export function buildTeacherSummary(
   latest: Record<string, number> | null | undefined,
   previous: Record<string, number> | null | undefined
 ): TeacherSummary {
-  if (!latest) return { strongest: null, weakest: null, improvement: null };
-  const { strengths, focus } = rankSkills(latest, 1);
+  const empty: TeacherSummary = {
+    strongest: [], focusAreas: [], improvement: null, allEqual: false, equalRating: null,
+  };
+  if (!latest) return empty;
+
+  const { strengths, focus } = rankSkills(latest, SKILL_KEYS.length);
+  if (strengths.length === 0) return empty;
+
+  const maxRating = strengths[0].rating;
+  const minRating = focus[0].rating;
+  /* UNCHANGED, DELIBERATELY. The biggest improvement stays one strictly positive
+   * delta with a canonical tie-break: it is a claim about MOVEMENT between two
+   * months, where a tie is far rarer and where naming one skill states nothing
+   * false about the others — none of them is being called the weak one. */
+  const improvement = biggestImprovement(latest, previous);
+
+  if (maxRating === minRating) {
+    return { strongest: [], focusAreas: [], improvement, allEqual: true, equalRating: maxRating };
+  }
   return {
-    strongest: strengths[0] ?? null,
-    weakest: focus[0] ?? null,
-    improvement: biggestImprovement(latest, previous),
+    strongest: strengths.filter((s) => s.rating === maxRating),
+    focusAreas: focus.filter((s) => s.rating === minRating),
+    improvement,
+    allEqual: false,
+    equalRating: null,
   };
 }
 

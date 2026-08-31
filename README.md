@@ -118,8 +118,68 @@ closed**.
 Recording submission outcomes stays deferred: this MVP ships no submission
 writer.
 
+**Implemented on the `sprint-8-reviews` branch, not yet production-verified or
+closed:** **Reviews** — a student's month, assessed. Ten skill ratings (1–5) and
+five text fields, on:
+
+- the **reviews index** — one card per reviewable student, with the latest
+  review's average, performance label, review count and latest month;
+- the **dedicated composer** — one full-page surface for Create, View and Edit,
+  with the generated monthly report rendered live beside the form. A saved
+  review opens as something to read and becomes editable only when the teacher
+  says so; there is no lifecycle behind that, just screen state;
+- the **Student Profile Reviews tab** — the history timeline plus the analytics
+  the amendment added: skill radar with previous-month comparison, score trend,
+  score distribution, skill heatmap, strengths / focus areas and the monthly
+  learning journey;
+- **Print** and **Export PDF** of the monthly report, from every stage —
+  including a Create that has never been saved, because the report is generated
+  from what is on screen rather than from a record.
+
+Routes, all behind the session:
+
+- `GET /api/reviews` — the index payload
+- `POST /api/reviews` — write one review
+- `PATCH /api/reviews/:id` — correct one review
+- `GET /api/reviews/student/:studentId` — one student's history and month options
+- `GET /api/reviews/composer` — the composer's context for one student
+- `GET /api/reviews/:id/report` — one persisted review, as the report model
+
+Screens: `/reviews`, `/reviews/new?studentId=…`, `/reviews/{reviewId}`, and the
+profile's `?tab=Reviews`.
+
+There is no Review `DELETE` and no `GET /api/reviews/:id`.
+
+Print and PDF are **client-side and read-only**: printing unwraps the report
+overlay through the app's print stylesheet, and the export draws the same report
+DTO with jsPDF over an embedded Unicode font (`public/fonts/Roboto-*.ttf`,
+Apache-2.0) so Vietnamese renders correctly. Neither saves, neither touches the
+form's dirty state, and neither adds a server endpoint. Skill-bar colour is
+per rating (the app's existing 1-5 performance bands) on all four surfaces, and
+the teacher summary names every skill tied at the highest or lowest rating rather
+than picking one. The print layout is budgeted to keep a short report on one A4
+page; the URL, date, page number and site name that a browser draws at the edges
+of a printed sheet are the **browser's** own headers and footers and cannot be
+removed by the app — a reader who wants a completely clean sheet turns them off
+in their own print dialog. **Browser print omits the app's report footer**: the
+screen preview keeps it and the downloaded PDF draws its own at the bottom of
+every page — that file is the family-facing generated document — but the
+printed sheet sizes entirely from its content, so no footer geometry can cost
+it a page. The teacher summary renders as a
+card per item — strongest skills, focus areas, biggest improvement — with the
+skill names wrapping rather than being shortened, in the same structure on
+screen, on paper and in the file.
+
+This has **not** been deployed, run against production, or verified in a hosted
+app. **No production Review has been created, edited or deleted**, and the
+`(studentId, month)` unique index has **not** been created — that is Gate 5's.
+The read-only production check is `npm run reviews:integrity`; it reports the
+collection's count, digest, month histogram, ghost-review count and any duplicate
+`(studentId, month)` pairs, and it runs **observationally**. Global Search
+remains deferred: the header seam exists and calls nothing.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons,
-Reviews, Finance, Reports, Calendar and Settings screens — each ported
+Finance, Reports, Calendar and Settings screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.
 

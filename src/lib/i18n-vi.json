@@ -342,8 +342,11 @@
   "Learning goals": "Mục tiêu học tập",
   "Learning goals for next month": "Mục tiêu học tập tháng tới",
   "Goals for next month…": "Mục tiêu cho tháng tới…",
-  "Best skill": "Kỹ năng tốt nhất",
-  "Weakest skill": "Kỹ năng yếu nhất",
+  "Strongest skill": "Kỹ năng mạnh nhất",
+  "Strongest skills": "Các kỹ năng mạnh nhất",
+  "Focus area": "Lĩnh vực cần tập trung",
+  "Focus areas": "Các lĩnh vực cần tập trung",
+  "All skills": "Tất cả kỹ năng",
   "Top skill": "Kỹ năng hàng đầu",
   "Biggest improvement": "Cải thiện lớn nhất",
   "Avg rating": "Điểm trung bình",
@@ -724,5 +727,8 @@
   "No review": "Chưa có đánh giá",
   "View review": "Xem đánh giá",
   "View latest review": "Xem đánh giá mới nhất",
-  "A review's month is fixed when it is created.": "Tháng của một đánh giá được cố định khi tạo."
+  "A review's month is fixed when it is created.": "Tháng của một đánh giá được cố định khi tạo.",
+  "Exporting…": "Đang xuất…",
+  "The report font could not be loaded.": "Không thể tải phông chữ cho báo cáo.",
+  "The report could not be exported.": "Không thể xuất báo cáo."
 }

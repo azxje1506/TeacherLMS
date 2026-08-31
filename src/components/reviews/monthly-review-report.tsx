@@ -16,9 +16,17 @@
  * IT IS A DOCUMENT, NOT A SCREEN. The sheet carries the comp's own report
  * classes — `report-sheet`, `rp-head`, `rp-block`, `rp-foot` — which globals.css
  * already gives print rules and a light-document palette, so the page prints as
- * a document and reads correctly under a dark theme. Nothing here is
- * theme-conditional and nothing here is interactive: no button, no link, no
- * input. That is what lets Gate 4.4E print it untouched.
+ * a document and reads correctly under a dark theme.
+ *
+ * IT ALSO CARRIES SEVEN PRINT-ONLY HOOKS — `rp-meta`, `rp-tile`, `rp-goals`,
+ * `rp-block-title`, `rp-skills-row`, `rp-skill-bars` and `rp-summary`, joining
+ * `skill-radar` on the chart itself. They have no screen style whatsoever; they exist because reclaiming A4
+ * budget means outranking the inline spacing below, an `!important` rule is the
+ * only thing that outranks an inline style, and a rule can only reach an element
+ * it can select. Every one is declared exactly once, inside `@media print`.
+ *
+ * Nothing here is theme-conditional and nothing here is interactive: no button,
+ * no link, no input. That is what lets Gate 4.4E print it untouched.
  *
  * NO LIFECYCLE ANYWHERE. Sprint 8 Reviews have no Draft, no Published and no
  * Final. The reference comp's publication line is replaced with neutral document
@@ -33,7 +41,10 @@
 import { useSettings } from "@/lib/settings-context";
 import { EM } from "@/lib/format";
 import { SkillRadar } from "@/components/reviews/charts";
-import type { MonthlyReviewReport, StudentAttendanceRate } from "@/lib/review-report";
+import { teacherSummaryLines } from "@/lib/review-report";
+import type {
+  MonthlyReviewReport, StudentAttendanceRate, TeacherSummaryLine,
+} from "@/lib/review-report";
 
 /* The sheet's own type scale. Document metrics, not the app's screen metrics:
  * this block is sized to be read on paper as much as on a screen, and the values
@@ -42,9 +53,16 @@ const capStyle: React.CSSProperties = {
   fontSize: 10, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase",
   color: "var(--muted-2)",
 };
+/* A SECTION TITLE, AND THE RULE UNDER IT. The hairline is the one thing added
+ * for scanability: four uppercase captions with nothing between them and their
+ * content read as a list of labels, and a reader looking for "Teacher summary"
+ * on a printed page had to find it by size alone. The rule is the sheet's own
+ * `--border`, one pixel, the same weight the tiles and the footer already use —
+ * a document convention, not a new one. */
 const blockTitle: React.CSSProperties = {
   fontSize: 11.5, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase",
   color: "var(--fg)", marginBottom: 12,
+  borderBottom: "1px solid var(--border)", paddingBottom: 6,
 };
 
 /** One percentage as the report states it.
@@ -63,7 +81,10 @@ export interface MonthlyReviewReportViewProps {
 
 export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps) {
   const { t, fmt } = useSettings();
-  const { student, parent, period, summary, skills, radar, teacherSummary, feedback, meta } = report;
+  const { student, parent, period, summary, skills, radar, feedback, meta } = report;
+  /* THE SUMMARY IS RESOLVED ONCE, in the module the composer card and the PDF
+   * read too — this component still decides nothing about what it says. */
+  const summaryLines = teacherSummaryLines(report, t);
 
   return (
     <div className="report-sheet rvc-sheet">
@@ -103,7 +124,7 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
         * PROJECT_RULES: a feature that involves parent communication must say
         * clearly when a student has no linked parent. An unresolvable parent is
         * the app's own em dash, never a blank line and never an invented name. */}
-      <div className="rp-block" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(180px,100%),1fr))", gap: "18px 24px", marginBottom: 22 }}>
+      <div className="rp-block rp-meta" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(180px,100%),1fr))", gap: "18px 24px", marginBottom: 22 }}>
         <Meta label={t("Student")} value={student.name} strong />
         <Meta label={t("Review period")} value={fmt.monthLabel(period)} strong />
         <Meta label={t("Grade")} value={t(student.gradeLabel)} />
@@ -116,7 +137,7 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
         * has no threshold anywhere for grading a percentage, so inventing one
         * here would be inventing a rule. The Reviews profile tab withholds the
         * same colour for the same reason. */}
-      <div className="rp-block" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 24 }}>
+      <div className="rp-block" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 22 }}>
         <Tile
           value={summary.overallScore.toFixed(1)}
           color={summary.performanceColor}
@@ -141,12 +162,17 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
       {/* ---- skills ---------------------------------------------------------
         * All ten, in canonical order, as bars and as the app's own radar. Both
         * read the SAME draft ratings, so the two cannot disagree. */}
-      <div className="rp-block" style={{ marginBottom: 24 }}>
-        <div style={blockTitle}>{t("Skill ratings")}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(230px,100%),1fr))", gap: 20, alignItems: "center" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 0 }}>
+      <div className="rp-block" style={{ marginBottom: 22 }}>
+        <div className="rp-block-title" style={blockTitle}>{t("Skill ratings")}</div>
+        {/* `rp-skills-row` is a hook, not a style: on paper the print stylesheet
+          * gives the radar the same share of the column the exported PDF gives it,
+          * which the screen's auto-fit grid cannot express. */}
+        <div className="rp-skills-row" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(230px,100%),1fr))", gap: 20, alignItems: "center" }}>
+          {/* `rp-skill-bars` is a hook, not a style: the print stylesheet tightens
+            * the row gap there to reclaim vertical budget on paper. */}
+          <div className="rp-skill-bars" style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 0 }}>
             {skills.map((s) => (
-              <SkillBar key={s.key} label={t(s.label)} rating={s.rating} color={report.summary.performanceColor} />
+              <SkillBar key={s.key} label={t(s.label)} rating={s.rating} color={s.color} />
             ))}
           </div>
           {/* The comparison series is deliberately off: a printed report shows
@@ -159,33 +185,34 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
       </div>
 
       {/* ---- teacher summary -------------------------------------------------
-        * DETERMINISTIC ONLY: strongest, weakest, and a strictly positive biggest
-        * improvement. No concern line and no achievement line exist on the DTO,
-        * so none can be rendered. A student's first review has nothing to
-        * improve against and says exactly that. */}
-      <div className="rp-block" style={{ marginBottom: 24 }}>
-        <div style={blockTitle}>{t("Teacher summary")}</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          {teacherSummary.strongest && (
-            <SummaryRow
-              label={t("Best skill")}
-              value={`${t(teacherSummary.strongest.label)} · ${teacherSummary.strongest.rating}`}
-            />
-          )}
-          {teacherSummary.weakest && (
-            <SummaryRow
-              label={t("Weakest skill")}
-              value={`${t(teacherSummary.weakest.label)} · ${teacherSummary.weakest.rating}`}
-            />
-          )}
-          {teacherSummary.improvement ? (
-            <SummaryRow
-              label={t("Biggest improvement")}
-              value={`${t(labelOf(skills, teacherSummary.improvement.key))} · ${teacherSummary.improvement.from} → ${teacherSummary.improvement.to}`}
-            />
-          ) : radar.previous === null ? (
-            <SummaryRow label={t("Biggest improvement")} value={t("First review — no prior month")} muted />
-          ) : null}
+        * DETERMINISTIC ONLY, and TIE-AWARE. The items are `teacherSummaryLines`
+        * — the same function the composer card and the PDF call — so all three
+        * name the same skills, in the same order, under the same labels. No
+        * concern line and no achievement line exist on the DTO, so none can be
+        * rendered, and a student's first review has nothing to improve against
+        * and says exactly that.
+        *
+        * ---- WHY THIS IS A GRID OF CARDS RATHER THAN THREE LINES -------------
+        *
+        * It was three `label ……… value` rows, the value right-aligned. With one
+        * strongest skill that read cleanly; with eight tied at 4 it became a wall
+        * of names pressed against its own label, and human verification called
+        * the block unscannable — on a phone and on paper alike.
+        *
+        * Each item now owns a card: the label above, the skills below it with
+        * room to wrap, and the rating in its own corner. The grid is the sheet's
+        * OWN idiom — `repeat(auto-fit,minmax(min(…),1fr))`, the same rule the
+        * student-meta block and the strengths/improvements pair already use — so
+        * three cards sit in a row on a page and on a desktop, two on a tablet and
+        * one per row on a phone, with no breakpoint of its own and nothing new to
+        * learn. That is also what keeps the printed height flat: three cards
+        * side by side cost one row's height however long the tie list is. */}
+      <div className="rp-block" style={{ marginBottom: 22 }}>
+        <div className="rp-block-title" style={blockTitle}>{t("Teacher summary")}</div>
+        <div className="rp-summary" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(210px,100%),1fr))", gap: 10, alignItems: "stretch" }}>
+          {summaryLines.map((line) => (
+            <SummaryCard key={line.kind} line={line} />
+          ))}
         </div>
       </div>
 
@@ -194,12 +221,12 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
         * keep their heading with the app's em dash when empty, so the document's
         * shape is the same on every report and a reader can see that a section
         * was left blank rather than wonder whether it exists. */}
-      <div className="rp-block" style={{ marginBottom: 20 }}>
-        <div style={blockTitle}>{t("Teacher comment")}</div>
+      <div className="rp-block" style={{ marginBottom: 22 }}>
+        <div className="rp-block-title" style={blockTitle}>{t("Teacher comment")}</div>
         <Prose value={feedback.comment} />
       </div>
 
-      <div className="rp-block" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(220px,100%),1fr))", gap: 20, marginBottom: 20 }}>
+      <div className="rp-block" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(220px,100%),1fr))", gap: 20, marginBottom: 22 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", marginBottom: 5 }}>{t("Strengths")}</div>
           <Prose value={feedback.strengths} />
@@ -210,7 +237,7 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
         </div>
       </div>
 
-      <div className="rp-block" style={{ background: "var(--amber-soft)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 20 }}>
+      <div className="rp-block rp-goals" style={{ background: "var(--amber-soft)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 16px", marginBottom: 22 }}>
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>{t("Learning goals for next month")}</div>
         <Prose value={feedback.goals} />
       </div>
@@ -219,8 +246,8 @@ export function MonthlyReviewReportView({ report }: MonthlyReviewReportViewProps
         * message addressed to the family rather than a section of the
         * assessment, so an empty one has nothing to say and no shape to keep. */}
       {feedback.parentNotes.trim() !== "" && (
-        <div className="rp-block" style={{ marginBottom: 20 }}>
-          <div style={blockTitle}>{t("Parent notes")}</div>
+        <div className="rp-block" style={{ marginBottom: 22 }}>
+          <div className="rp-block-title" style={blockTitle}>{t("Parent notes")}</div>
           <Prose value={feedback.parentNotes} />
         </div>
       )}
@@ -245,10 +272,6 @@ function coverage(a: StudentAttendanceRate | null | undefined, label: string): s
   return `${label} ${a.registersTaken}/${a.lessonsCompleted}`;
 }
 
-function labelOf(skills: MonthlyReviewReport["skills"], key: string): string {
-  return skills.find((s) => s.key === key)?.label ?? key;
-}
-
 function Meta({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
   return (
     <div style={{ minWidth: 0 }}>
@@ -262,7 +285,7 @@ function Meta({ label, value, strong = false }: { label: string; value: string; 
 
 function Tile({ value, label, color, detail }: { value: string; label: string; color?: string; detail?: string | null }) {
   return (
-    <div style={{ flex: 1, minWidth: 130, border: "1px solid var(--border)", borderRadius: 10, padding: "13px 14px", textAlign: "center" }}>
+    <div className="rp-tile" style={{ flex: 1, minWidth: 130, border: "1px solid var(--border)", borderRadius: 10, padding: "13px 14px", textAlign: "center" }}>
       <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: "-.02em", color: color ?? "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>
         {value}
       </div>
@@ -274,11 +297,16 @@ function Tile({ value, label, color, detail }: { value: string; label: string; c
 
 /** One skill as a bar and its rating.
  *
- * THE FILL IS THE REPORT'S OVERALL BAND, not a per-skill one — the same colour
- * the overall tile takes, so the sheet reads as one document rather than ten
- * competing colours. The WIDTH is the rating, which is what actually carries the
- * information, and the number is printed beside it so colour is never the only
- * signal. */
+ * THE FILL IS THIS SKILL'S OWN BAND. It was the report's overall colour — ten
+ * identical bars — until the product decision that a bar about Listening should
+ * say what Listening scored. The colour arrives on the DTO as `perfColor` of
+ * this rating, the same mapping the drawer's rating control applies to the same
+ * 1-5 scale, so the control the teacher just touched and the bar they are
+ * looking at cannot disagree.
+ *
+ * THE WIDTH IS STILL THE RATING, and the number is still printed beside it, so
+ * colour is never the only signal — which matters on a document that is printed
+ * in greyscale as often as not. */
 function SkillBar({ label, rating, color }: { label: string; rating: number; color: string }) {
   const pct = Math.max(0, Math.min(100, (rating / 5) * 100));
   return (
@@ -296,13 +324,62 @@ function SkillBar({ label, rating, color }: { label: string; rating: number; col
   );
 }
 
-function SummaryRow({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+/** The tone tokens a summary item can carry, in the sheet's colour space.
+ *
+ * The pairing is the app's existing one, not a new palette: green is a strength
+ * and amber is a focus area — exactly the two the feedback headings below use
+ * and the profile's own strengths card uses — sky is movement, and muted is the
+ * item that states a non-finding. Resolved here because this is a CSS surface;
+ * the PDF resolves the same four names into ink. */
+const TONE_COLOR: Record<TeacherSummaryLine["tone"], string> = {
+  green: "var(--green)", amber: "var(--amber)", sky: "var(--sky)", muted: "var(--muted)",
+};
+
+/** One item of the teacher summary, as a card.
+ *
+ * LABEL ABOVE, NAMES BELOW, FIGURE IN THE CORNER. The names get the card's full
+ * width to wrap into, which is what makes a nine-way tie readable instead of a
+ * blob — and nothing is ever shortened: this document goes to a family, so a
+ * skill a child was rated on is either printed or the layout is wrong.
+ *
+ * The rating sits in a small tinted pill in the card's own tone, so the figure
+ * can be found without reading the names, and the tone tells a scanner which of
+ * the three items they are looking at before they read the label. */
+function SummaryCard({ line }: { line: TeacherSummaryLine }) {
+  const tone = TONE_COLOR[line.tone];
   return (
-    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, minWidth: 0 }}>
-      <span style={{ fontSize: 12, color: "var(--muted)", flex: "none" }}>{label}</span>
-      <span style={{ fontSize: 12.5, fontWeight: muted ? 500 : 600, color: muted ? "var(--muted)" : "var(--fg)", textAlign: "right", minWidth: 0, overflowWrap: "anywhere" }}>
-        {value}
-      </span>
+    <div
+      className="rp-summary-card"
+      style={{
+        minWidth: 0, border: "1px solid var(--border)", borderRadius: 10,
+        padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ ...capStyle, color: tone, minWidth: 0, overflowWrap: "anywhere" }}>
+          {line.label}
+        </span>
+        {line.detail && (
+          <span
+            style={{
+              flex: "none", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+              fontFamily: "'Geist Mono',monospace", whiteSpace: "nowrap",
+              background: `color-mix(in srgb, ${tone} 12%, var(--card))`, color: tone,
+            }}
+          >
+            {line.detail}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 12.5, lineHeight: 1.45, fontWeight: line.muted ? 500 : 600,
+          color: line.muted ? "var(--muted)" : "var(--fg-2)",
+          minWidth: 0, overflowWrap: "anywhere",
+        }}
+      >
+        {line.items.join(", ")}
+      </div>
     </div>
   );
 }

@@ -182,18 +182,35 @@ describe("The preview is live — a rating moves six things at once", () => {
     }
   });
 
-  it("10. the strongest and weakest skills follow the draft", () => {
+  it("10. the strongest skills and the focus areas follow the draft", () => {
     const a = buildMonthlyReviewReportDraft(
       context(), draft({ skills: { ...skills(3), reading: 5, writing: 1 } })
     );
-    assert.equal(a.teacherSummary.strongest?.key, "reading");
-    assert.equal(a.teacherSummary.weakest?.key, "writing");
+    assert.deepEqual(a.teacherSummary.strongest.map((k) => k.key), ["reading"]);
+    assert.deepEqual(a.teacherSummary.focusAreas.map((k) => k.key), ["writing"]);
 
     const b = buildMonthlyReviewReportDraft(
       context(), draft({ skills: { ...skills(3), grammar: 5, listening: 1 } })
     );
-    assert.equal(b.teacherSummary.strongest?.key, "grammar");
-    assert.equal(b.teacherSummary.weakest?.key, "listening");
+    assert.deepEqual(b.teacherSummary.strongest.map((k) => k.key), ["grammar"]);
+    assert.deepEqual(b.teacherSummary.focusAreas.map((k) => k.key), ["listening"]);
+  });
+
+  it("10a. TIES REACH THE REPORT WHOLE — the draft's own ties, not the first of them", () => {
+    const report = buildMonthlyReviewReportDraft(
+      context(), draft({ skills: { ...skills(4), writing: 3, grammar: 3 } })
+    );
+    assert.ok(report.teacherSummary.strongest.length > 1, "every skill at the top rating");
+    assert.deepEqual(
+      report.teacherSummary.focusAreas.map((k) => k.key).sort(), ["grammar", "writing"]);
+  });
+
+  it("10b. ten equal ratings reach the report as the neutral state", () => {
+    const report = buildMonthlyReviewReportDraft(context(), draft({ skills: skills(3) }));
+    assert.equal(report.teacherSummary.allEqual, true);
+    assert.equal(report.teacherSummary.equalRating, 3);
+    assert.deepEqual(report.teacherSummary.strongest, []);
+    assert.deepEqual(report.teacherSummary.focusAreas, []);
   });
 
   it("11. the biggest improvement is measured against the PREVIOUS review, from the draft", () => {
@@ -348,9 +365,11 @@ describe("The report model carries only what Sprint 8 has", () => {
     assert.ok(!/concern|achievement|aiSummary/i.test(SRC));
   });
 
-  it("27. the teacher summary is exactly three deterministic facts", () => {
+  it("27. the teacher summary is exactly the tie-aware deterministic shape", () => {
     const report = buildMonthlyReviewReportDraft(context(), draft());
-    assert.deepEqual(Object.keys(report.teacherSummary).sort(), ["improvement", "strongest", "weakest"]);
+    assert.deepEqual(Object.keys(report.teacherSummary).sort(),
+      ["allEqual", "equalRating", "focusAreas", "improvement", "strongest"]);
+    assert.ok(!SRC.includes("weakest"), "no surface is handed a 'weakest skill' to print");
   });
 
   it("28. `generatedOn` is the application date the CONTEXT carried, not a clock", () => {

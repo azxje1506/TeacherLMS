@@ -631,7 +631,7 @@ describe("The service stays a server, whatever the client does", () => {
   it("54. the client never imports the service's runtime, only its types", () => {
     const dir = path.join(process.cwd(), "src", "components", "reviews");
     assert.ok(existsSync(dir), "the Reviews client arrived in Gate 4.3");
-    for (const file of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx", "student-reviews.tsx"]) {
+    for (const file of ["api.ts", "form.ts", "reviews-ui.ts", "student-reviews.tsx"]) {
       const src = readFileSync(path.join(dir, file), "utf8");
       const runtimeImport = /^import\s+(?!type)[^;]*from\s+"@\/lib\/reviews-service"/m.test(src);
       assert.ok(!runtimeImport, `${file} may import types from the service, never its code`);

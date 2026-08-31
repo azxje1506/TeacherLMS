@@ -124,10 +124,13 @@ import {
   monthSelectorEnabled, primaryActionKey, saveTargetId, selectedMonth, type ComposerStage,
 } from "@/components/reviews/composer-state";
 import {
-  buildMonthlyReviewReportDraft, previousReviewOf,
+  buildMonthlyReviewReportDraft, previousReviewOf, teacherSummaryLines,
   type MonthlyReviewReport, type ReviewComposerData, type ReviewReportDraft,
+  type TeacherSummaryLine,
 } from "@/lib/review-report";
 import { reviewCreateSchema } from "@/lib/schemas";
+import { buildReviewPdfDocument } from "@/lib/review-pdf-document";
+import { ReviewPdfError, exportReviewPdf } from "@/lib/review-pdf";
 import { EM } from "@/lib/format";
 import type { ReviewCreateBody, ReviewUpdateBody } from "@/lib/schemas";
 
@@ -145,6 +148,12 @@ const iconPencil = (
 const iconClose = (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
 );
+const iconPrint = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>
+);
+const iconDownload = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
+);
 const iconStar = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3 2.6 5.8 6.4.7-4.8 4.3 1.4 6.2L12 17l-5.6 3 1.4-6.2L3 9.5l6.4-.7z" /></svg>
 );
@@ -154,6 +163,32 @@ const iconAlert = (
 const iconTrend = (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 17 6-6 4 4 8-8" /><path d="M15 7h6v6" /></svg>
 );
+/* The neutral state: ten equal ratings. An equals sign, at the same 13px and the
+ * same stroke weight as the three above — no new icon language, and deliberately
+ * not a star or a warning, because an even set of ratings is neither. */
+const iconEven = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 9h16M4 15h16" /></svg>
+);
+
+/* THE LINE KINDS, AS THIS CARD DRAWS THEM. `teacherSummaryLines` decides what
+ * each line SAYS; these two maps decide what it looks like here, and the report
+ * sheet and the PDF make their own presentation decisions over the same lines.
+ * The colours are the app's existing tokens: green for a strength, amber for a
+ * focus area — the same pair the profile's strengths card uses — sky for
+ * movement, and muted for the two lines that state a non-finding. */
+const summaryIcon: Record<TeacherSummaryLine["kind"], React.ReactNode> = {
+  strongest: iconStar, focus: iconAlert, even: iconEven,
+  improvement: iconTrend, noPrior: iconTrend,
+};
+/* THE TONE COMES FROM THE LINE, NOT FROM THIS FILE. `teacherSummaryLines` names
+ * which of the app's existing tokens each item is keyed to — green for a
+ * strength, amber for a focus area, sky for movement, muted for a non-finding —
+ * and both this card and the report sheet resolve the same four names. One
+ * decision, two colour spaces, no chance of the pane and the document beside it
+ * disagreeing about which item is the warning-coloured one. */
+const TONE_COLOR: Record<TeacherSummaryLine["tone"], string> = {
+  green: "var(--green)", amber: "var(--amber)", sky: "var(--sky)", muted: "var(--muted)",
+};
 
 const ghostBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7,
@@ -169,6 +204,31 @@ const primaryBtn: React.CSSProperties = {
   fontSize: 13, fontWeight: 600, fontFamily: "inherit", cursor: "pointer",
   whiteSpace: "nowrap", flex: "none",
 };
+/** Print the report overlay, and put the page back afterwards.
+ *
+ * MODULE SCOPE ON PURPOSE. It closes over no component state, so the effect that
+ * sequences "open the overlay, then print" can call it without it becoming a
+ * dependency that changes on every render.
+ *
+ * THE CLASS IS SAFE TO LEAVE BEHIND. Every `.print-review` rule lives inside
+ * `@media print`, so a class that outlives a print — a browser that never fires
+ * `afterprint`, a dialog dismissed in an unusual way — has no effect on screen
+ * at all. That is what lets the cleanup be event-driven rather than a guess at
+ * how long a print takes.
+ *
+ * IT WRITES NOTHING. No form value, no cache entry, no request. */
+function printReportOverlay(onDone?: () => void): void {
+  const body = document.body;
+  body.classList.add("print-review");
+  const done = () => {
+    body.classList.remove("print-review");
+    window.removeEventListener("afterprint", done);
+    onDone?.();
+  };
+  window.addEventListener("afterprint", done);
+  window.print();
+}
+
 const panel: React.CSSProperties = {
   minWidth: 0, background: "var(--card)", border: "1px solid var(--border)",
   borderRadius: "var(--r)", boxShadow: "var(--sh)", padding: 18,
@@ -340,6 +400,8 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
   /* ---- the preview overlay --------------------------------------------- */
 
   const [previewOpen, setPreviewOpen] = useState(false);
+  /* Waiting for the overlay to be on screen before the print dialog opens. */
+  const [printPending, setPrintPending] = useState(false);
   /* PREVIEW NEVER SAVES AND NEVER EDITS. Closing it returns to the exact form
    * state, because the form is never unmounted — the overlay renders the report
    * beside it, not instead of it. */
@@ -350,6 +412,74 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [previewOpen]);
+
+  /* ---- print and export -------------------------------------------------- */
+
+  /** PRINT HAS ONE ROUTE, AT EVERY WIDTH: the report overlay.
+   *
+   * The overlay is already the surface that carries the report alone, portalled
+   * to <body> — which is exactly the shape the print stylesheet unwraps. Using
+   * it everywhere means one set of print rules and one code path, rather than a
+   * second strategy for the desktop split that nobody could see fail.
+   *
+   * So a Print pressed while the overlay is closed opens it first. That is also
+   * honest: the teacher sees the document that is about to be printed. */
+  const requestPrint = () => {
+    if (previewOpen) printReportOverlay();
+    else {
+      setPreviewOpen(true);
+      setPrintPending(true);
+    }
+  };
+
+  /* Two frames: one for React to commit the overlay, one for the browser to
+   * paint it. `window.print()` snapshots what is rendered, so printing in the
+   * same tick as the state change would print the page without the overlay. */
+  useEffect(() => {
+    if (!printPending || !previewOpen) return;
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        setPrintPending(false);
+        /* The overlay was opened FOR this print, so it is given back when the
+         * dialog closes. An overlay the teacher opened themselves is left alone
+         * — `requestPrint` takes the other branch for that. */
+        printReportOverlay(() => setPreviewOpen(false));
+      });
+    });
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+  }, [printPending, previewOpen]);
+
+  /** Export the report on screen as a PDF file.
+   *
+   * IT EXPORTS THE DRAFT, not the record. `report` is rebuilt from the form's
+   * current values on every render, so an unsaved rating change is in the file
+   * and Mongo still holds the old one. Nothing here saves, invalidates, resets a
+   * baseline or navigates — the form is exactly as dirty afterwards as before.
+   *
+   * ONE AT A TIME. A second press while a file is being drawn is ignored rather
+   * than queued: two identical downloads is not what anybody meant by clicking
+   * twice. */
+  const [exporting, setExporting] = useState(false);
+  const exportPdf = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const model = buildReviewPdfDocument(report, {
+        t,
+        monthLabel: (m) => fmt.monthLabel(m),
+        dateLabel: (d) => fmt.dateLabel(d),
+      });
+      await exportReviewPdf(model);
+    } catch (e) {
+      /* A broken export is SAID SO, never shipped quietly. The commonest cause
+       * is the Unicode font failing to load, and a PDF drawn without it would
+       * open perfectly while spelling a child's name wrong. */
+      toast(t(e instanceof ReviewPdfError ? e.message : "The report could not be exported."), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   /* ---- saving ----------------------------------------------------------- */
 
@@ -490,6 +620,48 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
     </button>
   );
 
+  /** Print and Export PDF — the REPORT actions.
+   *
+   * They are not persistence actions and they are not stage-dependent: all three
+   * stages have a report on screen, including a Create that has never been
+   * saved, because the document is generated from what the teacher is looking at
+   * rather than from a record. Neither button saves, and neither is disabled by
+   * a dirty form.
+   *
+   * ONE COPY EXISTS AT A TIME, by construction rather than by a hide rule. The
+   * header's copy is shown only at 1100 and up; below that the report is not
+   * continuously visible, so the actions live in the Preview overlay — which
+   * only opens below 1100, because the control that opens it does not exist
+   * above. The two are complementary the way .rvc-actions-desktop and
+   * .rvc-actions-mobile are, and for the same reason. */
+  const reportActions = (
+    <>
+      <button
+        type="button"
+        onClick={requestPrint}
+        className="btn-ghost"
+        style={ghostBtn}
+      >
+        {iconPrint}
+        {t("Print")}
+      </button>
+      <button
+        type="button"
+        onClick={exportPdf}
+        disabled={exporting}
+        aria-busy={exporting || undefined}
+        className="btn-ghost"
+        style={ghostBtn}
+      >
+        {iconDownload}
+        {/* The label states what is happening, rather than a spinner beside a
+          * word that still says something else. Both strings are dictionary
+          * keys, so neither is English-only. */}
+        {t(exporting ? "Exporting…" : "Export PDF")}
+      </button>
+    </>
+  );
+
   /* The primary action, by stage. View offers Edit review and NO save: a screen
    * that shows "Save changes" while nothing can be changed is lying about what
    * it will do.
@@ -610,6 +782,11 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
           * Review action and does not travel to the footer. */}
         <div className="rvc-head-actions">
           {previewBtn}
+          {/* Report actions, desktop only — see `reportActions`. Below 1100 this
+            * region is empty and the Preview overlay carries them instead. */}
+          <div className="rvc-actions-report">
+            {reportActions}
+          </div>
           <div className="rvc-actions-desktop">
             {reviewActions("desktop")}
           </div>
@@ -636,6 +813,9 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
 
   const previous = previousReviewOf(data.history, draft.month);
   const scoreColor = report.summary.performanceColor;
+  /* ONE COMPUTATION OF THE SUMMARY, shared with the sheet in the other pane and
+   * with the exported file — see `teacherSummaryLines`. */
+  const summaryLines = teacherSummaryLines(report, t);
 
   const editor = (
     <div className="rvc-editor">
@@ -660,22 +840,29 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
             <MiniTile label={t("Homework")} value={pct(report.summary.homework?.pct, t("No data"))} />
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {report.teacherSummary.strongest && (
-              <SummaryLine icon={iconStar} color="var(--green)" label={t("Best skill")}
-                value={`${t(report.teacherSummary.strongest.label)} · ${report.teacherSummary.strongest.rating}`} />
-            )}
-            {report.teacherSummary.weakest && (
-              <SummaryLine icon={iconAlert} color="var(--amber)" label={t("Weakest skill")}
-                value={`${t(report.teacherSummary.weakest.label)} · ${report.teacherSummary.weakest.rating}`} />
-            )}
-            {report.teacherSummary.improvement ? (
-              <SummaryLine icon={iconTrend} color="var(--sky)" label={t("Biggest improvement")}
-                value={`${t(report.skills.find((s) => s.key === report.teacherSummary.improvement!.key)?.label ?? "")} · ${report.teacherSummary.improvement.from} → ${report.teacherSummary.improvement.to}`} />
-            ) : previous === null ? (
-              <SummaryLine icon={iconTrend} color="var(--muted-2)" label={t("Biggest improvement")}
-                value={t("First review — no prior month")} muted />
-            ) : null}
+          {/* THE SUMMARY ITEMS, AND WHERE THEY COME FROM.
+            *
+            * `teacherSummaryLines` — the same function the report sheet and the
+            * PDF call, so this card cannot name a different strongest skill from
+            * the document beside it. It is TIE-AWARE: every skill holding the
+            * top rating is named, every skill holding the lowest is named, and
+            * ten equal ratings produce one neutral item instead of a manufactured
+            * winner. Nothing here recomputes any of that.
+            *
+            * THE LAYOUT IS STACKED, NOT INLINE. Each item used to be one row —
+            * icon, label, then the whole value pushed right — which worked for
+            * "Reading · 5" and collapsed into a cramped blob the moment a tie
+            * named eight skills, worst of all on a phone. The label and the
+            * rating now share a line and the skill names have the panel's full
+            * width beneath them to wrap into, at every width: one shape, no
+            * breakpoint, and nothing is ever shortened.
+            *
+            * The icon and the tone colour are this surface's own — presentation,
+            * which is the only thing a card decides. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {summaryLines.map((line) => (
+              <SummaryItem key={line.kind} line={line} icon={summaryIcon[line.kind]} />
+            ))}
           </div>
 
           {/* The PREVIOUS review's own words, as context for the month being
@@ -788,7 +975,9 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
         {reviewActions("mobile")}
       </div>
 
-      {previewOpen && <PreviewOverlay report={report} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && (
+        <PreviewOverlay report={report} onClose={() => setPreviewOpen(false)} actions={reportActions} />
+      )}
 
       {/* The app's existing centre dialog and its existing copy — not a second
         * confirm architecture and not a second sentence for the same decision.
@@ -845,28 +1034,60 @@ export function ReviewComposer({ data }: { data: ReviewComposerData }) {
  * Portalled to <body> for the reason the Drawer is: a page root running a
  * filling `fadeUp` animation becomes the containing block for fixed-position
  * descendants, which would confine this to the page's content box. */
-function PreviewOverlay({ report, onClose }: { report: MonthlyReviewReport; onClose: () => void }) {
+function PreviewOverlay({ report, onClose, actions }: {
+  report: MonthlyReviewReport;
+  onClose: () => void;
+  /** Print and Export PDF, passed in rather than rebuilt here — one definition,
+   * so the overlay's copy and the desktop header's cannot drift. */
+  actions: React.ReactNode;
+}) {
   const { t, fmt } = useSettings();
 
   return createPortal(
     <div className="review-overlay" role="dialog" aria-modal="true" aria-label={t("Monthly Progress Report")}>
-      <div className="rvc-head">
-        <div className="rvc-head-nav">
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="rvc-id-name">{t("Monthly Progress Report")}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {/* THE OVERLAY'S CHROME IS `no-print`. This bar is what the teacher uses to
+        * print, so it is on screen — and it must not be ON the paper. The print
+        * stylesheet unwraps this overlay into the printed page, so without this
+        * the Close and Print buttons would be printed with the report.
+        *
+        * ONLY REPORT ACTIONS LIVE HERE. Save review, Save changes, Edit review
+        * and Cancel editing stay in the composer: persistence is not something a
+        * teacher should be doing from inside a document preview, and closing
+        * this returns them to the form exactly as they left it. */}
+      <div className="rvc-head no-print">
+        {/* THREE SLOTS, NOT ONE ROW. Title, Close and the two report actions used
+          * to share a single flex row borrowed from the composer header, and at
+          * 375px the three fixed-width buttons took everything: the title was
+          * squeezed into a column a few characters wide and broke one fragment
+          * per line. They are their own regions now, and the stylesheet puts the
+          * actions on a second row where the width demands it. */}
+        <div className="rvc-overlay-head">
+          <div className="rvc-overlay-title">
+            <div className="rvc-overlay-name">{t("Monthly Progress Report")}</div>
+            <div className="rvc-overlay-sub">
               {report.student.name} · {fmt.monthLabel(report.period)}
             </div>
           </div>
+          <div className="rvc-overlay-actions">
+            {actions}
+          </div>
+          {/* CLOSE IS THE ICON ALONE. An × is universal and this is a dismiss,
+            * not a decision — and the word was taking width from a title that
+            * needed it. Print and Export keep their labels: those two DO name a
+            * decision, and an unlabelled printer or arrow icon would be a guess.
+            *
+            * The overlay is only ever reachable below 1100 (the Preview control
+            * does not exist above it), so this needs no breakpoint — one shape,
+            * at every width the surface can appear at. `aria-label` carries the
+            * accessible name; nothing here relies on a tooltip. */}
           <button
             type="button"
             onClick={onClose}
             aria-label={t("Close")}
-            className="btn-ghost"
-            style={{ ...ghostBtn, padding: "0 12px 0 10px" }}
+            className="btn-ghost rvc-overlay-close"
+            style={{ ...ghostBtn, padding: "0 11px" }}
           >
             {iconClose}
-            {t("Close")}
           </button>
         </div>
       </div>
@@ -907,16 +1128,46 @@ function MiniTile({ label, value, color }: { label: string; value: string; color
   );
 }
 
-function SummaryLine({ icon, color, label, value, muted = false }: {
-  icon: React.ReactNode; color: string; label: string; value: string; muted?: boolean;
-}) {
+/** One item of the teacher summary, in the composer's editor pane.
+ *
+ * TWO ROWS, NOT ONE. The icon, the label and the rating share the top line; the
+ * skills wrap freely underneath. That is what makes a nine-way tie readable in a
+ * narrow editor column and on a phone, where the previous single row put a long
+ * list of names in a right-aligned column a few characters wide.
+ *
+ * NOTHING IS TRUNCATED, here or anywhere else this summary is drawn: a skill the
+ * child was rated on is either shown or the layout is wrong. */
+function SummaryItem({ line, icon }: { line: TeacherSummaryLine; icon: React.ReactNode }) {
+  const tone = TONE_COLOR[line.tone];
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0 }}>
-      <span style={{ color, flex: "none", display: "flex" }}>{icon}</span>
-      <span style={{ fontSize: 12, color: "var(--muted)", flex: "none" }}>{label}</span>
-      <span style={{ flex: 1, minWidth: 0, textAlign: "right", fontSize: 12.5, fontWeight: muted ? 500 : 600, color: muted ? "var(--muted)" : "var(--fg-2)", overflowWrap: "anywhere" }}>
-        {value || EM}
-      </span>
+    <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ color: tone, flex: "none", display: "flex" }}>{icon}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--muted)", overflowWrap: "anywhere" }}>
+          {line.label}
+        </span>
+        {line.detail && (
+          <span
+            style={{
+              flex: "none", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+              fontFamily: "'Geist Mono',monospace", whiteSpace: "nowrap",
+              background: `color-mix(in srgb, ${tone} 13%, var(--card))`, color: tone,
+            }}
+          >
+            {line.detail}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          paddingLeft: 21, fontSize: 12.5, lineHeight: 1.45,
+          fontWeight: line.muted ? 500 : 600,
+          color: line.muted ? "var(--muted)" : "var(--fg-2)",
+          minWidth: 0, overflowWrap: "anywhere",
+        }}
+      >
+        {line.items.join(", ") || EM}
+      </div>
     </div>
   );
 }

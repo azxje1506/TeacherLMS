@@ -24,8 +24,10 @@
  * the review period, and the day the document was generated.
  *
  * NOTHING IS GENERATED OR GUESSED. No AI prose, no achievement, no concern. The
- * teacher summary is `buildTeacherSummary` — strongest, weakest, and a strictly
- * positive biggest improvement — and nothing else, exactly as Gate 4.4C left it.
+ * teacher summary is `buildTeacherSummary` — every strongest skill, every focus
+ * area, and a strictly positive biggest improvement — and nothing else. The words
+ * those become are `teacherSummaryLines`, below, so the card, the sheet and the
+ * PDF cannot state the same summary three different ways.
  *
  * NO `server-only`, for the reason src/lib/reviews.ts has none: every decision
  * here is exercised by the test runner, which cannot resolve that module. No
@@ -183,6 +185,31 @@ export interface ReviewReportDraft {
 
 /* ----------------------------------------------------------- the report DTO */
 
+/** One dimension as the REPORT states it: the rating, and the colour that
+ * rating means.
+ *
+ * ---- WHY THE COLOUR IS ON THE DTO -----------------------------------------
+ *
+ * A skill bar used to be filled with the report's OVERALL band — one colour for
+ * all ten, so the sheet "read as one document". Human/product decision reversed
+ * that: a bar is a statement about ONE skill, and painting a 5 and a 2 the same
+ * colour throws away the only thing the colour could have said. Each bar now
+ * takes `perfColor` of its OWN rating — the identical mapping the drawer's
+ * rating control applies to the same 1-5 scale, so a Listening of 5 is the same
+ * colour in the control, in the preview, on paper and in the file.
+ *
+ * IT IS DERIVED HERE, ONCE, AND CARRIED. The report component computes nothing
+ * and the PDF document model computes nothing; if either called `perfColor`
+ * itself there would be two places for a threshold to drift. `perfColor` answers
+ * with a CSS custom-property reference (`var(--green)`), which the sheet's
+ * light-locked palette resolves on screen and the PDF renderer's single token
+ * map resolves on paper. */
+export interface ReportSkill extends SkillRating {
+  /** `perfColor(rating)` — a CSS token reference, never a literal hex. */
+  color: string;
+}
+
+
 /** The generated monthly report — the single content model behind the live
  * preview, and behind Gate 4.4E's Print and PDF.
  *
@@ -207,8 +234,9 @@ export interface MonthlyReviewReport {
     attendance: StudentAttendanceRate | null;
     homework: StudentHomeworkCompletion | null;
   };
-  /** The ten dimensions in canonical order, with the draft's ratings. */
-  skills: SkillRating[];
+  /** The ten dimensions in canonical order, with the draft's ratings and the
+   * colour each rating means. */
+  skills: ReportSkill[];
   radar: ReviewRadar;
   teacherSummary: TeacherSummary;
   feedback: {
@@ -287,6 +315,9 @@ export function buildMonthlyReviewReportDraft(
       key,
       label: SKILL_LABEL[key] ?? key,
       rating: skills[key],
+      /* THE BAR IS THE SKILL'S OWN BAND, not the report's. Same function, same
+       * 1-5 scale, same thresholds as the rating control the teacher just used. */
+      color: perfColor(skills[key]),
     })),
     radar: {
       month: draft.month,
@@ -303,6 +334,127 @@ export function buildMonthlyReviewReportDraft(
     },
     meta: { generatedOn: context.appDate },
   };
+}
+
+/* ------------------------------------------------- the teacher summary, once */
+
+/** One item of the teacher-summary block, resolved to words AND to the parts a
+ * surface needs to lay it out.
+ *
+ * ---- WHY IT IS PARTS, NOT ONE STRING ---------------------------------------
+ *
+ * It used to carry only `value` — "Listening, Speaking, Reading · 5" — and every
+ * surface drew it as one right-aligned run beside its label. With one strongest
+ * skill that read fine. With eight tied at 4 it became a wall of text pressed
+ * against a label, on a phone and on paper alike, and human verification called
+ * the block unscannable.
+ *
+ * So the item is now the pieces: the `label`, the `items` it names, and the
+ * `detail` they share. A surface can put the label above the names and the
+ * figure in its own corner, wrap the names naturally, and give each item its own
+ * card — without any of them re-deciding WHICH skills are named or what the
+ * label says. `value` remains the one-line form, for anything that genuinely
+ * wants a single string. */
+export interface TeacherSummaryLine {
+  kind: "strongest" | "focus" | "even" | "improvement" | "noPrior";
+  label: string;
+  /** The skill names this item is about, already translated, in canonical
+   * SKILLS order. One entry for a single winner, several for a tie, and for the
+   * two non-skill items the phrase they state. Never empty. */
+  items: string[];
+  /** The figure `items` share — "5", "3/5", "3 -> 5" — or null when the item is
+   * a statement rather than a measurement. */
+  detail: string | null;
+  /** `items` and `detail` as one line. The same string this shape carried before
+   * it grew parts, so a caller that wants one run still has one. */
+  value: string;
+  /** The one non-answer — "First review — no prior month" — is set quieter than
+   * a real finding, on every surface. */
+  muted: boolean;
+  /** WHICH OF THE APP'S EXISTING TOKENS THIS ITEM IS KEYED TO. Green for a
+   * strength and amber for a focus area are the same pair the profile card and
+   * the report's own feedback headings already use; sky is movement, and muted
+   * is the non-answer. Named rather than resolved, so each surface reaches for
+   * it in its own colour space — a CSS custom property on screen, ink in the
+   * PDF — without a second opinion about which item is which. */
+  tone: "green" | "amber" | "sky" | "muted";
+}
+
+/** The teacher summary as the composer card, the report sheet and the PDF all
+ * state it.
+ *
+ * ---- WHY THIS IS ONE FUNCTION ---------------------------------------------
+ *
+ * The three surfaces used to each read `teacherSummary` and compose their own
+ * strings. They agreed only because three separate pieces of JSX happened to say
+ * the same thing, and the tie-aware shape makes that far harder to keep up:
+ * which label is singular, how tied skills are joined, what the all-equal state
+ * says. So the words are decided ONCE, here, and the surfaces render them.
+ *
+ * ---- WHAT IT WILL NOT DO --------------------------------------------------
+ *
+ * It composes no prose. Every item is a label and the skills it names — there is
+ * no sentence generated about a child anywhere in it, which is the same contract
+ * the rest of this module keeps. The all-equal case is a structured item
+ * (`Skill ratings` / `All skills` / `3/5`), not a generated sentence, for exactly
+ * that reason.
+ *
+ * ---- TIES ------------------------------------------------------------------
+ *
+ * Every skill at the extreme rating is named, in canonical SKILLS order, with
+ * the shared rating stated once as `detail`. The label follows the count, so a
+ * single winner still reads "Strongest skill" and never announces a set of one. */
+export function teacherSummaryLines(
+  report: MonthlyReviewReport,
+  t: (key: string) => string,
+): TeacherSummaryLine[] {
+  const { teacherSummary: summary, skills, radar } = report;
+  const lines: TeacherSummaryLine[] = [];
+  const line = (
+    kind: TeacherSummaryLine["kind"],
+    tone: TeacherSummaryLine["tone"],
+    label: string,
+    items: string[],
+    detail: string | null,
+    muted = false,
+  ): TeacherSummaryLine => ({
+    kind, label, items, detail, muted, tone,
+    value: detail === null ? items.join(", ") : `${items.join(", ")} · ${detail}`,
+  });
+
+  if (summary.allEqual && summary.equalRating !== null) {
+    /* THE NEUTRAL STATE. Ten equal ratings support no strongest and no focus
+     * area, so the block states the one true thing instead of manufacturing a
+     * distinction out of the canonical order. */
+    lines.push(line("even", "muted", t("Skill ratings"),
+      [t("All skills")], `${summary.equalRating}/5`));
+  } else {
+    if (summary.strongest.length > 0) {
+      lines.push(line("strongest", "green",
+        t(summary.strongest.length === 1 ? "Strongest skill" : "Strongest skills"),
+        summary.strongest.map((s) => t(s.label)),
+        String(summary.strongest[0].rating)));
+    }
+    if (summary.focusAreas.length > 0) {
+      lines.push(line("focus", "amber",
+        t(summary.focusAreas.length === 1 ? "Focus area" : "Focus areas"),
+        summary.focusAreas.map((s) => t(s.label)),
+        String(summary.focusAreas[0].rating)));
+    }
+  }
+
+  /* UNCHANGED: one strictly positive movement, or the first-review statement. */
+  if (summary.improvement) {
+    const label = skills.find((s) => s.key === summary.improvement!.key)?.label
+      ?? summary.improvement.key;
+    lines.push(line("improvement", "sky", t("Biggest improvement"),
+      [t(label)], `${summary.improvement.from} → ${summary.improvement.to}`));
+  } else if (radar.previous === null) {
+    lines.push(line("noPrior", "muted", t("Biggest improvement"),
+      [t("First review — no prior month")], null, true));
+  }
+
+  return lines;
 }
 
 /* The analytics shapes a report carries are re-exported so a consumer has ONE

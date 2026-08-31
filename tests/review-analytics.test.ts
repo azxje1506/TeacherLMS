@@ -29,7 +29,7 @@ import {
   buildTeacherSummary, previousReview, radarAxes, reviewDistribution, reviewTrend,
   trendWindowPoints, TREND_WINDOWS,
 } from "../src/lib/review-analytics";
-import { SKILL_KEYS, monthsAgo, reviewAverage } from "../src/lib/reviews";
+import { SKILL_KEYS, monthsAgo, rankSkills, reviewAverage } from "../src/lib/reviews";
 import type { AttendanceRecord, Homework, Lesson } from "../src/lib/types";
 
 function code(...parts: string[]): string {
@@ -723,22 +723,38 @@ describe("Biggest improvement — strictly positive, or nothing", () => {
  * 9. Teacher summary
  * ====================================================================== */
 
-describe("Teacher summary — deterministic, and deliberately incomplete", () => {
+/* -------------------------------------------------------------------------
+ * The teacher summary — tie-aware, after the Gate 4.4E final remediation.
+ *
+ * WHAT CHANGED AND WHY IT IS TESTED THIS HARD. The summary used to answer with
+ * ONE strongest skill and ONE weakest, each the head of `rankSkills`. Given
+ * Listening/Speaking/Reading all at 4 and Writing/Grammar both at 3 it printed
+ * "Best skill: Listening" and "Weakest skill: Writing" — two sentences about a
+ * real child that the ratings do not support, decided by nothing but where a key
+ * sits in the SKILLS constant. The tie-break was deterministic and the claim was
+ * false, which is the worst combination a test can miss.
+ * ---------------------------------------------------------------------- */
+describe("Teacher summary — tie-aware, deterministic, deliberately incomplete", () => {
   const prev = skills({ listening: 2, grammar: 4 });
   const latest = skills({ listening: 5, grammar: 4, writing: 1 });
 
-  it("68. strongest is the highest-rated skill", () => {
-    assert.equal(buildTeacherSummary(latest, prev).strongest?.key, "listening");
-    assert.equal(buildTeacherSummary(latest, prev).strongest?.rating, 5);
+  it("68. a single strongest skill is returned as a set of one", () => {
+    const s = buildTeacherSummary(latest, prev);
+    assert.deepEqual(s.strongest.map((k) => k.key), ["listening"]);
+    assert.equal(s.strongest[0].rating, 5);
+    assert.equal(s.allEqual, false);
+    assert.equal(s.equalRating, null);
   });
 
-  it("69. weakest is the lowest-rated skill", () => {
-    assert.equal(buildTeacherSummary(latest, prev).weakest?.key, "writing");
-    assert.equal(buildTeacherSummary(latest, prev).weakest?.rating, 1);
+  it("69. a single lowest-rated skill is returned as a set of one", () => {
+    const s = buildTeacherSummary(latest, prev);
+    assert.deepEqual(s.focusAreas.map((k) => k.key), ["writing"]);
+    assert.equal(s.focusAreas[0].rating, 1);
   });
 
   it("70. both agree with the strengths/focus card, because both are rankSkills", () => {
-    assert.ok(ANALYTICS.includes("rankSkills(latest, 1)"), "the same ranking, not a second one");
+    assert.ok(ANALYTICS.includes("rankSkills(latest, SKILL_KEYS.length)"),
+      "the same ranking as the profile card, over the whole vocabulary");
   });
 
   it("71. improvement is carried through, and is null without a previous review", () => {
@@ -746,26 +762,92 @@ describe("Teacher summary — deterministic, and deliberately incomplete", () =>
     assert.equal(buildTeacherSummary(latest, null).improvement, null);
   });
 
-  it("72. ties break on canonical order in both directions", () => {
-    const flat = skills({}, 3);
-    const s = buildTeacherSummary(flat, null);
-    assert.equal(s.strongest?.key, SKILL_KEYS[0]);
-    assert.equal(s.weakest?.key, SKILL_KEYS[0]);
+  it("72. TIED STRONGEST: every skill at the maximum is returned, in canonical order", () => {
+    /* Three at 5, everything else at 3. Naming one of the three would be the
+     * defect this remediation exists for. */
+    const tied = skills({ speaking: 5, listening: 5, reading: 5 });
+    const s = buildTeacherSummary(tied, null);
+    assert.equal(s.strongest.length, 3, "all three, not the canonical first");
+    assert.ok(s.strongest.every((k) => k.rating === 5));
+    /* Canonical SKILLS order decides DISPLAY, and the fixture is deliberately
+     * written out of that order so a pass cannot be an artefact of input order. */
+    const canonical = SKILL_KEYS.filter((k) => ["listening", "speaking", "reading"].includes(k));
+    assert.deepEqual(s.strongest.map((k) => k.key), canonical);
   });
 
-  it("73. there is NO concern, NO achievement and NO generated prose", () => {
+  it("73. TIED LOWEST: every skill at the minimum is returned, in canonical order", () => {
+    const tied = skills({ writing: 3, grammar: 3 }, 4);
+    const s = buildTeacherSummary(tied, null);
+    assert.equal(s.focusAreas.length, 2, "both, not whichever comes first");
+    assert.ok(s.focusAreas.every((k) => k.rating === 3));
+    const canonical = SKILL_KEYS.filter((k) => ["writing", "grammar"].includes(k));
+    assert.deepEqual(s.focusAreas.map((k) => k.key), canonical);
+  });
+
+  it("74. THE GATE'S OWN EXAMPLE no longer produces a false single winner", () => {
+    /* Listening 4 · Speaking 4 · Reading 4 · Writing 3 · Grammar 3, the rest 4 —
+     * the exact shape the gate quoted. */
+    const s = buildTeacherSummary(skills({ writing: 3, grammar: 3 }, 4), null);
+    assert.ok(s.strongest.length > 1, "not one winner out of many equals");
+    assert.deepEqual(s.focusAreas.map((k) => k.key).sort(), ["grammar", "writing"]);
+    assert.ok(!s.strongest.some((k) => k.rating === 3), "no focus skill in the strongest set");
+  });
+
+  it("75. ALL EQUAL: a neutral state, and no fabricated distinction", () => {
+    const s = buildTeacherSummary(skills({}, 3), null);
+    assert.equal(s.allEqual, true);
+    assert.equal(s.equalRating, 3);
+    /* STRUCTURALLY EMPTY, not "all ten in both lists". A surface cannot render a
+     * contradiction it was never handed. */
+    assert.deepEqual(s.strongest, []);
+    assert.deepEqual(s.focusAreas, []);
+  });
+
+  it("76. all-equal still reports a real improvement against a lower month", () => {
+    /* The neutral state is about THIS month's spread; it says nothing about
+     * movement, so the improvement line is unaffected. */
+    const s = buildTeacherSummary(skills({}, 4), skills({ reading: 2 }, 4));
+    assert.equal(s.allEqual, true);
+    assert.equal(s.improvement?.key, "reading");
+    assert.equal(s.improvement?.delta, 2);
+  });
+
+  it("77. there is NO concern, NO achievement and NO generated prose", () => {
     const s = buildTeacherSummary(latest, prev) as unknown as Record<string, unknown>;
-    assert.deepEqual(Object.keys(s).sort(), ["improvement", "strongest", "weakest"]);
+    assert.deepEqual(Object.keys(s).sort(),
+      ["allEqual", "equalRating", "focusAreas", "improvement", "strongest"]);
     for (const forbidden of ["concern", "achievement", "aiSummary", "summaryText", "headline"]) {
       assert.ok(!(forbidden in s), `${forbidden} must not exist on the summary`);
       assert.ok(!ANALYTICS.includes(forbidden), `${forbidden} must not exist in the module`);
     }
   });
 
-  it("74. a missing latest review yields an empty summary, not invented values", () => {
+  it("78. the word 'weakest' is gone from the module, not just from the screen", () => {
+    assert.ok(!ANALYTICS.includes("weakest"),
+      "the teacher-facing word for a child's lowest skill is not one this app uses");
+  });
+
+  it("79. a missing latest review yields an empty summary, not invented values", () => {
     assert.deepEqual(buildTeacherSummary(null, prev), {
-      strongest: null, weakest: null, improvement: null,
+      strongest: [], focusAreas: [], improvement: null, allEqual: false, equalRating: null,
     });
+  });
+
+  it("80. the existing Top 3 / Bottom 3 profile card is untouched and deterministic", () => {
+    /* §15: the profile card is a RANKED LIST, not a claim that its first row is
+     * uniquely best, so it keeps its shape. What it must not do is become
+     * unstable — ties there are still ordered canonically, twice running. */
+    const tied = skills({ speaking: 5, listening: 5, reading: 5 });
+    const a = rankSkills(tied);
+    const b = rankSkills(tied);
+    assert.deepEqual(a.strengths.map((k) => k.key), b.strengths.map((k) => k.key));
+    assert.equal(a.strengths.length, 3);
+    assert.deepEqual(a.strengths.map((k) => k.key),
+      SKILL_KEYS.filter((k) => ["listening", "speaking", "reading"].includes(k)));
+    const PROFILE = code("src", "components", "reviews", "student-reviews.tsx");
+    assert.ok(PROFILE.includes("rankSkills(skills)"), "still the domain's own ranking");
+    assert.ok(!PROFILE.includes("Best skill") && !PROFILE.includes("Weakest skill"),
+      "and it never labels one tied row as uniquely best");
   });
 });
 

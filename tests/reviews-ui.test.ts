@@ -48,7 +48,6 @@ function raw(...parts: string[]): string {
 }
 
 const PAGE = code("src", "app", "(app)", "reviews", "page.tsx");
-const DRAWER = code("src", "components", "reviews", "review-drawer.tsx");
 const API = code("src", "components", "reviews", "api.ts");
 const FORM = code("src", "components", "reviews", "form.ts");
 const UI = code("src", "components", "reviews", "reviews-ui.ts");
@@ -64,7 +63,7 @@ const FIELDS = code("src", "components", "reviews", "review-form-fields.tsx");
 const COMPOSER = code("src", "components", "reviews", "review-composer.tsx");
 const REPORT_VIEW = code("src", "components", "reviews", "monthly-review-report.tsx");
 const CLIENT_FILES: Array<[string, string]> = [
-  ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER], ["student-reviews.tsx", TAB],
+  ["page.tsx", PAGE], ["student-reviews.tsx", TAB],
   ["charts.tsx", CHARTS], ["api.ts", API], ["form.ts", FORM], ["reviews-ui.ts", UI],
   ["review-form-fields.tsx", FIELDS], ["review-composer.tsx", COMPOSER],
   ["monthly-review-report.tsx", REPORT_VIEW],
@@ -243,19 +242,27 @@ describe("Review months — chosen, never computed", () => {
         assert.ok(!src.includes(forbidden), `${name} must not read a clock (${forbidden})`);
       }
     }
-    assert.ok(!PAGE.includes("CURRENT_MONTH") && !DRAWER.includes("CURRENT_MONTH"),
+    assert.ok(!PAGE.includes("CURRENT_MONTH"),
       "even the app clock is the server's to send");
   });
 
   it("17. a taken month stays visible, and is disabled rather than hidden", () => {
-    assert.ok(DRAWER.includes("disabled: m.taken"), "the option is offered and refused, not removed");
-    assert.ok(!/months\.filter\(\(m\) => !m\.taken\)/.test(DRAWER), "no month is dropped from the list");
+    /* RETARGETED IN GATE 4.4E, when the Review drawer was deleted. The rule is
+     * unchanged and so is its reason — a teacher needs to see that June is done
+     * rather than wonder where it went — but the composer states it now, and
+     * states it in a pure module rather than inside a component. */
+    const STATE = code("src", "components", "reviews", "composer-state.ts");
+    assert.ok(STATE.includes("disabled:"), "the option is offered and refused, not removed");
+    assert.ok(!/\.filter\(\(m\) => !m\.taken\)/.test(STATE), "no month is dropped from the list");
+    assert.ok(!/\.filter\(\(m\) => !m\.taken\)/.test(COMPOSER), "and none in the component either");
   });
 
-  it("18. save is disabled when there is no month to write", () => {
-    assert.ok(DRAWER.includes("hasAvailableMonth(months)"));
-    assert.ok(DRAWER.includes("canSave={canSave}"));
-    assert.ok(/const canSave = editing \|\| \(!monthsLoading && hasAvailableMonth\(months\)\)/.test(DRAWER));
+  it("18. Create with no month left to write says so instead of offering a save", () => {
+    /* The drawer disabled its save button. The composer has no form to disable:
+     * when every month in the window is already reviewed it renders the
+     * explanation and no editor at all. */
+    assert.ok(COMPOSER.includes("if (creating && data.month.current === null) {"));
+    assert.ok(COMPOSER.includes('t("This student already has a review for every month in the window.")'));
   });
 });
 
@@ -294,7 +301,7 @@ describe("Review score — absence is not a low mark", () => {
      * report DTO, which is what stops one screen from disagreeing with the
      * document beside it about what a 3.1 means. */
     for (const [name, src] of [
-      ["page.tsx", PAGE], ["review-drawer.tsx", DRAWER],
+      ["page.tsx", PAGE],
       ["review-composer.tsx", COMPOSER], ["monthly-review-report.tsx", REPORT_VIEW],
       ["review-form-fields.tsx", FIELDS],
     ] as const) {
@@ -319,11 +326,6 @@ describe("Review score — absence is not a low mark", () => {
     for (const threshold of ["4.5", "3.8", "3.0", "2.2"]) {
       assert.ok(!UI.includes(threshold), `reviews-ui.ts restates threshold ${threshold}`);
     }
-    // The drawer is checked by its imports instead of by digits, because a card
-    // geometry like fontSize 14.5 is not a threshold. Test 22 already proves it
-    // calls neither perfLabel nor perfColor.
-    assert.ok(!DRAWER.includes("var(--green)") && !DRAWER.includes("var(--amber)"),
-      "the drawer names no performance band of its own");
     assert.ok(!/#[0-9a-fA-F]{6}/.test(UI), "no literal hex — tokens only");
   });
 
@@ -455,7 +457,6 @@ describe("Review copy — provenance", () => {
 
   it("28. every literal the three Reviews surfaces pass to t() is translated", () => {
     const seen = new Set([...translatedLiterals(raw("src", "app", "(app)", "reviews", "page.tsx")),
-      ...translatedLiterals(raw("src", "components", "reviews", "review-drawer.tsx")),
       ...translatedLiterals(raw("src", "components", "reviews", "student-reviews.tsx"))]);
     const missing = [...seen].filter((s) => s !== "" && !(s in DICT));
     assert.deepEqual(missing.sort(), [], "a new untranslated string appeared on a Reviews surface");
@@ -692,7 +693,7 @@ describe("The Reviews client holds no business logic", () => {
   });
 
   it("43. re-derives no domain rule of its own", () => {
-    for (const [name, src] of [["page.tsx", PAGE], ["review-drawer.tsx", DRAWER], ["form.ts", FORM]] as const) {
+    for (const [name, src] of [["page.tsx", PAGE], ["form.ts", FORM]] as const) {
       for (const forbidden of ["reviewAverage(", "canReviewStudent(", "isSelectableMonth(", "rankSkills("]) {
         assert.ok(!src.includes(forbidden), `${name} must not recompute ${forbidden}`);
       }
@@ -705,7 +706,7 @@ describe("The Reviews client holds no business logic", () => {
     assert.ok(FIELDS.includes("REVIEW_RATING_MAX") && FIELDS.includes("REVIEW_RATING_MIN"));
     assert.ok(!/\[1, ?2, ?3, ?4, ?5\]/.test(FIELDS), "the five points are derived, not retyped");
     // And neither surface keeps a scale of its own beside the shared one.
-    for (const [name, src] of [["review-drawer.tsx", DRAWER], ["review-composer.tsx", COMPOSER]] as const) {
+    for (const [name, src] of [["review-composer.tsx", COMPOSER]] as const) {
       assert.ok(!/const RATINGS =/.test(src), `${name} must not restate the scale`);
     }
   });
@@ -726,7 +727,7 @@ describe("The Reviews client holds no business logic", () => {
      * declares a field of its own. */
     assert.equal([...FIELDS.matchAll(/<textarea/g)].length, 5, "five prose boxes, in one file");
     assert.equal([...FIELDS.matchAll(/role="radio"/g)].length, 1, "one rating segment, mapped ten times");
-    for (const [name, src] of [["review-drawer.tsx", DRAWER], ["review-composer.tsx", COMPOSER]] as const) {
+    for (const [name, src] of [["review-composer.tsx", COMPOSER]] as const) {
       assert.ok(src.includes("<ReviewSkillFields"), `${name} renders the shared ratings`);
       assert.ok(src.includes("<ReviewProseFields"), `${name} renders the shared prose fields`);
       assert.ok(!src.includes("<textarea"), `${name} must not declare a field of its own`);
@@ -761,11 +762,20 @@ describe("Gate 4.3 stays inside its phase", () => {
     assert.ok(PAGE.includes("{c.latestReviewId && ("));
   });
 
-  it("47. the drawer nevertheless supports Edit, ready for the profile timeline", () => {
-    assert.ok(DRAWER.includes("toUpdateBody"));
-    assert.ok(DRAWER.includes("props.onUpdate(props.review.id"));
-    // And an edit renders the month as text rather than a control.
-    assert.ok(DRAWER.includes("{!editing ? ("));
+  it("47. Edit belongs to the composer, and the drawer that once held it is gone", () => {
+    /* GATE 4.4E DELETED src/components/reviews/review-drawer.tsx. It had had no
+     * routed consumer since 4.4D — both index actions and both profile actions
+     * navigate to the composer — and a second Review form kept alive by nothing
+     * but its own tests is a second place for the rules to drift to. */
+    const file = (...p: string[]) => existsSync(path.join(process.cwd(), ...p));
+    assert.ok(!file("src", "components", "reviews", "review-drawer.tsx"),
+      "the dead Review drawer is deleted, not merely unrouted");
+    assert.ok(COMPOSER.includes("toUpdateBody"), "the composer owns the update body");
+    /* THE SHARED PRIMITIVES STAY. Students, Parents, Classes and Homework all
+     * still render the generic Drawer; only the Reviews consumer went. */
+    assert.ok(file("src", "components", "ui", "drawer.tsx"), "the shared panel");
+    assert.ok(file("src", "components", "reviews", "review-form-fields.tsx"), "the shared fields");
+    assert.ok(file("src", "components", "reviews", "form.ts"), "the shared form helpers");
   });
 
   it("48. View performance navigates to the profile's Reviews tab", () => {
@@ -790,7 +800,7 @@ describe("Gate 4.3 stays inside its phase", () => {
 
   it("51. the Reviews client is the four files Gate 4.3 added plus the one Gate 4.4 adds", () => {
     const dir = path.join(process.cwd(), "src", "components", "reviews");
-    for (const f of ["api.ts", "form.ts", "reviews-ui.ts", "review-drawer.tsx", "student-reviews.tsx"]) {
+    for (const f of ["api.ts", "form.ts", "reviews-ui.ts", "student-reviews.tsx"]) {
       assert.ok(existsSync(path.join(dir, f)), f);
     }
     assert.ok(!existsSync(path.join(dir, "review-card.tsx")), "the card is drawn by the page, as the comp draws it");
@@ -849,7 +859,7 @@ describe("Reviews — the mobile geometry contract", () => {
 
   it("57. no drawer field states a width of its own", () => {
     assert.match(FIELDS, /width: "100%", minWidth: 0, maxWidth: "100%"/, "the field family");
-    assert.ok(DRAWER.includes('flexDirection: "column", minWidth: 0'), "and the form itself");
+    assert.ok(COMPOSER.includes('flexDirection: "column", minWidth: 0'), "and the form itself");
   });
 
   it("58. the five rating segments fit the narrowest supported panel", () => {
@@ -868,10 +878,12 @@ describe("Reviews — the mobile geometry contract", () => {
     assert.ok(!/minWidth: [1-9]\d*/.test(UI.slice(UI.indexOf("ratingSegmentStyle"))), "no width floor");
   });
 
-  it("59. the drawer is the shared sheet, with no panel geometry of its own", () => {
-    assert.ok(DRAWER.includes("<Drawer"), "the shared chrome, not a new panel");
-    assert.ok(!DRAWER.includes("position: \"fixed\""), "no panel positioning is restated");
+  it("59. the full-screen sheet geometry is the stylesheet's, not a component's", () => {
+    /* Reviews renders no drawer at all any more (test 47). The rule this used to
+     * prove through it is still live for Students, Parents, Classes and
+     * Homework, and drawer-dismiss.test.ts asserts it across all four. */
     assert.match(CSS, /\.app-drawer\{\s*inset:0 !important;width:100% !important/);
+    assert.ok(!COMPOSER.includes("position: \"fixed\""), "and the composer restates no panel geometry");
   });
 
   it("60. the page states no fixed pixel width anywhere", () => {
@@ -1182,21 +1194,35 @@ describe("Student Profile Reviews — the boundary", () => {
   });
 
   it("82b. what is STILL deferred is still absent, and still absent whole", () => {
-    /* GATE 4.4D DELIVERED THE DEDICATED PAGE AND THE REPORT, so those two names
-     * leave this list. Generated prose never enters it: no stored field carries
-     * an AI summary, an achievement or a concern, and no deterministic rule
-     * produces one, so none is derived on ANY Reviews surface. Print and PDF
-     * remain Gate 4.4E's, and 4.4D ships no dead control for either. */
+    /* GATE 4.4D DELIVERED THE DEDICATED PAGE AND THE REPORT; GATE 4.4E
+     * DELIVERED PRINT AND PDF, so those names leave this list too — the
+     * composer is now the one surface allowed to print, and review-pdf.ts the
+     * one allowed to reach jsPDF.
+     *
+     * GENERATED PROSE NEVER ENTERS THE LIST. No stored field carries an AI
+     * summary, an achievement or a concern, no deterministic rule produces one,
+     * and printing does not become an excuse to invent one for the paper: the
+     * PDF draws the same DTO the screen does, so a section that exists nowhere
+     * on screen cannot appear in the file. */
     for (const [name, src] of [
       ["student-reviews.tsx", TAB],
       ["review-composer.tsx", COMPOSER],
       ["monthly-review-report.tsx", REPORT_VIEW],
     ] as const) {
-      for (const block of ["aiSummary", "achievement", "concern", "jspdf", "window.print", "onPrint"]) {
+      for (const block of ["aiSummary", "achievement", "concern"]) {
         assert.ok(!src.includes(block), `${block} is in no Sprint 8 surface`);
       }
       assert.ok(!/Coming soon|arrives in a later sprint/.test(src), `${name}: nothing is a dead shell`);
     }
+    /* PRINTING STAYS OUT OF THE PROFILE TAB AND OUT OF THE DOCUMENT. The tab
+     * links to the composer; the report is inert so it can be printed untouched.
+     * Only the composer prints, and only review-pdf.ts knows what jsPDF is. */
+    for (const [name, src] of [["student-reviews.tsx", TAB], ["monthly-review-report.tsx", REPORT_VIEW]] as const) {
+      for (const block of ["jspdf", "window.print", "onPrint"]) {
+        assert.ok(!src.includes(block), `${name} must not ${block}`);
+      }
+    }
+    assert.ok(!COMPOSER.includes("jspdf"), "the composer imports the export, never the library");
     /* NO LIFECYCLE ANYWHERE EITHER. The reference comp shows publication
      * language; Sprint 8 Reviews have no Draft, Published or Final, so the
      * report says "Generated on" and carries no status. */
