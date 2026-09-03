@@ -1,0 +1,27 @@
+# Line endings for the directories the test suite reads from disk.
+#
+# WHY THIS FILE EXISTS. A large part of the suite asserts on source it opens by
+# path, and several of those assertions span a newline — e.g.
+# `assert.ok(TAB.includes("const panel: React.CSSProperties = {\n  minWidth: 0,"))`.
+# Every tracked text blob in this repository is stored with LF, but on Windows
+# with `core.autocrlf=true` and no rule here, checkout rewrites the working copy
+# to CRLF, those assertions stop matching, and a fresh clone fails three tests
+# that pass everywhere the working copy is LF. That is not a content regression —
+# the blobs are byte-identical either way — but it makes the suite depend on how
+# a machine happened to check the repository out, which a test suite must not.
+#
+# SCOPE IS THE EVIDENCE, NOT A BLANKET POLICY. This is deliberately not a
+# repository-wide `* text=auto eol=lf`. The tests open 57 source files by path,
+# and every one of them lives under `src/`, `scripts/` or is `package.json`;
+# `tests/` is here because tests/drawer-dismiss.test.ts reads
+# tests/responsive-shell.test.ts. Everything outside these paths keeps whatever
+# line-ending policy it had.
+#
+# NO COMMITTED CONTENT CHANGES. Not one of the 211 tracked text blobs contains a
+# CR today, so `eol=lf` cannot rewrite any of them; it only stops checkout from
+# introducing CRs. `text=auto` leaves genuinely binary files alone.
+
+src/**       text=auto eol=lf
+tests/**     text=auto eol=lf
+scripts/**   text=auto eol=lf
+package.json text=auto eol=lf
