@@ -196,8 +196,8 @@ reviews over 5 deleted students and 0 duplicate pairs, and `homeworks` still
 holds 15 at digest
 `aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f`.
 
-The closure audit has **passed**; **Sprint 8 — Reviews closes when this commit
-reaches `main`.**
+Closure audit **passed**. **Sprint 8 remains open until this `main` revision is
+deployed to Vercel Production and that deployment is verified.**
 
 The read-only production check is `npm run reviews:integrity`; it reports the
 collection's count, digest, month histogram, ghost-review count and any duplicate

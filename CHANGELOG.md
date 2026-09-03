@@ -428,8 +428,9 @@
   over 5 deleted students, 0 duplicate pairs; `homeworks` at 15 /
   `aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f`. The
   production index inventory is exactly `_id_`, `id_1`, `studentId_1`,
-  `month_1` and `review_student_month_unique`. The closure audit has **passed**;
-  **Sprint 8 — Reviews closes when this commit reaches `main`.**
+  `month_1` and `review_student_month_unique`. Closure audit **passed**.
+  **Sprint 8 remains open until this `main` revision is deployed to Vercel
+  Production and that deployment is verified.**
 
 ## Unreleased — Homework MVP (Sprint 7)
 - Homework index: the assignment cards with their class colour, status badge,
