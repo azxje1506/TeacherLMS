@@ -1182,9 +1182,16 @@ describe("Gate 4.4E final · per-rating skill-bar colour", () => {
     assert.ok(printBlock.includes("print-color-adjust:exact !important"), "and the standard one");
     // SCOPED TO THE DOCUMENT, never a global demand that the browser ink everything.
     assert.ok(CSS.includes(".report-sheet,.report-sheet *{"), "asked for the sheet and its descendants");
+    /* ANCHORED TO THE START OF A RULE. The selector has to BE `*`, not merely
+     * end in one: unanchored, `*{` also matches the `.report-sheet *{` that the
+     * assertion above REQUIRES, so this guard reported the correct rule as the
+     * violation. It went unnoticed because the working copy was CRLF, where a
+     * `\n` in the needle matches nothing and all three checks passed vacuously
+     * — see .gitattributes. Rules inside `@media print{` are indented two
+     * spaces, their declarations four. */
     for (const sel of ["*{", "body{", "html{"]) {
-      assert.equal(CSS.indexOf(`${sel}\n    -webkit-print-color-adjust`), -1,
-        `print-color-adjust must not be asked for ${sel}`);
+      assert.equal(CSS.indexOf(`\n  ${sel}\n    -webkit-print-color-adjust`), -1,
+        `print-color-adjust must not be asked for a bare ${sel}`);
     }
     /* AND THE FILL IS A BACKGROUND THAT THE RULE ACTUALLY COVERS: the bar is
      * rendered inside `.report-sheet`, so `.report-sheet *` reaches it. */
