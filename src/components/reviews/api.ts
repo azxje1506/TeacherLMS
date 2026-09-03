@@ -1,5 +1,5 @@
 /* Reviews — client-side fetchers and React Query keys. Shared by the index and
- * the drawer so a request is never defined twice.
+ * the composer so a request is never defined twice.
  *
  * Same pattern as Students / Parents / Classes / Lessons / Attendance /
  * Homework: mutate -> invalidate -> refetch, with no optimistic update. Nothing

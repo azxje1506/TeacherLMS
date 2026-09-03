@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Reviews MVP (Sprint 8) — **not yet rolled out**
+## Unreleased — Reviews MVP (Sprint 8) — **hosted Preview verified**
 - Reviews domain and validation: a Review is one student's month — ten skill
   ratings (integers 1–5, ten canonical dimensions, no eleventh) and five text
   fields. No `classId`, no `lessonId`, no status, no timestamps, no stored
@@ -66,7 +66,11 @@
   labels, the profile subtitle, the two client failure sentences, four
   `REVIEW_ERROR` sentences and the five Reviews schema messages. "Invalid input"
   is deliberately left untranslated: it is the generic parse fallback shared by
-  every module's routes, not a Reviews string.
+  every module's routes, not a Reviews string. That count is the FIRST batch
+  only; the later composer, report and PDF gates added strings of their own on
+  top of it. Across the whole branch `i18n-vi.json` gains **39 keys and loses
+  2** — net 37 — the two removals being `Best skill` and `Weakest skill`,
+  dropped when the teacher summary became tie-aware.
 - `npm run reviews:integrity` — a read-only production check (count, digest,
   month histogram, resolvable vs ghost, duplicate `(studentId, month)` pairs).
   It runs **observationally**: no accepted baseline is banked, because no
@@ -399,11 +403,33 @@
   The service's own `(studentId, month)` pre-check stays: the index is the
   concurrency guarantee for a two-tab race, the pre-check is the error path a
   teacher reads, and one does not replace the other.
-- **Production rollout has not been executed.** Nothing is deployed and **no
-  production Review has been created, edited or deleted** — the index was DDL and
-  moved no document, which is why the collection's digest is identical either
-  side of it. Rollout, deployment and production verification are still
+- ~~**Production rollout has not been executed.**~~ *(True when written;
+  **superseded** by the entry below, after Gate 5.3.)* Nothing is deployed and
+  **no production Review has been created, edited or deleted** — the index was
+  DDL and moved no document, which is why the collection's digest is identical
+  either side of it. Rollout, deployment and production verification are still
   outstanding, and Sprint 8 is **not closed**.
+- **Rollout: hosted Vercel Preview verified.** `sprint-8-reviews` was pushed and
+  deployed as a **Vercel Preview** at
+  `teacher-lms-git-sprint-8-reviews-azjxe.vercel.app`, running deployed SHA
+  `c19629c`, and a human browser pass against it **passed** (Gate 5.3). Two
+  things stay separate rather than being collapsed: the **deployment
+  environment** was Preview, and the **database** it read was production Atlas.
+  A Preview deployment reading production data is **not** a Vercel Production
+  deployment, and nothing in this repository claims one has happened. The
+  rollout is the closure proof for Gate 5.1/5.2's ordering: because
+  `review_student_month_unique` already existed in production with an identical
+  spec, mongoose's default `autoIndex` build on the deployment's first model use
+  was a **no-op** — **0 indexes created, 0 dropped, 0 changed**, and no
+  `studentId_1_month_1` duplicate. There was **no deployment-time DDL**, and
+  **no Review document was created, edited or deleted** during rollout: both
+  baselines reproduce exactly either side of it — `reviews` at 33 /
+  `c4418428f5d247b7c58caf046ce09c6e71f24dd30caab3bc86d4032a5fa8c4d5`, 11 ghosts
+  over 5 deleted students, 0 duplicate pairs; `homeworks` at 15 /
+  `aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f`. The
+  production index inventory is exactly `_id_`, `id_1`, `studentId_1`,
+  `month_1` and `review_student_month_unique`. The closure audit has **passed**;
+  **Sprint 8 — Reviews closes when this commit reaches `main`.**
 
 ## Unreleased — Homework MVP (Sprint 7)
 - Homework index: the assignment cards with their class colour, status badge,

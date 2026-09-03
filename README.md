@@ -118,9 +118,9 @@ closed**.
 Recording submission outcomes stays deferred: this MVP ships no submission
 writer.
 
-**Implemented on the `sprint-8-reviews` branch, not yet production-verified or
-closed:** **Reviews** — a student's month, assessed. Ten skill ratings (1–5) and
-five text fields, on:
+**Implemented on the `sprint-8-reviews` branch and verified on a hosted Vercel
+Preview deployment:** **Reviews** — a student's month, assessed. Ten skill
+ratings (1–5) and five text fields, on:
 
 - the **reviews index** — one card per reviewable student, with the latest
   review's average, performance label, review count and latest month;
@@ -170,13 +170,35 @@ card per item — strongest skills, focus areas, biggest improvement — with th
 skill names wrapping rather than being shortened, in the same structure on
 screen, on paper and in the file.
 
-This has **not** been deployed or verified in a hosted app, and **no production
-Review has been created, edited or deleted**. One production change has been
-made: the `(studentId, month)` unique index — `review_student_month_unique` —
-was created explicitly in Gate 5.1, and `models.ts` declares the matching index
-as of Gate 5.2. That was DDL and moved no document, which is why the digest below
-is unchanged either side of it. Rollout and production verification are still
-outstanding and Sprint 8 is **not closed**.
+Sprint 8's implementation is **complete**, and the branch has been verified on a
+hosted **Vercel Preview** deployment at
+`teacher-lms-git-sprint-8-reviews-azjxe.vercel.app`, running deployed SHA
+`c19629c`. A human browser pass against that deployment **passed**. Keep the two
+facts apart: the *deployment environment* was Preview, while the *database* it
+read was production Atlas — a Preview deployment reading production data is not
+a Vercel **Production** deployment, and nothing here claims one happened.
+
+One production change has been made, and it is DDL rather than data: the
+`(studentId, month)` unique index — `review_student_month_unique` — was created
+explicitly in Gate 5.1, and `models.ts` declares the matching index as of Gate
+5.2, so source and production describe the same index by name, key, key order
+and uniqueness. Because the index already existed with an identical spec,
+mongoose's default `autoIndex` build on the Preview deployment's first model use
+was a **no-op**: the hosted rollout created no index, dropped none and changed
+none, and produced **no duplicate compound index** — `studentId_1_month_1` does
+not exist. There was **no deployment-time DDL**.
+
+**No production Review was created, edited or deleted** at any point in Sprint 8,
+rollout verification included, and the Homework baseline is likewise untouched:
+`reviews` still holds 33 documents at digest
+`c4418428f5d247b7c58caf046ce09c6e71f24dd30caab3bc86d4032a5fa8c4d5` with 11 ghost
+reviews over 5 deleted students and 0 duplicate pairs, and `homeworks` still
+holds 15 at digest
+`aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f`.
+
+The closure audit has **passed**; **Sprint 8 — Reviews closes when this commit
+reaches `main`.**
+
 The read-only production check is `npm run reviews:integrity`; it reports the
 collection's count, digest, month histogram, ghost-review count and any duplicate
 `(studentId, month)` pairs, and it runs **observationally**. Global Search

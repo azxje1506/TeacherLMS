@@ -49,9 +49,10 @@
  * Every render builds a `MonthlyReviewReport` from the form's CURRENT values
  * through the pure `buildMonthlyReviewReportDraft`. Move a rating and the
  * overall score, its label, its colour, the bars, the radar and the
- * strongest/weakest lines move with it — before anything is written. No request
- * is made, no cache is touched, and nothing is created by looking at a preview.
- * In View the form is read-only, so the report is simply the persisted review.
+ * strongest / focus-area lines move with it — before anything is written. No
+ * request is made, no cache is touched, and nothing is created by looking at a
+ * preview. In View the form is read-only, so the report is simply the persisted
+ * review.
  *
  * Attendance and Homework are NOT the form's to move: they are derived on the
  * server and arrive per month on the read model. Typing cannot change them;
