@@ -125,7 +125,15 @@ function dateRange(fromMonth: string, toMonth: string): { gte: string; lt: strin
  * The tuition branch's shape and shaping both live in src/lib/billing.ts, so a
  * test can assert the ghost rule without a database. This module fetches. */
 
-export interface FinanceRevenueBranch extends RevenueResult {
+export interface FinanceRevenueBranch extends Omit<RevenueResult, "perClass"> {
+  /** `computeRevenue`'s own rows plus the class's display colour.
+   *
+   * THE COLOUR IS A JOIN, NOT A CALCULATION. `computeRevenue` returns
+   * `{ classId, name, amount }` and is left exactly as it is — a revenue engine
+   * has no business knowing what colour a chart draws a class in. The class
+   * documents are already in hand for the computation, so the swatch is attached
+   * here rather than by widening the engine's return type. */
+  perClass: (RevenueResult["perClass"][number] & { color: string })[];
   /** Lesson-derived revenue per month, six months ending at the selected one. */
   trend: { month: string; total: number }[];
 }
@@ -222,12 +230,23 @@ export async function buildFinanceMonth(
   const selected = computeRevenue(month, revenueInput);
   const trend = window.map((m) => ({ month: m, total: computeRevenue(m, revenueInput).total }));
 
+  const classColorById = new Map(classes.map((c) => [c.id, c.color]));
+
   return {
     month,
     appClock: TODAY_ISO,
     months: financeMonthOptions(appMonth),
     billing,
-    revenue: { ...selected, trend },
+    revenue: {
+      ...selected,
+      // A display join over the engine's own rows. Amount, name and order are
+      // `computeRevenue`'s and are passed through untouched.
+      perClass: selected.perClass.map((r) => ({
+        ...r,
+        color: classColorById.get(r.classId) || "var(--accent)",
+      })),
+      trend,
+    },
   };
 }
 
