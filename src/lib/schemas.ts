@@ -254,7 +254,7 @@ export type HomeworkUpdateBody = z.output<typeof homeworkUpdateSchema>;
  * well-formed month may be reviewed is a question about the application month —
  * `isSelectableMonth` in src/lib/reviews.ts answers it, and the create planner
  * asks. Zod checks the shape it can see. */
-const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+export const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /* One skill rating: an INTEGER from 1 to 5.
  *

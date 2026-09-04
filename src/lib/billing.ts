@@ -55,7 +55,7 @@
  * read model, the service and the API that will call these are Gate 4. */
 
 import { TODAY_ISO } from "./constants";
-import type { Billing, BillingStatus } from "./types";
+import type { Billing, BillingStatus, Klass, Student } from "./types";
 
 /* ------------------------------------------------------------- vocabulary */
 
@@ -80,6 +80,15 @@ export const BILLING_STATUSES_ARE_EXHAUSTIVE: UncoveredBillingStatus extends nev
 /** The fields every calculation below reads. Narrower than `Billing` so a caller
  * may pass a projection, and so a test fixture states only what matters. */
 export type BillLike = Pick<Billing, "status" | "fee"> & Pick<Partial<Billing>, "paidAmount">;
+
+/** Is money still owed on this bill? True for `Unpaid` and `Partially Paid`.
+ *
+ * A legacy partial with no recorded amount is still outstanding — SOMETHING is
+ * owed, and only the amount is unknown. Saying otherwise would drop a debt
+ * because nobody wrote a number down. `outstandingFor` reports the `null`. */
+export function isOutstanding(bill: Pick<Billing, "status">): boolean {
+  return bill.status === "Unpaid" || bill.status === "Partially Paid";
+}
 
 /* --------------------------------------------------------- one bill at a time */
 
@@ -288,6 +297,185 @@ export function partitionByStudentResolution<T extends { studentId: string }>(
   return { listable, hidden, hiddenCount: hidden.length };
 }
 
+/* ---------------------------------------------------------- the read model
+ *
+ * WHY THE SHAPING IS HERE AND NOT IN THE SERVICE. "Which bills raise a row,
+ * which stay in the totals, and what does a row disclose" is the whole of the
+ * ghost rule, and it is only provably correct if a test can reach it without a
+ * database in the loop. So `finance-service.ts` fetches, hands the documents to
+ * the function below, and returns what it gets back — the same split
+ * `reviews.ts` / `reviews-service.ts` already draw with `buildReviewCards`.
+ *
+ * THE RESOLUTION IS THE CALLER'S. Students, classes and living parent ids arrive
+ * already looked up, so this module still reaches no database. */
+
+/** One bill, as a client may see it. Only bills whose student resolves become
+ * one of these, so every field is safe to render. */
+export interface BillingRow {
+  billId: string;
+  studentId: string;
+  studentName: string;
+  initials: string;
+  avatarColor: string;
+  classId: string;
+  className: string;
+  classColor: string;
+  /** Integer VND, exactly as stored — a historical snapshot, never reconciled
+   * with the class's fee today. */
+  fee: number;
+  status: BillingStatus;
+  /** Recorded amount for a partial, or `null` when it was never recorded. */
+  paidAmount: number | null;
+  collected: number | null;
+  outstanding: number | null;
+  paidDate: string | null;
+  notes: string;
+  /** Whether this student's `parentId` resolves to a real Parent. Informational
+   * only — it blocks nothing. No parent name, phone or email is carried, because
+   * "is there somebody to talk to about this bill" is a boolean. */
+  parentLinked: boolean;
+}
+
+/** One class's tuition within the scope, plus the bills that may be named. */
+export interface BillingClassBlock extends BillingTotals {
+  classId: string;
+  className: string;
+  classColor: string;
+  /** Bills whose student resolves. Ghost bills are absent here and present in
+   * every figure above. */
+  rows: BillingRow[];
+  hiddenRecords: number;
+}
+
+/** One student who still owes money. Live students only. */
+export interface OutstandingStudentRow {
+  billId: string;
+  studentId: string;
+  studentName: string;
+  initials: string;
+  avatarColor: string;
+  classId: string;
+  className: string;
+  month: string;
+  /** `fee` when Unpaid, `fee - paidAmount` for a recorded partial, and `null`
+   * for a partial whose amount was never recorded — never a guess. */
+  amount: number | null;
+  parentLinked: boolean;
+}
+
+export interface FinanceBillingBranch extends BillingTotals {
+  perClass: BillingClassBlock[];
+  outstandingStudents: OutstandingStudentRow[];
+  rows: BillingRow[];
+  /** Bills counted in every total above but named in no list, because their
+   * student no longer resolves. What the design's "+N more" renders. */
+  hiddenRecords: number;
+}
+
+/** Just enough of a Student to render a row. Narrower than `Student` so this
+ * module cannot reach a field it has no business showing. */
+export type BillingStudentRef = Pick<Student, "id" | "name" | "initials" | "avatarColor" | "parentId">;
+/** Just enough of a Class. */
+export type BillingClassRef = Pick<Klass, "id" | "name" | "color">;
+
+export interface BillingResolution {
+  students: readonly BillingStudentRef[];
+  classes: readonly BillingClassRef[];
+  /** Ids of Parent documents that actually exist. A `parentId` outside this set
+   * is not a link (PROJECT_RULES, Student & Parents). */
+  livingParentIds: ReadonlySet<string>;
+}
+
+const FALLBACK_COLOR = "var(--accent)";
+
+/** Shape one scope's bills into the branch a Finance screen renders.
+ *
+ * TOTALS COUNT EVERY BILL; LISTS NAME ONLY THE RESOLVED ONES. That asymmetry is
+ * the ghost rule, and it is deliberate: a deletion must not move a closed
+ * month's figures, and a working list of who owes money cannot contain somebody
+ * who is gone. The difference between the two is `hiddenRecords`, which is the
+ * only thing about a ghost that ever reaches a client — no id, no name, no
+ * former parent, and no placeholder row.
+ *
+ * NOTHING IS NORMALISED. A fee is summed and rendered exactly as stored, even
+ * where it disagrees with its class's fee today. */
+export function buildBillingBranch(
+  bills: readonly Billing[],
+  resolution: BillingResolution
+): FinanceBillingBranch {
+  const studentById = new Map(resolution.students.map((s) => [s.id, s]));
+  const classById = new Map(resolution.classes.map((c) => [c.id, c]));
+  const resolvedStudentIds = new Set(resolution.students.map((s) => s.id));
+  const parentLinkedFor = (s: BillingStudentRef | undefined) =>
+    !!s?.parentId && resolution.livingParentIds.has(s.parentId);
+
+  const toRow = (b: Billing): BillingRow => {
+    const s = studentById.get(b.studentId);
+    const c = classById.get(b.classId);
+    return {
+      billId: b.id,
+      studentId: b.studentId,
+      studentName: s?.name ?? "",
+      initials: s?.initials ?? "",
+      avatarColor: s?.avatarColor || FALLBACK_COLOR,
+      classId: b.classId,
+      className: c?.name ?? b.classId,
+      classColor: c?.color || FALLBACK_COLOR,
+      fee: b.fee,
+      status: b.status,
+      paidAmount: typeof b.paidAmount === "number" ? b.paidAmount : null,
+      collected: collectedFor(b),
+      outstanding: outstandingFor(b),
+      paidDate: b.paidDate ?? null,
+      notes: b.notes ?? "",
+      parentLinked: parentLinkedFor(s),
+    };
+  };
+
+  const totals = totalsFor(bills);
+  const { listable, hiddenCount } = partitionByStudentResolution(bills, resolvedStudentIds);
+
+  const perClass: BillingClassBlock[] = totalsByClass(bills).map((t) => {
+    const c = classById.get(t.classId);
+    const ofClass = bills.filter((b) => b.classId === t.classId);
+    const split = partitionByStudentResolution(ofClass, resolvedStudentIds);
+    return {
+      ...t,
+      className: c?.name ?? t.classId,
+      classColor: c?.color || FALLBACK_COLOR,
+      rows: split.listable.map(toRow),
+      hiddenRecords: split.hiddenCount,
+    };
+  });
+
+  const outstandingStudents: OutstandingStudentRow[] = listable
+    .filter(isOutstanding)
+    .map((b) => {
+      const s = studentById.get(b.studentId);
+      const c = classById.get(b.classId);
+      return {
+        billId: b.id,
+        studentId: b.studentId,
+        studentName: s?.name ?? "",
+        initials: s?.initials ?? "",
+        avatarColor: s?.avatarColor || FALLBACK_COLOR,
+        classId: b.classId,
+        className: c?.name ?? b.classId,
+        month: b.month,
+        amount: outstandingFor(b),
+        parentLinked: parentLinkedFor(s),
+      };
+    });
+
+  return {
+    ...totals,
+    perClass,
+    outstandingStudents,
+    rows: listable.map(toRow),
+    hiddenRecords: hiddenCount,
+  };
+}
+
 /* ------------------------------------------------------- the payment write
  *
  * WHY THIS IS SPLIT IN TWO. `paidAmount` must be strictly less than the bill's
@@ -325,6 +513,22 @@ export type PaymentViolation =
 export type PaymentCheck =
   | { ok: true; write: PaymentWriteInput }
   | { ok: false; violation: PaymentViolation };
+
+/** What a teacher reads when a payment is refused, and the status it carries.
+ *
+ * `bill-missing` is the one 404 — and it is the SAME 404 a ghost bill gets, so
+ * the id space discloses nothing. Everything else is a 422: the request named a
+ * bill that exists and asked it to hold something it may not. */
+export const PAYMENT_ERROR: Record<PaymentViolation, { status: number; message: string }> = {
+  "bill-missing": { status: 404, message: "Bill not found" },
+  "amount-required": { status: 422, message: "Enter how much was collected" },
+  "amount-not-allowed": { status: 422, message: "Only a partial payment records an amount" },
+  "amount-not-integer": { status: 422, message: "Enter a whole amount in VND" },
+  "amount-out-of-range": { status: 422, message: "A partial payment must be more than zero and less than the fee" },
+  "date-required": { status: 422, message: "Pick a payment date" },
+  "date-not-allowed": { status: 422, message: "An unpaid bill has no payment date" },
+  "date-in-future": { status: 422, message: "A payment date can't be in the future" },
+};
 
 /** Validate a parsed payment payload against the bill it settles.
  *

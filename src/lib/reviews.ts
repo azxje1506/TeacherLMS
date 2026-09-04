@@ -156,8 +156,15 @@ function monthIndex(month: string | null | undefined): number | null {
   return year * 12 + (oneBasedMonth - 1);
 }
 
-/** The "YYYY-MM" `delta` months away from `month` (negative goes back). */
-function shiftMonth(month: string, delta: number): string | null {
+/** The "YYYY-MM" `delta` months away from `month` (negative goes back).
+ *
+ * EXPORTED, and nothing else about it changed. Finance needs the same twelve
+ * months ending at the application month that Reviews already defines, plus a
+ * six-month trend window, and month arithmetic that crosses a year boundary is
+ * exactly the kind of thing that must not be written down twice. `monthsAgo`
+ * beside it is exported for the same reason. No caller and no behaviour here
+ * moved — the function is unchanged and merely reachable. */
+export function shiftMonth(month: string, delta: number): string | null {
   const index = monthIndex(month);
   if (index == null) return null;
   const shifted = index + delta;
