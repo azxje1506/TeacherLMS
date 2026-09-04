@@ -2,6 +2,7 @@
  * (client validation) so the two never drift. */
 
 import { z } from "zod";
+import { BILLING_STATUSES } from "./billing";
 import { minutesBetween, overlappingSlotIndexes } from "./calc";
 import { REVIEW_RATING_MAX, REVIEW_RATING_MIN, SKILL_KEYS, hasRequiredProse } from "./reviews";
 import type { AttendanceStatus, ClassStatus } from "./types";
@@ -351,12 +352,48 @@ export const reviewUpdateSchema = z
 export type ReviewUpdateFormInput = z.input<typeof reviewUpdateSchema>;
 export type ReviewUpdateBody = z.output<typeof reviewUpdateSchema>;
 
-export const paymentSchema = z.object({
-  status: z.enum(["Paid", "Partially Paid", "Unpaid"]),
-  paidDate: z.string().optional().default(""),
-  notes: z.string().optional().default(""),
-});
-export type PaymentInput = z.infer<typeof paymentSchema>;
+/* ------------------------------------------------------------------ Billing */
+
+/* PATCH /api/finance/:billId — recording a payment against an existing bill.
+ *
+ * REPLACES the old `paymentSchema`, which nothing imported. That one allowed any
+ * string as a date, carried no amount at all, and sat beside a `paidAmount()`
+ * helper that treated every partial as half the fee. Both have been deleted; the
+ * amount is now stated rather than guessed (PROJECT_RULES, Billing).
+ *
+ * ONLY WHAT A PAYMENT RECORDS. `.strict()` refuses every ownership field —
+ * `id`, `studentId`, `classId`, `month`, `fee` — rather than silently ignoring
+ * it, and equally refuses fields a bill has never had: `dueDate`, `method`,
+ * `createdAt`, `updatedAt`, `invoiceId`, `receiptId`. A bill against the wrong
+ * student, class or month is a different bill, not a correctable one.
+ *
+ * THIS IS THE PAYLOAD HALF ONLY. `0 < paidAmount < fee` needs the persisted
+ * bill's fee, which is not in the payload and must not be trusted from one, so
+ * that rule — and the status/field coherence, and the future-date refusal — are
+ * enforced by `checkPaymentWrite` in billing.ts against the stored document. The
+ * two layers are deliberate: this keeps a malformed request out, that keeps an
+ * incoherent write in.
+ *
+ * `paidDate` accepts an ISO date or `null`. An empty string normalises to
+ * `null`, because that is what the model stores for "no date" and a form that
+ * cleared its date field sends `""`. */
+export const billingPaymentSchema = z
+  .object({
+    status: z.enum(BILLING_STATUSES),
+    /** Integer VND. Only a `Partially Paid` bill may carry one; the range is
+     * checked against the bill's own fee, not here. */
+    paidAmount: z.number().int("Enter a whole amount in VND").optional(),
+    paidDate: z
+      .union([z.string().regex(ISO_DATE, "Pick a payment date"), z.literal(""), z.null()])
+      .optional()
+      .transform((v) => (v === "" || v === undefined ? null : v)),
+    notes: z.string().optional().default(""),
+  })
+  .strict();
+/** What the payload holds before defaults and the empty-string normalisation. */
+export type BillingPaymentFormInput = z.input<typeof billingPaymentSchema>;
+/** What validation produces and the API accepts. */
+export type BillingPaymentBody = z.output<typeof billingPaymentSchema>;
 
 /* ------------------------------------------------------------------ Lessons */
 

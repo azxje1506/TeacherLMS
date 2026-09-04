@@ -1,8 +1,7 @@
 /* English Tutor LMS — pure calculation helpers.
  * Ported from design-reference/lib/etlms-calc.js. Dependency-free and shared by
- * scheduling, billing and the performance views (server + client). */
-
-import type { Billing } from "./types";
+ * scheduling and the performance views (server + client). Billing's own
+ * calculations live in src/lib/billing.ts. */
 
 /** Deterministic 32-bit string hash (×31 rolling). Seeds all reproducible mock variation. */
 export function hash(s: string | null | undefined): number {
@@ -60,11 +59,18 @@ export function overlappingSlotIndexes(
   return hits;
 }
 
-/** Amount actually collected for a billing record. Partially Paid counts as half the fee. */
-export function paidAmount(b: Pick<Billing, "status" | "fee"> | null | undefined): number {
-  if (!b) return 0;
-  return b.status === "Paid" ? b.fee : b.status === "Partially Paid" ? Math.round(b.fee / 2) : 0;
-}
+/* `paidAmount(b)` USED TO LIVE HERE and has been DELETED, not moved.
+ *
+ * It returned `Math.round(b.fee / 2)` for every `Partially Paid` bill — an
+ * invented constant that no business rule ever supported, in a helper nothing
+ * called. Its replacement is `collectedFor` in src/lib/billing.ts, which returns
+ * `null` for a partial whose amount was never recorded, because "nobody wrote
+ * down how much" and "they paid half" are different facts and only one of them
+ * is in the data (PROJECT_RULES, Billing).
+ *
+ * Recorded rather than silently removed so the 50% rule is not reintroduced by
+ * somebody who remembers it existing. There is a test asserting no such
+ * assumption remains anywhere in src/. */
 
 /** Coaching label for an average skill score (1..5). */
 export function perfLabel(avg: number): string {
