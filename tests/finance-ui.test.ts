@@ -23,13 +23,12 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  AT_LEAST_PERCENT, HISTORICAL_NOTE_MANY, HISTORICAL_NOTE_ONE,
+  BILL_MANY, BILL_ONE, HISTORICAL_NOTE_MANY, HISTORICAL_NOTE_ONE,
   HISTORICAL_PARTIAL_MANY, HISTORICAL_PARTIAL_ONE, NOT_DETERMINED, NOT_RECORDED,
   NO_BILLING_BODY, NO_BILLING_TITLE, PARTIAL_NOTE_MANY, PARTIAL_NOTE_ONE,
-  RATE_BASIS, STATUS_LABEL, UNKNOWN_SEGMENT, barWidth, billingState, donutArcs,
+  STATUS_LABEL, UNKNOWN_SEGMENT, barWidth, billingState, billsLabel, donutArcs,
   financeNoteStyle, historicalNote, historicalPartialNote, money, partialNote,
-  percent, rankByCollected, rateText, sortByOutstanding, statusBadgeStyle,
-  trendGeometry,
+  percent, rankByCollected, sortByOutstanding, statusBadgeStyle, trendGeometry,
 } from "../src/components/finance/finance-ui";
 import { createFormat, DEFAULT_REGIONAL, EM } from "../src/lib/format";
 import { translate } from "../src/lib/i18n";
@@ -801,7 +800,7 @@ describe("Finance UI · vocabulary and forbidden terms", () => {
       PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY,
       HISTORICAL_PARTIAL_ONE, HISTORICAL_PARTIAL_MANY,
       NO_BILLING_TITLE, NO_BILLING_BODY,
-      NOT_RECORDED, NOT_DETERMINED, UNKNOWN_SEGMENT, AT_LEAST_PERCENT, RATE_BASIS,
+      NOT_RECORDED, NOT_DETERMINED, UNKNOWN_SEGMENT, BILL_ONE, BILL_MANY,
     ]) {
       assert.ok(vi.includes(`"${key}":`), `missing translation: ${key}`);
     }
@@ -1248,7 +1247,6 @@ describe("Gate 6 · the aggregate identity", () => {
     assert.equal(money(0, fmt, NOT_RECORDED), "0đ");
     assert.notEqual(money(0, fmt, NOT_RECORDED), NOT_RECORDED);
     assert.equal(percent(0, NOT_DETERMINED), "0%");
-    assert.equal(rateText(0, true, en, NOT_DETERMINED), "0%");
   });
 
   it("127. nothing is inferred — no half, no substitute zero, no backfill", () => {
@@ -1302,37 +1300,87 @@ describe("Gate 6 · the KPIs show the money that is known", () => {
   });
 });
 
-describe("Gate 6 · a rate that is a floor says so", () => {
-  it("132. exact when complete, `At least X%` when not", () => {
-    assert.equal(rateText(64, true, en, NOT_DETERMINED), "64%");
-    assert.equal(rateText(64, false, en, NOT_DETERMINED), "At least 64%");
-    assert.equal(AT_LEAST_PERCENT, "At least {X}%");
-    // Vietnamese places the number where its own grammar wants it.
+describe("Gate 6 · the collection rate is not rendered at all", () => {
+  it("132. no percentage of expected revenue reaches the screen", () => {
+    // It was the Money Summary's fourth metric and earned its place least: a
+    // percentage of expected revenue tells a teacher nothing they can act on,
+    // and with one unrecorded partial it could not even be stated plainly —
+    // it had to be shown as a floor with a sentence explaining the arithmetic.
+    for (const [name, src] of UI_FILES) {
+      assert.ok(!/collectionRate/.test(src), `${name} must not read the rate`);
+      assert.ok(!/At least|Ít nhất/.test(src), `${name} must not render a floor percentage`);
+      assert.ok(!/of expected collected|Based on recorded payment/.test(src), `${name}`);
+    }
+    assert.ok(!/data-testid="fin-rate"/.test(ALL_UI), "no rate value");
+    assert.ok(!/data-testid="fin-rate-basis"/.test(ALL_UI), "no basis line");
+  });
+
+  it("133. and its copy is deleted, not left exported or in the dictionary", () => {
+    // A label nothing renders is a label a future edit rediscovers and reuses.
+    const helpers = raw("src", "components", "finance", "finance-ui.ts");
+    assert.ok(!/export const AT_LEAST_PERCENT/.test(helpers));
+    assert.ok(!/export const RATE_BASIS/.test(helpers));
+    assert.ok(!/export function rateText/.test(helpers));
+    const vi = raw("src", "lib", "i18n-vi.json");
+    for (const key of ["At least {X}%", "Based on recorded payment amounts.", "of expected collected"]) {
+      assert.ok(!vi.includes(`"${key}"`), `the dictionary must not keep "${key}"`);
+    }
+  });
+
+  it("134. no dead slot, placeholder or disabled metric is left behind", () => {
+    assert.ok(!/fin-metric-rate|fin-rate/.test(OVERVIEW));
+    assert.ok(!/visibility: "hidden"|display: "none"[^}]*rate/i.test(OVERVIEW));
+    assert.ok(!/disabled/.test(OVERVIEW), "nothing is drawn inert in its place");
+    // …and the backend keeps the figure, deliberately. It is correct, cheap and
+    // tested, and ripping it out of the domain to chase one UI decision this
+    // late would be churn in the service contract for no gain.
+    assert.ok(/collectionRate/.test(code("src", "lib", "billing.ts")), "the DTO still carries it");
+    assert.ok(/collectionRate: number \| null;/.test(code("src", "lib", "billing.ts")));
+  });
+});
+
+describe("Gate 6 · the Money summary is three metrics", () => {
+  it("135. Collected, Outstanding and Partially paid — and nothing else", () => {
+    const legend = /className="fin-summary-legend"[\s\S]*?\n        <\/div>/.exec(OVERVIEW);
+    assert.ok(legend, "the metric row is readable");
+    const metrics = [...legend[0].matchAll(/className="fin-metric"/g)];
+    assert.equal(metrics.length, 4, "three, plus the Unknown slice when a month has one");
+    assert.ok(/\{t\("Collected"\)\} <b/.test(legend[0]));
+    assert.ok(/\{t\("Outstanding"\)\} <b/.test(legend[0]));
+    assert.ok(/\{t\("Partially paid"\)\} <b/.test(legend[0]));
+    assert.ok(!/collectionRate|At least/.test(legend[0]), "and no rate");
+  });
+
+  it("136. Partially paid is a COUNT of bills, never money", () => {
+    // How many bills are stuck half-settled is a different question from how
+    // much money they represent — and for the legacy ones that money is exactly
+    // what nobody recorded, so a figure here would have to be invented.
+    assert.ok(/billsLabel\(billing\.counts\.partiallyPaid, t\)/.test(OVERVIEW));
+    assert.ok(/data-testid="fin-metric-partial"/.test(OVERVIEW));
+    assert.equal(billsLabel(1, en), "1 bill");
+    assert.equal(billsLabel(3, en), "3 bills");
+    assert.equal(billsLabel(0, en), "0 bills");
     const vi = (x: string) => translate(x, "vi");
-    assert.equal(rateText(64, false, vi, NOT_DETERMINED), "Ít nhất 64%");
-    assert.equal(vi(RATE_BASIS), "Dựa trên các khoản thanh toán đã ghi nhận.");
+    assert.equal(billsLabel(1, vi), "1 hóa đơn");
+    assert.equal(billsLabel(3, vi), "3 hóa đơn");
+    // It is not formatted as VND, and it is not a percentage.
+    assert.ok(!/fmt\.vnd\(billing\.counts/.test(OVERVIEW));
+    assert.ok(!billsLabel(3, en).includes("đ"));
+    assert.ok(!billsLabel(3, en).includes("%"));
+    // The label is the app's existing one, not a new term.
+    assert.equal(translate("Partially paid", "vi"), "Trả một phần");
+    assert.equal(STATUS_LABEL["Partially Paid"], "Partially paid", "the same words the badge uses");
   });
 
-  it("133. never an exact-looking percentage over incomplete amounts", () => {
-    assert.notEqual(rateText(64, false, en, NOT_DETERMINED), "64%");
-    assert.ok(rateText(64, false, en, NOT_DETERMINED).includes("64%"), "the number is still shown");
-    // And never 0% for a denominator that is only unknown, nor a dash.
-    assert.equal(rateText(null, true, en, NOT_DETERMINED), NOT_DETERMINED);
-    assert.notEqual(rateText(null, true, en, NOT_DETERMINED), "0%");
-    assert.notEqual(rateText(null, true, en, NOT_DETERMINED), EM);
-  });
-
-  it("134. the screen renders it through that one helper, with its basis", () => {
-    assert.ok(/rateText\(billing\.collectionRate, billing\.amountsComplete, t,/.test(OVERVIEW));
-    assert.ok(/rateText\(c\.collectionRate, c\.amountsComplete, t,/.test(OVERVIEW), "per class too");
-    assert.ok(/data-testid="fin-rate-basis"/.test(OVERVIEW));
-    assert.ok(OVERVIEW.includes("t(RATE_BASIS)"));
-    assert.ok(/!billing\.amountsComplete && \(/.test(OVERVIEW), "only when it is a floor");
+  it("137. the layout says three, rather than being a row that lost one", () => {
+    // A flex row that used to hold four would leave the three where they fell.
+    assert.ok(/gridTemplateColumns: hasUnknownSlice \? "repeat\(4,minmax\(0,auto\)\)" : "repeat\(3,minmax\(0,auto\)\)"/.test(OVERVIEW));
+    assert.ok(/display: "grid"/.test(OVERVIEW));
   });
 });
 
 describe("Gate 6 · the proportion bar has a third segment", () => {
-  it("135. it is always drawn, and it always adds up", () => {
+  it("138. it is always drawn, and it always adds up", () => {
     // It used to disappear entirely when one amount was missing, leaving a
     // blank track where four fifths of a real proportion could have been.
     assert.ok(/barWidth\(billing\.knownCollected, billing\.billed\)/.test(OVERVIEW));
@@ -1341,24 +1389,31 @@ describe("Gate 6 · the proportion bar has a third segment", () => {
     assert.ok(!/proportionKnown/.test(OVERVIEW), "no all-or-nothing branch survives");
   });
 
-  it("136. the third segment is neutral, not an alarm", () => {
+  it("139. the third segment is neutral, not an alarm", () => {
     const seg = /data-testid="fin-bar-unknown"[^/]*\/>/.exec(OVERVIEW);
     assert.ok(seg, "the segment is readable");
     assert.ok(/var\(--muted-2\)/.test(seg[0]), "muted");
     assert.ok(!/var\(--accent\)|var\(--amber\)|red|danger/i.test(seg[0]), "not a warning colour");
   });
 
-  it("137. and it earns a legend entry only when it exists", () => {
-    assert.ok(/data-testid="fin-legend-unknown"/.test(OVERVIEW));
-    assert.ok(/\{!billing\.amountsComplete && \(\s*<div className="fin-metric" data-testid="fin-legend-unknown"/.test(OVERVIEW));
+  it("140. and it earns a legend entry only when there is a slice to name", () => {
+    // Keyed on the AMOUNT, not on the record count: barWidth returns "0%" for a
+    // zero part, which is truthy, so a month whose unrecorded bills happened to
+    // total nothing would otherwise draw a segment for a slice that is not there.
+    assert.ok(/const hasUnknownSlice = billing\.unknownAmount > 0;/.test(OVERVIEW));
+    assert.ok(/unknownW = hasUnknownSlice \? barWidth/.test(OVERVIEW));
+    assert.ok(/\{hasUnknownSlice && \(\s*<div className="fin-metric" data-testid="fin-legend-unknown"/.test(OVERVIEW));
     assert.ok(OVERVIEW.includes("t(UNKNOWN_SEGMENT)"));
     assert.ok(/fmt\.vnd\(billing\.unknownAmount\)/.test(OVERVIEW), "labelled with its own amount");
     assert.equal(UNKNOWN_SEGMENT, "Unknown");
+    // The bar itself survives the rate's removal: it decomposes the billed
+    // total, which is a different job from scoring the month out of 100.
+    assert.ok(/data-testid="fin-bar-unknown"/.test(OVERVIEW));
   });
 });
 
 describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
-  it("138. two counts, because they are two different situations", () => {
+  it("141. two counts, because they are two different situations", () => {
     // An unrecorded partial for a student who still exists is something a
     // teacher can go and settle. The same gap on a record whose student is gone
     // is closed history. Same defect, different sentence.
@@ -1371,7 +1426,7 @@ describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
     assert.notEqual(PARTIAL_NOTE_MANY, HISTORICAL_PARTIAL_MANY);
   });
 
-  it("139. the split comes from the service, not from the screen", () => {
+  it("142. the split comes from the service, not from the screen", () => {
     const billing = code("src", "lib", "billing.ts");
     assert.ok(/unknownLiveAmountBills/.test(billing));
     assert.ok(/unknownHistoricalAmountBills/.test(billing));
@@ -1382,7 +1437,7 @@ describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
     assert.ok(!/(?:const|let|var)\s+unknownLiveAmountBills/.test(ALL_UI));
   });
 
-  it("140. it never claims to know WHY a student is missing", () => {
+  it("143. it never claims to know WHY a student is missing", () => {
     // Deleted, stopped studying, waived, cleaned up — the model proves none of
     // them, so no copy asserts any of them.
     for (const claim of [
@@ -1396,7 +1451,7 @@ describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
     assert.ok(!raw("src", "lib", "i18n-vi.json").includes("nghỉ học"), "nor in Vietnamese");
   });
 
-  it("141. one component renders both, muted and inert, never at zero", () => {
+  it("144. one component renders both, muted and inert, never at zero", () => {
     assert.ok(/function IncompleteNotes/.test(OVERVIEW), "one definition");
     // Sliced to the next top-level declaration: the component's own parameter
     // type ends with a line-initial "}", so a lazy match on that stops at the
@@ -1413,7 +1468,7 @@ describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
     assert.equal(financeNoteStyle.color, "var(--muted-2)");
   });
 
-  it("142. it appears beside every figure it qualifies", () => {
+  it("145. it appears beside every figure it qualifies", () => {
     // Both KPI cards, the money summary, and a class's expanded detail.
     assert.ok((OVERVIEW.match(/<IncompleteNotes scope=/g) ?? []).length >= 4);
     assert.ok(/<IncompleteNotes scope=\{scope\}/.test(OVERVIEW), "the per-class detail");
@@ -1421,7 +1476,7 @@ describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
 });
 
 describe("Gate 6 · per-student rows name the two missing facts", () => {
-  it("143. Paid says nothing was recorded; Remaining says it cannot be worked out", () => {
+  it("146. Paid says nothing was recorded; Remaining says it cannot be worked out", () => {
     assert.equal(NOT_RECORDED, "Not recorded");
     assert.equal(NOT_DETERMINED, "Not determined");
     assert.ok(/money\(r\.collected, fmt, notRecorded\)/.test(OVERVIEW));
@@ -1432,7 +1487,7 @@ describe("Gate 6 · per-student rows name the two missing facts", () => {
     assert.notEqual(vi(NOT_RECORDED), vi(NOT_DETERMINED), "a cause is not its consequence");
   });
 
-  it("144. and a complete row still shows its exact split", () => {
+  it("147. and a complete row still shows its exact split", () => {
     // Paid → fee / 0, Unpaid → 0 / fee, known partial → amount / fee-amount.
     // Read out of the pure helpers the row is built from.
     const billing = code("src", "lib", "billing.ts");
@@ -1441,13 +1496,13 @@ describe("Gate 6 · per-student rows name the two missing facts", () => {
     assert.equal(money(0, fmt, NOT_RECORDED), "0đ", "a settled row's Remaining is a real zero");
   });
 
-  it("145. an outstanding row's unknown amount is field-specific too", () => {
+  it("148. an outstanding row's unknown amount is field-specific too", () => {
     assert.ok(/money\(s\.amount, fmt, notDetermined\)/.test(OVERVIEW));
   });
 });
 
 describe("Gate 6 · a month with no billing records", () => {
-  it("146. it gets an explicit empty state, not a screen of zeroes", () => {
+  it("149. it gets an explicit empty state, not a screen of zeroes", () => {
     assert.ok(/if \(billingState\(billing\) === "empty"\)/.test(OVERVIEW));
     assert.ok(/data-testid="fin-billing-empty"/.test(OVERVIEW));
     assert.ok(OVERVIEW.includes("t(NO_BILLING_TITLE)"));
@@ -1459,7 +1514,7 @@ describe("Gate 6 · a month with no billing records", () => {
     assert.equal(billingState({ counts: { total: 14 }, unknownAmountBills: 0 }), "known");
   });
 
-  it("147. and NOTHING else is on it — the lesson-revenue tile is gone", () => {
+  it("150. and NOTHING else is on it — the lesson-revenue tile is gone", () => {
     // It was left there on the reasoning that lessons were taught even where no
     // bill was raised. On a screen with nothing else on it that tile is not
     // context, it is a lone unexplained figure under an empty state.
@@ -1474,7 +1529,7 @@ describe("Gate 6 · a month with no billing records", () => {
     assert.ok(/function LessonRevenueTile/.test(OVERVIEW));
   });
 
-  it("148. the Payments tab tells its two empty reasons apart", () => {
+  it("151. the Payments tab tells its two empty reasons apart", () => {
     assert.ok(/const monthIsEmpty = billingState\(data\.billing\) === "empty"/.test(PAYMENTS));
     assert.ok(/monthIsEmpty \? t\(NO_BILLING_TITLE\) : t\("No payment records"\)/.test(PAYMENTS));
     assert.ok(/No billing records match these filters for/.test(PAYMENTS), "the filter case survives");
@@ -1482,17 +1537,17 @@ describe("Gate 6 · a month with no billing records", () => {
 });
 
 describe("Gate 6 · Billing and Revenue stay separate", () => {
-  it("149. the Revenue analytics empty state is untouched", () => {
+  it("152. the Revenue analytics empty state is untouched", () => {
     assert.ok(/data-testid="fin-revenue-empty"/.test(ANALYTICS));
     assert.ok(ANALYTICS.includes('t("No revenue recorded for")'));
     assert.ok(ANALYTICS.includes('t("Complete lessons to start tracking revenue for this month.")'));
     assert.ok(/revenue\.total <= 0/.test(ANALYTICS), "and it keys on revenue, not on bills");
   });
 
-  it("150. no Billing copy leaks into Revenue analytics", () => {
+  it("153. no Billing copy leaks into Revenue analytics", () => {
     for (const key of [
       NO_BILLING_TITLE, NO_BILLING_BODY, NOT_RECORDED, NOT_DETERMINED,
-      PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY, AT_LEAST_PERCENT, RATE_BASIS,
+      PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY, UNKNOWN_SEGMENT,
     ]) {
       assert.ok(!ANALYTICS.includes(key), `Revenue analytics must not say "${key}"`);
     }
@@ -1502,28 +1557,28 @@ describe("Gate 6 · Billing and Revenue stay separate", () => {
 });
 
 describe("Gate 6 · the mobile Money summary is a stack, not a wrap", () => {
-  it("151. one metric per row, stated as a grid", () => {
-    // flex-wrap is not stacking: what wraps is whatever happens not to fit, so
-    // two short metrics share a line, the split changes with the language, and
-    // the rate lands beside an amount with its basis line squeezed under both.
-    const block = financeBlock();
-    const rule = /\.fin-summary-legend\{([^}]*)\}/.exec(block);
+  it("154. one metric per row, and the column count is what changes", () => {
+    // The component declares the grid and its own desktop track count, so the
+    // mobile rule overrides exactly one thing. Wrapping is deliberately not the
+    // mechanism at either width: what wraps is whatever happens not to fit, so
+    // two short metrics share a line and the split changes with the language.
+    const rule = /\.fin-summary-legend\{([^}]*)\}/.exec(financeBlock());
     assert.ok(rule, "the legend is restacked at 620px");
-    assert.ok(/display:grid !important/.test(rule[1]));
     assert.ok(/grid-template-columns:minmax\(0,1fr\) !important/.test(rule[1]), "exactly one column");
-    assert.ok(/flex-wrap:nowrap !important/.test(rule[1]), "and wrapping cannot come back");
+    assert.ok(!/flex-wrap:wrap/.test(rule[1]), "not a wrap-based layout");
+    assert.ok(!/flexWrap: "wrap"/.test(/className="fin-summary-legend"[\s\S]{0,400}/.exec(OVERVIEW)![0]),
+      "and the desktop declaration does not wrap either");
   });
 
-  it("152. every metric is addressable as its own block", () => {
-    // Collected, Outstanding, Unknown when it exists, and the rate: each is a
-    // .fin-metric, so no two can ever share a row by accident.
-    assert.ok(block_has(".fin-metric"), "the hook is styled at the breakpoint");
+  it("155. every metric is addressable as its own block", () => {
+    // Collected, Outstanding, Partially paid, and Unknown where a month has a
+    // slice: each is a .fin-metric, so no two can share a row by accident.
+    assert.ok(financeBlock().includes(".fin-metric"), "the hook is styled at the breakpoint");
     const metrics = (OVERVIEW.match(/className="fin-metric"/g) ?? []).length;
-    assert.equal(metrics, 4, "collected, outstanding, unknown, rate");
-    function block_has(sel: string) { return financeBlock().includes(sel); }
+    assert.equal(metrics, 4, "collected, outstanding, partially paid, unknown");
   });
 
-  it("153. and it introduces no overflow workaround", () => {
+  it("156. and it introduces no overflow workaround", () => {
     const block = financeBlock();
     assert.ok(!/overflow-x/.test(block), "still no fourth scroll region");
     assert.ok(!/100vw/.test(block));
@@ -1532,7 +1587,7 @@ describe("Gate 6 · the mobile Money summary is a stack, not a wrap", () => {
 });
 
 describe("Gate 6 · what did not change", () => {
-  it("154. no Billing arithmetic is done in the browser", () => {
+  it("157. no Billing arithmetic is done in the browser", () => {
     for (const [name, src] of UI_FILES) {
       assert.ok(!/knownCollected\s*\+\s*knownOutstanding|billed\s*-\s*known/.test(src), `${name} recomputes nothing`);
     }
@@ -1540,7 +1595,7 @@ describe("Gate 6 · what did not change", () => {
     assert.ok(!/unknownAmountBills\s*\+\+/.test(ALL_UI));
   });
 
-  it("155. no mutation, no dashboard, no clock — still", () => {
+  it("158. no mutation, no dashboard, no clock — still", () => {
     for (const [name, src] of UI_FILES) {
       assert.ok(!/\/api\/finance\/\$\{|method: "PATCH"/.test(src), `${name} must not mutate`);
       assert.ok(!/api\/dashboard/.test(src), `${name} must not call the writing endpoint`);
@@ -1548,7 +1603,7 @@ describe("Gate 6 · what did not change", () => {
     }
   });
 
-  it("156. the stored statuses and the write rules are untouched", () => {
+  it("159. the stored statuses and the write rules are untouched", () => {
     assert.equal(STATUS_LABEL["Partially Paid"], "Partially paid");
     assert.equal(STATUS_LABEL["Paid"], "Paid");
     assert.equal(STATUS_LABEL["Unpaid"], "Unpaid");
@@ -1560,7 +1615,7 @@ describe("Gate 6 · what did not change", () => {
     assert.ok(/r\.paidDate \? fmt\.dateLabel\(r\.paidDate\)/.test(OVERVIEW));
   });
 
-  it("157. the two deferred decisions are written down, not left in a transcript", () => {
+  it("160. the two deferred decisions are written down, not left in a transcript", () => {
     const billing = raw("src", "lib", "billing.ts");
     assert.ok(/Amount paid/.test(billing), "the future payment form's contract");
     assert.ok(/READ-ONLY remaining figure/.test(billing));
@@ -1570,20 +1625,95 @@ describe("Gate 6 · what did not change", () => {
     assert.ok(!/"Waived"/.test(code("src", "lib", "types.ts")), "no Waived status shipped");
   });
 
-  it("158. every new key is translated", () => {
+  it("161. every new key is translated", () => {
     const vi = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
     const expected: Record<string, string> = {
       [NOT_RECORDED]: "Chưa ghi nhận",
       [NOT_DETERMINED]: "Chưa xác định",
       [UNKNOWN_SEGMENT]: "Chưa xác định",
-      [AT_LEAST_PERCENT]: "Ít nhất {X}%",
-      [RATE_BASIS]: "Dựa trên các khoản thanh toán đã ghi nhận.",
+      [BILL_ONE]: "hóa đơn",
+      [BILL_MANY]: "hóa đơn",
       [HISTORICAL_PARTIAL_MANY]: "Có {N} khoản thanh toán lịch sử chưa ghi nhận số tiền.",
       [PARTIAL_NOTE_MANY]: "Có {N} khoản thanh toán một phần chưa ghi nhận số tiền.",
     };
     for (const [k, v] of Object.entries(expected)) assert.equal(vi[k], v, k);
-    // The placeholders survive translation; they are filled afterwards.
-    assert.ok(vi[AT_LEAST_PERCENT].includes("{X}"));
+    // The placeholder survives translation; it is filled afterwards.
     assert.ok(vi[HISTORICAL_PARTIAL_MANY].includes("{N}"));
+    // And "Partially paid" is reused, not reinvented as a Finance-only term.
+    assert.equal(vi["Partially paid"], "Trả một phần");
+  });
+});
+
+describe("Gate 6 · the month control on a phone", () => {
+  it("162. it gets a row of its own under the title", () => {
+    // The heading is a space-between row. On a phone the title took the width
+    // it needed and the control kept its 150px floor in whatever was left,
+    // pinned to the top-right corner — a desktop affordance shrunk rather than
+    // a mobile one, with the smallest tap target where the thumb reaches last.
+    assert.ok(/className="fin-head"/.test(PAGE), "the heading is addressable");
+    assert.ok(/className="fin-head-controls"/.test(PAGE));
+    const block = financeBlock();
+    assert.ok(/\.fin-head-controls\{[^}]*flex:1 0 100% !important/.test(block), "a full-width row of its own");
+  });
+
+  it("163. and the select fills that row's content width", () => {
+    // A two-track grid — 1fr for the select, auto for the refresh button — so
+    // the select takes the width the content column has rather than whatever
+    // the button leaves over.
+    const block = financeBlock();
+    assert.ok(/\.fin-head-controls\{[^}]*display:grid !important/.test(block));
+    assert.ok(/\.fin-head-controls\{[^}]*grid-template-columns:minmax\(0,1fr\) auto !important/.test(block));
+    assert.ok(/\.fin-month\{min-width:0 !important\}/.test(block), "it may shrink past its 150px floor");
+    assert.ok(/className="fin-month"/.test(PAGE));
+  });
+
+  it("164. 100% of the CONTENT column, never the viewport", () => {
+    // A viewport width inside .app-main's padding pushes the page wider than
+    // the phone, which is the one thing the responsive pass exists to prevent.
+    assert.ok(!/100vw/.test(financeBlock()));
+    assert.ok(!/100vw/.test(ALL_UI));
+    assert.ok(!/overflow-x/.test(financeBlock()), "and it grows no scroll region");
+    assert.equal([...ALL_UI.matchAll(/overflowX: "auto"/g)].length, 3, "still exactly three");
+  });
+
+  it("165. the duplicated label goes, the accessible name stays", () => {
+    assert.ok(/className="fin-head-month-label"/.test(PAGE));
+    assert.ok(/\.fin-head-month-label\{display:none !important\}/.test(financeBlock()));
+    // The Select keeps the same ariaLabel at every width, so what is hidden is
+    // a second visible copy of the name, not the name.
+    assert.ok(/ariaLabel=\{t\("Month"\)\}/.test(PAGE));
+    assert.equal((PAGE.match(/<Select\b/g) ?? []).length, 1, "one month selector, rendered once");
+  });
+
+  it("166. desktop and tablet keep the compact arrangement", () => {
+    // Every rule is inside the 620px block (see the breakpoint contract), and
+    // the inline desktop declaration is untouched: the same flex row, the same
+    // 150px floor, the same right-hand alignment.
+    assert.ok(/<div className="fin-head" style=\{\{ display: "flex", alignItems: "flex-end", justifyContent: "space-between"/.test(PAGE));
+    assert.ok(/className="fin-month" style=\{\{ minWidth: 150 \}\}/.test(PAGE));
+    const css = raw("src", "app", "globals.css").replace(/\/\*[\s\S]*?\*\//g, " ");
+    for (const q of ["(max-width:1100px)", "(max-width:860px) and (min-width:621px)"]) {
+      const start = css.indexOf(`@media ${q}{`);
+      let depth = 0, i = start + `@media ${q}`.length;
+      for (; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        else if (css[i] === "}" && --depth === 0) break;
+      }
+      assert.ok(!css.slice(start, i).includes(".fin-"), `${q} must not style Finance`);
+    }
+  });
+
+  it("167. it is a LAYOUT change and nothing else", () => {
+    // Same one Select, same server-supplied window, same handler. No browser
+    // clock appeared, and no second month implementation came with it.
+    assert.ok(/data\?\.months/.test(PAGE), "the window is still the payload's");
+    assert.ok(/months\.map\(\(m\) => \(\{ value: m/.test(PAGE));
+    assert.ok(/onChange=\{setMonth\}/.test(PAGE));
+    for (const [name, src] of UI_FILES) {
+      assert.ok(!src.includes("new Date"), `${name} must not construct a Date`);
+      assert.ok(!src.includes("Date.now"), `${name} must not read a wall clock`);
+      assert.ok(!src.includes("getMonth"), `${name} must not derive a month`);
+    }
+    assert.ok(!/FINANCE_MONTHS|monthWindow|buildMonths/.test(ALL_UI), "no second window implementation");
   });
 });

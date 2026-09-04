@@ -296,12 +296,32 @@ export const NOT_DETERMINED = "Not determined";
  * of the billed total whose split between collected and outstanding is unknown. */
 export const UNKNOWN_SEGMENT = "Unknown";
 
-/** A collection rate that is a FLOOR rather than a figure, and the sentence
- * that says on what basis. Shown whenever `amountsComplete` is false — the
- * real rate is this or higher, because every unrecorded partial collected
- * something. */
-export const AT_LEAST_PERCENT = "At least {X}%";
-export const RATE_BASIS = "Based on recorded payment amounts.";
+/** THE COLLECTION RATE IS NOT RENDERED ANY MORE, and the copy that qualified
+ * it went with it — `At least {X}%` and `Based on recorded payment amounts.`
+ * are deleted rather than left exported for a caller to rediscover.
+ *
+ * The metric was the Money Summary's fourth, and it earned its place least: a
+ * percentage of expected revenue tells a teacher nothing they can act on, and
+ * under this month's data it could not even be stated plainly — one unrecorded
+ * partial forced it to be shown as a floor with a sentence explaining the
+ * arithmetic underneath. Two lines of qualification for a number nobody uses,
+ * beside three they do.
+ *
+ * `collectionRate` REMAINS ON THE PAYLOAD deliberately (see `BillingTotals`).
+ * It is a correct, cheap, well-tested figure; removing it from the domain to
+ * chase one UI decision this late would be churn in the service contract for no
+ * gain, and any future surface that wants it can have it without re-deriving a
+ * second definition. */
+
+/** How many bills, as a phrase. Pluralised the way `class-ui` pluralises
+ * "student"; Vietnamese has no plural inflection, so both forms translate to
+ * the same words and the number carries the difference. */
+export const BILL_ONE = "bill";
+export const BILL_MANY = "bills";
+
+export function billsLabel(count: number, t: (s: string) => string): string {
+  return `${count} ${t(count === 1 ? BILL_ONE : BILL_MANY)}`;
+}
 
 /** Why a bill-derived total is incomplete, in the teacher's terms. Count-aware,
  * as PROJECT_RULES' own preferred copy allows, because the count is what tells
@@ -339,21 +359,7 @@ export function historicalPartialNote(count: number, t: (s: string) => string): 
   return t(count === 1 ? HISTORICAL_PARTIAL_ONE : HISTORICAL_PARTIAL_MANY).replace("{N}", String(count));
 }
 
-/** A collection rate, as a percentage or as a floor.
- *
- * `null` is the one case that has no percentage at all: nothing was billed, so
- * no share of it exists, and `0%` would be a claim about a month that asked for
- * nothing. Everything else has a number — exact when every amount is recorded,
- * and "At least X%" when one is not, because the real rate can only be higher. */
-export function rateText(
-  rate: number | null,
-  amountsComplete: boolean,
-  t: (s: string) => string,
-  noRate: string
-): string {
-  if (rate === null) return noRate;
-  return amountsComplete ? `${rate}%` : t(AT_LEAST_PERCENT).replace("{X}", String(rate));
-}
+
 
 /** Which of the three states a bill-derived scope is in.
  *

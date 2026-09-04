@@ -267,16 +267,23 @@ An aggregate is never withheld because of them. A month reports
 
 holds by construction, where `unknownAmount` is the *fee* of every bill whose
 split nobody recorded — not a payment and not a debt. The collection bar draws
-all three, the third in a neutral tone, so the picture always adds up. Where
-amounts are incomplete the collection rate is shown as **"At least X%"** rather
-than as an exact figure, with "Based on recorded payment amounts." beneath it,
-and a muted caption says how many records are responsible — separately for the
-ones a teacher could still settle and the ones whose student no longer exists.
+all three, the third in a neutral tone, so the picture always adds up, and a
+muted caption says how many records are responsible — separately for the ones a
+teacher could still settle and the ones whose student no longer exists.
 **Expected revenue stays exact throughout**, because Σ fee needs no partial
 amount. Every class is ranked on its confirmed collected total, marked `≥` when
 that total is a floor rather than removed from the ranking. Students with no
 linked Parent are marked `No linked parent` wherever Finance names someone who
 owes money.
+
+The money summary is deliberately **three metrics — Collected, Outstanding and
+Partially paid** (a count of bills, not an amount), plus the Unknown slice on a
+month that has one. **There is no collection rate.** A percentage of expected
+revenue is a report-card number rather than something a teacher acts on, and
+with one unrecorded partial it could not even be stated plainly — it had to be
+drawn as a floor with a sentence explaining the arithmetic underneath. The
+figure is still computed and still on the payload for any future surface that
+wants it; nothing renders it.
 
 Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375 —
 against the **Preview** deployment at `206084f`. Production serves that same

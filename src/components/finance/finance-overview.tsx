@@ -47,10 +47,10 @@ import { useState } from "react";
 import { useSettings } from "@/lib/settings-context";
 import type { FinanceMonthPayload } from "@/lib/finance-service";
 import {
-  NOT_DETERMINED, NOT_RECORDED, NO_BILLING_BODY, NO_BILLING_TITLE, RATE_BASIS,
-  STATUS_LABEL, UNKNOWN_SEGMENT, barWidth, billingState, financeNoteStyle,
+  NOT_DETERMINED, NOT_RECORDED, NO_BILLING_BODY, NO_BILLING_TITLE, STATUS_LABEL,
+  UNKNOWN_SEGMENT, barWidth, billingState, billsLabel, financeNoteStyle,
   historicalNote, historicalPartialNote, money, partialNote, rankByCollected,
-  rateText, sortByOutstanding, statusBadgeStyle, statusColor,
+  sortByOutstanding, statusBadgeStyle, statusColor,
 } from "./finance-ui";
 
 /** Every place a scope's incomplete amounts have to be explained draws the same
@@ -181,7 +181,12 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
    * bookkeeping and not a problem to fix. */
   const collectedW = barWidth(billing.knownCollected, billing.billed);
   const outstandingW = barWidth(billing.knownOutstanding, billing.billed);
-  const unknownW = barWidth(billing.unknownAmount, billing.billed);
+  /* Keyed on the AMOUNT rather than on `amountsComplete`. `barWidth` returns
+   * "0%" for a zero part, which is truthy, so an incomplete month whose
+   * unrecorded bills happen to total nothing would otherwise draw a segment and
+   * a legend entry for a slice that does not exist. */
+  const hasUnknownSlice = billing.unknownAmount > 0;
+  const unknownW = hasUnknownSlice ? barWidth(billing.unknownAmount, billing.billed) : null;
 
   const ranked = rankByCollected(billing.perClass);
   const byOutstanding = sortByOutstanding(billing.perClass);
@@ -254,7 +259,34 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
           {unknownW && <div data-testid="fin-bar-unknown" style={{ height: "100%", background: "var(--muted-2)", opacity: .35, width: unknownW }} />}
         </div>
 
-        <div className="fin-summary-legend" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+        {/* THREE METRICS, AND THE COLLECTION RATE IS NOT ONE OF THEM.
+          *
+          * It was the fourth here, and it earned its place least. A percentage
+          * of expected revenue is a report-card number: it does not tell a
+          * teacher who to ring or what to chase, and under this month's data it
+          * could not even be stated plainly — with one unrecorded partial it
+          * had to be shown as a floor ("At least 65%") with a sentence
+          * explaining the arithmetic underneath it. Two lines of qualification
+          * for a figure nobody acts on, beside three figures they do.
+          *
+          * What is left is what the month is actually about: money in, money
+          * still owed, and how many bills are stuck half-settled. The three are
+          * a deliberate `repeat(3, ...)` rather than a flex row that used to
+          * hold four — a layout that means three, not one with a gap where the
+          * fourth was.
+          *
+          * THE UNKNOWN SLICE IS STILL SHOWN, in the bar and in its legend. That
+          * is not a rate: it is part of the billed total's decomposition, and
+          * dropping it would make the bar stop adding up. */}
+        <div
+          className="fin-summary-legend"
+          style={{
+            display: "grid",
+            gridTemplateColumns: hasUnknownSlice ? "repeat(4,minmax(0,auto))" : "repeat(3,minmax(0,auto))",
+            justifyContent: "space-between",
+            alignItems: "flex-start", gap: 12, marginBottom: 18,
+          }}
+        >
           <div className="fin-metric" style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--green)" }} />
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
@@ -267,8 +299,20 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
               {t("Outstanding")} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{fmt.vnd(billing.knownOutstanding)}</b>
             </span>
           </div>
-          {/* The third segment earns a legend entry only when it exists. */}
-          {!billing.amountsComplete && (
+          {/* A COUNT, NOT MONEY. How many bills are stuck half-settled is a
+            * different question from how much money they represent — and for
+            * the legacy ones the money is exactly what nobody recorded, so a
+            * figure here would have to be invented. The dot is the amber the
+            * status carries everywhere else on this screen. */}
+          <div className="fin-metric" data-testid="fin-metric-partial" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--amber)" }} />
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+              {t("Partially paid")} <b style={{ color: "var(--fg)" }}>{billsLabel(billing.counts.partiallyPaid, t)}</b>
+            </span>
+          </div>
+          {/* The bar's third segment earns a legend entry only when there is a
+            * slice to name. */}
+          {hasUnknownSlice && (
             <div className="fin-metric" data-testid="fin-legend-unknown" style={{ display: "flex", alignItems: "center", gap: 7 }}>
               <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--muted-2)", opacity: .35 }} />
               <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
@@ -276,17 +320,6 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
               </span>
             </div>
           )}
-          {/* A RATE THAT IS A FLOOR SAYS SO IN THE VALUE, not in a footnote. An
-            * exact-looking percentage that is really a lower bound is the same
-            * class of mistake as a total that hides what it left out. */}
-          <div className="fin-metric" style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            <b style={{ color: "var(--fg)" }} data-testid="fin-rate">
-              {rateText(billing.collectionRate, billing.amountsComplete, t, t(NOT_DETERMINED))}
-            </b> {t("of expected collected")}
-            {!billing.amountsComplete && (
-              <div data-testid="fin-rate-basis" style={{ ...financeNoteStyle, marginTop: 2 }}>{t(RATE_BASIS)}</div>
-            )}
-          </div>
         </div>
 
         {/* Why the month is incomplete, once, under the figures it qualifies. */}
@@ -404,8 +437,12 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
               <span style={{ minWidth: 8, width: 8, height: 8, borderRadius: "50%", background: c.classColor }} />
               <div className="fin-tpc-main" style={{ minWidth: 0, flex: 1 }}>
                 <div className="fin-tpc-name" style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.className}</div>
+                {/* The per-class rate is gone with the summary's. It was the
+                  * same figure asked of a smaller scope, carrying the same
+                  * "At least" qualification for the same reason, next to the
+                  * collected amount it was derived from. */}
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                  {c.counts.total} {t("students")} · {rateText(c.collectionRate, c.amountsComplete, t, t(NOT_DETERMINED))} {t("collected")}
+                  {c.counts.total} {t("students")}
                 </div>
               </div>
               {/* A CLASS WITH AN INCOMPLETE AMOUNT IS RANKED, NOT EXILED. It

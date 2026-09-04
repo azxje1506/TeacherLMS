@@ -1234,27 +1234,50 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   }
 
   /* ---- Money summary metrics ---------------------------------------------
-     ONE METRIC PER ROW, AND IT IS A GRID SAYING SO. The legend row is a
-     space-between flex row of three or four metrics — Collected, Outstanding,
-     Unknown when it exists, and the collection rate with its basis line beneath
-     it. At 375px that row wraps, which is not the same thing as stacking: what
-     wraps is whatever happens not to fit, so two short metrics share a line and
-     a third drops below them, the split changes with the language, and the rate
-     lands beside an amount with its supporting sentence squeezed under both.
+     ONE METRIC PER ROW. Above this width the summary is a deliberate three
+     across — Collected, Outstanding, Partially paid, plus the Unknown slice on
+     a month that has one — and at 375px three money-shaped metrics cannot share
+     a line at any font size that stays readable.
 
-     A single-column grid states the intent instead of leaving it to arithmetic:
-     every metric owns a full row at every width, in the order it is written, in
-     every language, whatever the numbers happen to be. flex-wrap is switched
-     off with it so no wrapping rule can quietly come back and re-pair them.
+     THE COLUMN COUNT IS OVERRIDDEN, NOT THE DISPLAY. The component now declares
+     the grid itself, with its own track count, so this rule changes exactly one
+     thing: how many columns there are. It does not have to fight a flex row any
+     more, and it cannot silently stop applying if the desktop track count
+     changes again.
 
-     Each metric is then its own block — label, value, supporting copy — which is
-     what makes the rate's "Based on recorded payment amounts." read as belonging
-     to the rate rather than to the row. */
-  .fin-summary-legend{
-    display:grid !important;grid-template-columns:minmax(0,1fr) !important;
-    flex-wrap:nowrap !important;gap:12px !important;align-items:start !important;
-  }
+     Wrapping is deliberately not the mechanism, here or above. What wraps is
+     whatever happens not to fit, so two short metrics share a line, the split
+     changes with the language, and nothing states the intent. A single column
+     means one metric per row in every language and at every value. */
+  .fin-summary-legend{grid-template-columns:minmax(0,1fr) !important;gap:12px !important}
   .fin-metric{min-width:0}
+
+  /* ---- The month control gets its own row --------------------------------
+     WHAT WAS WRONG. The heading is a space-between row: title on the left, the
+     month control on the right. On a phone the title takes the width it needs
+     and the control keeps its 150px floor in whatever is left, pinned to the
+     top-right corner — a desktop affordance shrunk rather than a mobile one,
+     and the smallest tap target on the screen sitting where the thumb reaches
+     last.
+
+     Below 620px it becomes a row of its own, full content width, with the
+     refresh button beside it: a two-track grid, 1fr for the select and auto for
+     the button, so the select genuinely fills the width the content column has
+     rather than whatever the button leaves over.
+
+     100% OF THE CONTENT COLUMN, NEVER 100vw. The card is inside .app-main's
+     padding; a viewport width here would push the page wider than the phone,
+     which is the one thing the whole responsive pass exists to prevent. */
+  .fin-head{gap:12px !important}
+  .fin-head-controls{
+    flex:1 0 100% !important;
+    display:grid !important;grid-template-columns:minmax(0,1fr) auto !important;
+    gap:8px !important;align-items:center;
+  }
+  /* The Select carries the same ariaLabel at every width, so this removes a
+     duplicate rather than the control's name. */
+  .fin-head-month-label{display:none !important}
+  .fin-month{min-width:0 !important}
 
   /* ---- Revenue by class ---------------------------------------------------
      The densest panel: a name, a status summary, a proportion bar and TWO

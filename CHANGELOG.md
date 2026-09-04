@@ -38,12 +38,34 @@
   and `amountsComplete`, with
   `knownCollected + knownOutstanding + unknownAmount === billed` true by
   construction — `unknownAmount` being the *fee* of every unrecorded bill, which
-  is neither a payment nor a debt. The collection rate is exact when complete
-  and a floor ("At least X%") when not; the proportion bar draws a third neutral
+  is neither a payment nor a debt. The proportion bar draws a third neutral
   segment for the gap; `x of y bills paid` counts bills settled in full, while a
   partial's money is already inside the collected figure. Ranking uses confirmed
   collected totals, so no class is exiled from the list for holding one
   incomplete bill. Still nothing inferred, and no stored document touched.
+- **The collection rate is not rendered anywhere.** It was the money summary's
+  fourth metric and earned its place least: a percentage of expected revenue is
+  a report-card number rather than something a teacher acts on, and with one
+  unrecorded partial it could not be stated plainly at all — it had to be shown
+  as a floor ("At least 65%") with a sentence explaining the arithmetic beneath
+  it. Two lines of qualification for a figure nobody uses, beside three they do.
+  The summary is now a deliberate three across — **Collected, Outstanding and
+  Partially paid**, the last a count of bills rather than an amount, because for
+  the legacy records that amount is exactly what nobody wrote down — plus the
+  Unknown slice on a month that has one. `collectionRate` stays on the payload:
+  it is correct, cheap and tested, and removing it from the domain to chase a UI
+  decision would be churn in the service contract for no gain. Its copy
+  ("At least {X}%", "Based on recorded payment amounts.", "of expected
+  collected") is deleted from the helpers and the dictionary, because a label
+  nothing renders is one a later edit rediscovers and reuses.
+- **The month control takes its own full-width row below 620px.** The heading is
+  a space-between row, so on a phone the title took the width it needed and the
+  select kept its 150px floor in whatever was left — a desktop affordance shrunk
+  rather than a mobile one, with the smallest tap target on the screen where the
+  thumb reaches last. It is now a two-track grid, the select at `1fr` and the
+  refresh button at `auto`, with the duplicated visible "Month" label hidden
+  (the Select keeps the same `ariaLabel`). Layout only: same one Select, same
+  server-supplied window, no browser clock. Desktop and tablet are untouched.
 - Read service and API: `GET /api/finance?month=YYYY-MM` returns one month's
   billing and revenue branches plus the twelve-month window the selector offers.
   The window is the **server's** — no Finance file constructs a `Date`, reads a

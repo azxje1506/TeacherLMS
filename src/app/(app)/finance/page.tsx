@@ -69,8 +69,12 @@ export default function FinancePage() {
 
   return (
     <div data-screen-label="Finance" style={{ animation: "fadeUp .3s ease both" }}>
-      {/* Heading */}
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
+      {/* Heading. On a phone this becomes two rows — the title, then the month
+        * control across the full content width — which is a LAYOUT change and
+        * nothing else: the same one Select, over the same server-supplied
+        * `data.months`, with the same aria-label. See globals.css's Finance
+        * block for the rules; the desktop arrangement above 620px is untouched. */}
+      <div className="fin-head" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
         <div style={{ minWidth: 0 }}>
           <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", margin: 0 }}>{t("Finance")}</h1>
           <p style={{ color: "var(--muted)", fontSize: 14, margin: "5px 0 0" }}>
@@ -78,9 +82,12 @@ export default function FinancePage() {
           </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 500 }}>{t("Month")}</span>
-          <div style={{ minWidth: 150 }}>
+        <div className="fin-head-controls" style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+          {/* The visible label is the desktop row's; on a phone the control has
+            * the width to speak for itself and the Select keeps the same
+            * ariaLabel, so hiding it removes a duplicate rather than a name. */}
+          <span className="fin-head-month-label" style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 500 }}>{t("Month")}</span>
+          <div className="fin-month" style={{ minWidth: 150 }}>
             <Select
               value={month}
               ariaLabel={t("Month")}
