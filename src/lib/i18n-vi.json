@@ -410,6 +410,8 @@
   "peak": "cao nhất",
   "bills paid": "hóa đơn đã trả",
   "bills have no recorded amount": "hóa đơn chưa ghi nhận số tiền",
+  "{N} historical payment record no longer has student information.": "Có {N} khoản thu lịch sử không còn thông tin học sinh.",
+  "{N} historical payment records no longer have student information.": "Có {N} khoản thu lịch sử không còn thông tin học sinh.",
   "collected": "đã thu",
   "paid": "đã trả",
   "partial": "một phần",

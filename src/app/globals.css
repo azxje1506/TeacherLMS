@@ -1156,6 +1156,126 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 .report-body{flex:1;min-height:0;display:flex;flex-direction:column}
 .report-scroll{flex:1;min-height:0;overflow-y:auto;padding:18px 14px 40px;background:var(--bg)}
 
+/* ---- Finance, at <=620px (Sprint 9 Gate 5.5) ------------------------------
+   THE ONLY CSS FINANCE HAS, AND IT IS ALL BEHIND ONE BREAKPOINT. Gate 5 shipped
+   the screen with no stylesheet of its own: it borrowed .kpi-grid, .ov-grid,
+   .main-grid and .tabstrip, and every other value was the comp's, inline. The
+   human pass then found three panels that survive that treatment at desktop and
+   tablet widths and are simply too dense on a phone — Outstanding students, Top
+   performing classes and Revenue by class, each a flex row that keeps a
+   right-hand money column beside a name column that has nothing left to give.
+
+   Tablet PASSED, so nothing here may reach it: the block starts at 620px, which
+   is the app's own narrow breakpoint, and no rule above it is touched. The
+   markup is unchanged too — these panels render one component at every width,
+   and what changes below is the direction the parts stack.
+
+   !important throughout, and load-bearing: every value being overridden is an
+   INLINE style on the element (the design comp is inline styles plus this
+   stylesheet; see the note above .app-sidebar), and an inline declaration beats
+   a plain stylesheet one no matter how specific the selector.
+
+   NO NEW SCROLL REGION. Finance has exactly three, all intentional and all
+   declared in the components: the tab strip, the Payments table and the expanded
+   per-student grid. Nothing below adds a fourth, and nothing below hides
+   overflow to make a layout fit — each panel is restacked so that it fits. */
+@media (max-width:620px){
+
+  /* ---- Outstanding students ----------------------------------------------
+     Identity first, amount beside it, everything else under both.
+
+     The row is already avatar + identity block + amount in DOM order, so this
+     needs no reordering: aligning the row to the TOP lifts the amount from the
+     vertical middle of a three-line block onto the name's own line, which is the
+     pairing a teacher reads — this person, this much. Class and parent state
+     then read as what they are, secondary detail under the name.
+
+     AND THE NAME WRAPS. On desktop it ellipsises inside a fixed column; here it
+     has a whole line and truncating it would be destructive rather than tidy —
+     two students can truncate to the same string. `overflow-wrap:anywhere` is
+     what keeps a single very long token from pushing the card wider than the
+     phone, so the amount can never be crowded off the row at 375px. Exactly the
+     treatment .rvc-id-name already gets at this width. */
+  .fin-out-row{align-items:flex-start !important;padding:12px 0 !important}
+  .fin-out-name,.fin-out-meta{
+    white-space:normal !important;overflow:visible !important;
+    text-overflow:clip !important;overflow-wrap:anywhere;line-height:1.35;
+  }
+  .fin-out-meta,.fin-out-parent{margin-top:2px !important}
+  /* Pinned to the first line even if the row's alignment is ever restated. */
+  .fin-out-amount{align-self:flex-start !important}
+
+  /* ---- Top performing classes --------------------------------------------
+     A ranking card, so the rank, the dot and the class name stay together on the
+     first line and the amount takes a line of its own rather than competing with
+     the name for a ~195px column.
+
+     The amount is a bare figure on desktop because a column header says what it
+     is; alone on its own line it needs to say so itself, which is what the
+     label span — inline `display:none`, switched on here — is for. It is the
+     card's own existing word, `Collected`, not a new one. `No data` still says
+     No data: an unrankable class keeps its place after the ranked ones and is
+     never given a zero. */
+  .fin-tpc-row{flex-wrap:wrap !important;padding:12px 0 !important}
+  .fin-tpc-name{
+    white-space:normal !important;overflow:visible !important;
+    text-overflow:clip !important;overflow-wrap:anywhere;line-height:1.35;
+  }
+  /* 26px rank + 11px gap + 8px dot + 11px gap = 56px, so the second line starts
+     under the class name rather than under the rank badge. */
+  .fin-tpc-amount{
+    flex:1 0 100% !important;padding-left:56px;
+    display:flex;align-items:baseline;gap:6px;
+  }
+  .fin-tpc-label{
+    display:inline !important;
+    font-family:var(--font-geist-sans),'Geist',system-ui,-apple-system,sans-serif;
+    font-size:11px;font-weight:500;color:var(--muted);
+  }
+
+  /* ---- Revenue by class ---------------------------------------------------
+     The densest panel: a name, a status summary, a proportion bar and TWO
+     right-aligned money columns, all on one row. The two columns are what breaks
+     it — 88px each plus gaps out of a 347px content width leaves the name about
+     a third of the row.
+
+     So the summary becomes a card: name (with its expand affordance) over the
+     status counts over the bar, then Collected and Outstanding side by side on a
+     full-width line, each half the row and reading left-to-right like the labels
+     above them. The button is already flex-wrap, so this is a flex-basis change
+     rather than a new layout.
+
+     The chevron appears only here. `aria-expanded` states the accordion at every
+     width and is what assistive technology reads; the chevron is for the phone,
+     where there is no hover and no pointer cursor to reveal that the row opens
+     at all. It is decorative and marked aria-hidden.
+
+     The EXPANDED half is deliberately untouched. Its six-column student grid
+     keeps its own local overflow-x and its 640px min-width — that scroll region
+     is intentional, is one of the three, and squeezing six columns into 347px
+     instead would recreate the very density this block is fixing. */
+  .fin-class-row{padding:14px 0 !important}
+  .fin-class-main{flex:1 0 calc(100% - 20px) !important}
+  .fin-class-name{white-space:normal !important;overflow:visible !important;
+    text-overflow:clip !important;overflow-wrap:anywhere;line-height:1.35;}
+  .fin-class-chev{display:flex !important}
+  /* Both amounts drop to the next line and share it. `min-width:0` lets them
+     shrink below the 88px floor the inline style sets.
+
+     The row is already flex-wrap with a 12px gap, so that gap is the space
+     between the summary and this line — no margin is added on top of it.
+
+     The pair is addressed BY NAME rather than by position — `:first-of-type`
+     here would mean "the first <span> among the button's children", which is the
+     colour dot, and would silently match nothing at all. Collected takes the
+     20px the dot and its gap occupy on the line above, so it starts under the
+     class name; Outstanding takes the other half of the row. */
+  .fin-class-amt{
+    flex:1 1 0 !important;min-width:0 !important;text-align:left !important;
+  }
+  .fin-class-collected{padding-left:20px}
+}
+
 /* ---- Interaction-state helpers ----
    The design comp expresses focus/hover via runtime-only style-focus / style-hover
    attributes. These classes reproduce those exact states for the React port so we

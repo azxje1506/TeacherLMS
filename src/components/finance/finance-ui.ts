@@ -207,3 +207,43 @@ export function donutArcs(
     });
   return { arcs, total };
 }
+
+/* ------------------------------------------------ historical billing copy */
+
+/** The two forms of the one sentence that explains an AGGREGATE the visible
+ * rows cannot add up to.
+ *
+ * WHY THIS REPLACED "+N more". The screen used to disclose the gap with the
+ * comp's `+N more`, which reads as a disclosure control: something to press that
+ * reveals more of a list. There is nothing to reveal — the records it counts
+ * belong to students who no longer exist, so no row for them can ever be shown —
+ * and putting that text inside an ACTIONABLE list of people to chase for money
+ * promised the teacher four more names they could act on. The fact itself is
+ * true and still has to be told, so it is told as a sentence, in the one place
+ * it explains something: beside a total that is bigger than the rows beneath it.
+ *
+ * IT IS A FINANCE FACT, NOT A DATA-MODEL FACT. The copy says "historical payment
+ * records no longer have student information" — never ghost, hidden, deleted or
+ * database, which describe our storage rather than the teacher's books.
+ *
+ * The English source string is the dictionary key, as everywhere else in this
+ * app; `{N}` is filled after translation so both languages can put the number
+ * where their own grammar wants it. */
+export const HISTORICAL_NOTE_ONE = "{N} historical payment record no longer has student information.";
+export const HISTORICAL_NOTE_MANY = "{N} historical payment records no longer have student information.";
+
+/** The sentence for `count` records. Pluralised the way `class-ui` already
+ * pluralises "student", and never rendered for a count of zero — the caller
+ * guards, because a note explaining nothing is the clutter this replaced. */
+export function historicalNote(count: number, t: (s: string) => string): string {
+  return t(count === 1 ? HISTORICAL_NOTE_ONE : HISTORICAL_NOTE_MANY).replace("{N}", String(count));
+}
+
+/** How that sentence is drawn: muted, small, and INERT.
+ *
+ * No cursor, no underline, no colour that reads as a link — and callers attach
+ * no handler. It is a caption on a number, not a control, and the whole reason
+ * the old affordance was wrong was that it looked like one. */
+export const historicalNoteStyle: React.CSSProperties = {
+  fontSize: 11.5, color: "var(--muted-2)", lineHeight: 1.45,
+};

@@ -23,13 +23,19 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  STATUS_LABEL, barWidth, donutArcs, money, percent, rankByCollected,
+  HISTORICAL_NOTE_MANY, HISTORICAL_NOTE_ONE, STATUS_LABEL, barWidth, donutArcs,
+  historicalNote, historicalNoteStyle, money, percent, rankByCollected,
   sortByOutstanding, statusBadgeStyle, trendGeometry,
 } from "../src/components/finance/finance-ui";
 import { createFormat, DEFAULT_REGIONAL, EM } from "../src/lib/format";
+import { translate } from "../src/lib/i18n";
+import { MOBILE_QUERY } from "../src/lib/use-media-query";
 
 const fmt = createFormat(DEFAULT_REGIONAL, "en");
 const NO_DATA = "No data";
+/** The identity translator: English source strings are the dictionary keys, so
+ * this is exactly what `useSettings().t` does when the language is English. */
+const en = (x: string) => x;
 
 function raw(...parts: string[]): string {
   return readFileSync(path.join(process.cwd(), ...parts), "utf8");
@@ -38,6 +44,31 @@ function code(...parts: string[]): string {
   return raw(...parts)
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** The body of the ONE `@media (max-width:620px)` block that holds Finance's
+ * rules, brace-matched to its own closing brace and stripped of comments.
+ *
+ * globals.css carries several blocks per breakpoint — six at 620px now — so
+ * slicing on the query alone reads whichever came first and would happily prove
+ * something about the shell's block instead. This finds the block that actually
+ * contains `.fin-`, and stops where that block does. */
+function financeBlock(): string {
+  const css = readFileSync(path.join(process.cwd(), "src", "app", "globals.css"), "utf8");
+  const open = "@media (max-width:620px){";
+  for (let from = 0; ; ) {
+    const start = css.indexOf(open, from);
+    assert.ok(start >= 0, "no 620px block in globals.css contains a .fin- rule");
+    let depth = 0;
+    let i = start + open.length - 1;
+    for (; i < css.length; i++) {
+      if (css[i] === "{") depth++;
+      else if (css[i] === "}" && --depth === 0) break;
+    }
+    const body = css.slice(start + open.length, i);
+    if (body.includes(".fin-")) return body.replace(/\/\*[\s\S]*?\*\//g, " ");
+    from = start + open.length;
+  }
 }
 
 const PAGE_PATH = ["src", "app", "(app)", "finance", "page.tsx"];
@@ -379,25 +410,64 @@ describe("Finance UI · ghosts are never named", () => {
     }
   });
 
-  it("48. hidden records are disclosed through the comp's +N more", () => {
-    assert.ok(/data-testid="fin-hidden-more"/.test(OVERVIEW));
-    assert.ok(/billing\.hiddenRecords > 0/.test(OVERVIEW));
-    assert.ok(/\+\{billing\.hiddenRecords\} \{t\("more"\)\}/.test(OVERVIEW));
+  it("48. NO Finance surface renders the comp's `+N more` any more", () => {
+    // Gate 5.5's first finding. `+4 more` under an actionable list of students
+    // who owe money reads as a control: press it, see four more people to chase.
+    // There are no more people — those records belong to students who no longer
+    // exist — so the affordance promised something the screen can never do. It
+    // is gone from every Finance file, in both languages: the dictionary key it
+    // rendered through is not used here at all any more.
+    for (const [name, src] of UI_FILES) {
+      assert.ok(!/\+\{[^}]*\}\s*\{t\("more"\)\}/.test(src), `${name} must not render +N more`);
+      assert.ok(!/t\("more"\)/.test(src), `${name} must not use the "more" key`);
+      assert.ok(!/fin-hidden-more/.test(src), `${name} must not keep the disclosure hook`);
+    }
   });
 
-  it("49. per class too, where a class's own totals hide records", () => {
-    assert.ok(/c\.hiddenRecords > 0/.test(OVERVIEW));
-    assert.ok(/hidden > 0/.test(OVERVIEW));
+  it("49. the count is disclosed as a SENTENCE about historical accounting", () => {
+    // The fact is still told — the totals really are larger than the rows — but
+    // as a statement about the books rather than as a control. `{N}` is filled
+    // AFTER translation so each language places the number by its own grammar.
+    assert.equal(
+      HISTORICAL_NOTE_MANY,
+      "{N} historical payment records no longer have student information."
+    );
+    assert.equal(historicalNote(2, en), "2 historical payment records no longer have student information.");
+    // Pluralised, so one record never reads as "1 records".
+    assert.equal(historicalNote(1, en), "1 historical payment record no longer has student information.");
+    assert.ok(!historicalNote(1, en).includes("records"));
   });
 
-  it("50. and on the Payments tab", () => {
-    assert.ok(/data\.billing\.hiddenRecords > 0/.test(PAYMENTS));
+  it("50. it appears ONLY beside an aggregate, and never inside a people list", () => {
+    // Where it may appear: the month's money summary, and one class's expanded
+    // student detail — the two places where a total and the rows beneath it are
+    // on screen together and visibly disagree. Nowhere else.
+    assert.equal([...ALL_UI.matchAll(/data-testid="fin-historical-note"/g)].length, 2);
+    assert.equal((OVERVIEW.match(/data-testid="fin-historical-note"/g) ?? []).length, 2);
+    assert.ok(/\{billing\.hiddenRecords > 0 && \(/.test(OVERVIEW), "the month's own count");
+    assert.ok(/\{hidden > 0 && \(/.test(OVERVIEW), "the class's own count");
+
+    // Outstanding students is a worklist of live students a teacher acts on.
+    const outstanding = /Outstanding students[\s\S]*?Top performing classes/.exec(OVERVIEW);
+    assert.ok(outstanding, "the outstanding students panel is findable");
+    assert.ok(!/fin-historical-note/.test(outstanding![0]), "no note inside the list");
+    assert.ok(!/hiddenRecords/.test(outstanding![0]), "no count inside the list");
+
+    // Payments is a read-only table of live students' bills. It discloses
+    // nothing, so it can never imply that more rows could be loaded.
+    assert.ok(!/hiddenRecords/.test(PAYMENTS), "the Payments tab discloses nothing");
+    assert.ok(!/fin-historical-note/.test(PAYMENTS));
+
+    // Top performing classes is a ranking card with no student rows to
+    // reconcile against, so it stays free of the explanation too.
+    const top = /Top performing classes[\s\S]*?Revenue by class/.exec(OVERVIEW);
+    assert.ok(top, "the ranking card is findable");
+    assert.ok(!/fin-historical-note|hiddenRecords/.test(top![0]), "no note on the ranking card");
   });
 
   it("51. the UI never filters ghosts itself — the server never sent them", () => {
     // A client-side ghost filter would mean the server had disclosed one.
     assert.ok(!/studentName\s*===\s*""/.test(ALL_UI));
-    assert.ok(!/isGhost|ghost/i.test(PAYMENTS.replace(/ghost/gi, (m) => m) ) === false || true);
     for (const [name, src] of UI_FILES) {
       assert.ok(!/\.filter\([^)]*ghost/i.test(src), `${name} must not filter ghosts`);
     }
@@ -707,6 +777,7 @@ describe("Finance UI · vocabulary and forbidden terms", () => {
       "No revenue recorded for", "No billing records for",
       "No billing records match these filters for", "No outstanding tuition for",
       "Couldn't load finance", "collected", "paid", "partial", "unpaid",
+      HISTORICAL_NOTE_ONE, HISTORICAL_NOTE_MANY,
     ]) {
       assert.ok(vi.includes(`"${key}":`), `missing translation: ${key}`);
     }
@@ -752,9 +823,27 @@ describe("Finance UI · responsive, statically", () => {
     }
   });
 
-  it("99. Finance added no CSS of its own", () => {
-    const css = raw("src", "app", "globals.css");
-    assert.ok(!/\.fin-/.test(css), "the .fin- hooks are markers, not styles");
+  it("99. Finance's only CSS is one mobile block, and it is all inside it", () => {
+    // Gate 5 shipped Finance with no stylesheet of its own. Gate 5.5 adds one
+    // block, at the app's existing 620px breakpoint, because three panels are
+    // too dense on a phone and no existing utility restacks a flex row.
+    //
+    // THE INVARIANT IS THE BREAKPOINT, not the absence. Every `.fin-` rule must
+    // live inside `@media (max-width:620px)`: a rule outside it would reach
+    // desktop and tablet, and tablet already passed its human pass. The desktop
+    // half of each hook stays where it always was — inline, in the component.
+    const css = raw("src", "app", "globals.css").replace(/\/\*[\s\S]*?\*\//g, " ");
+    const block = financeBlock();
+    for (const m of css.matchAll(/\.fin-[\w-]+/g)) {
+      assert.ok(block.includes(m[0]), `${m[0]} must be declared inside the 620px block`);
+    }
+    // And nothing in that block reaches outside Finance: no shared class, no
+    // element selector, no utility the rest of the app also uses.
+    for (const rule of block.split("}").map((r) => r.split("{")[0].trim()).filter(Boolean)) {
+      for (const sel of rule.split(",")) {
+        assert.ok(sel.trim().startsWith(".fin-"), `the Finance block styles only .fin- hooks, got "${sel.trim()}"`);
+      }
+    }
   });
 
   it("100. the tab strip scrolls rather than forcing the page wide", () => {
@@ -810,5 +899,278 @@ describe("Finance UI · responsive, statically", () => {
     ]) {
       assert.ok(existsSync(path.join(process.cwd(), ...p)), p.join("/"));
     }
+  });
+});
+
+/* ================================================ Gate 5.5 — the visual pass
+ *
+ * A human looked at the shipped screen and found four things. One was a
+ * WORDING/AFFORDANCE fault at every width — `+4 more` under an actionable list —
+ * and three were DENSITY faults on a phone: Outstanding students, Top performing
+ * classes and Revenue by class each keep a right-hand money column beside a name
+ * column that, at 375px, has nothing left to give.
+ *
+ * Tablet PASSED. So every fix below is either width-independent copy or lives
+ * behind `@media (max-width:620px)`, and the assertions say so explicitly — a
+ * rule that leaked upwards would break a breakpoint that was already signed off,
+ * which is the one regression this gate cannot afford.
+ * ====================================================================== */
+
+describe("Gate 5.5 · the historical note", () => {
+  it("105. it translates, and its placeholder survives translation", () => {
+    // `{N}` is filled AFTER translation, which is the whole reason the copy
+    // carries a placeholder instead of being concatenated around a number:
+    // Vietnamese opens with "Có" and English opens with the count itself.
+    const vi = (x: string) => translate(x, "vi");
+    assert.equal(historicalNote(2, vi), "Có 2 khoản thu lịch sử không còn thông tin học sinh.");
+    assert.equal(historicalNote(1, vi), "Có 1 khoản thu lịch sử không còn thông tin học sinh.");
+    for (const form of [HISTORICAL_NOTE_ONE, HISTORICAL_NOTE_MANY]) {
+      assert.ok(vi(form).includes("{N}"), "the placeholder survives translation");
+      assert.notEqual(vi(form), form, "and the sentence is actually translated");
+    }
+  });
+
+  it("106. the copy is a Finance fact, never a data-model one", () => {
+    // The user must read this as something about their books. "ghost",
+    // "hidden record", "deleted record" and "database record" all describe our
+    // storage, and none of them appears — in either language.
+    const vi = (x: string) => translate(x, "vi");
+    for (const form of [HISTORICAL_NOTE_ONE, HISTORICAL_NOTE_MANY]) {
+      for (const word of ["ghost", "hidden", "deleted", "database"]) {
+        assert.ok(!form.toLowerCase().includes(word), `${word} in "${form}"`);
+      }
+      assert.ok(/historical/.test(form), "it says what it is: historical");
+      assert.ok(/\bpayment record/.test(form), "and what kind of record");
+      assert.ok(/lịch sử/.test(vi(form)), "the Vietnamese says historical too");
+    }
+    // Nor does any Finance file put one of those words on screen.
+    for (const [name, src] of UI_FILES) {
+      assert.ok(!/t\("[^"]*\b(?:ghost|deleted|hidden)\b[^"]*"\)/i.test(src), `${name}`);
+    }
+  });
+
+  it("107. it is INERT — a caption on a number, not a control", () => {
+    // The fault it replaced was an affordance: text that looked pressable and
+    // was not. So the replacement carries no cursor, no underline, no link
+    // colour, no role, no handler and no focus stop.
+    assert.deepEqual(Object.keys(historicalNoteStyle).sort(), ["color", "fontSize", "lineHeight"]);
+    assert.equal(historicalNoteStyle.color, "var(--muted-2)", "muted, like every other caption");
+    assert.ok(!("cursor" in historicalNoteStyle));
+    assert.ok(!("textDecoration" in historicalNoteStyle));
+
+    const sites = [...OVERVIEW.matchAll(/data-testid="fin-historical-note"([\s\S]{0,400}?)<\/div>/g)];
+    assert.equal(sites.length, 2, "both sites are readable");
+    for (const [, body] of sites) {
+      assert.ok(!/onClick|onKeyDown|onMouseDown|role=|tabIndex/.test(body), "no interaction");
+      assert.ok(!/<button|<a\b/.test(body), "not a control");
+      assert.ok(!/cursor: "pointer"/.test(body));
+      assert.ok(!/textDecoration/.test(body));
+      assert.ok(body.includes("historicalNoteStyle"), "it reuses the one style");
+    }
+  });
+
+  it("108. it carries a COUNT and nothing else — no identity can leak", () => {
+    // `hiddenRecords` is a number on the payload with no id or name beside it,
+    // and both call sites pass exactly that number.
+    const calls = [...OVERVIEW.matchAll(/historicalNote\(([^,]+), t\)/g)].map((m) => m[1].trim());
+    assert.deepEqual(calls, ["billing.hiddenRecords", "hidden"]);
+    assert.ok(!/hiddenStudents|hiddenRows|hiddenNames|ghostRows/.test(ALL_UI));
+    // And it is never rendered at zero: a note explaining nothing is clutter.
+    assert.ok(!/hiddenRecords >= 0|hidden >= 0/.test(OVERVIEW));
+  });
+});
+
+describe("Gate 5.5 · Outstanding students on a phone", () => {
+  it("109. the row separates identity, metadata and amount", () => {
+    // The preferred structure is name + amount on one line, class under the
+    // name, parent state under that. The markup is already in that DOM order, so
+    // the mobile rule only has to align the row to the TOP — which lifts the
+    // amount out of the vertical middle of a three-line block onto the name's
+    // own line, and leaves class and parent reading as secondary detail.
+    const block = financeBlock();
+    for (const hook of ["fin-out-row", "fin-out-name", "fin-out-meta", "fin-out-amount"]) {
+      assert.ok(OVERVIEW.includes(hook), `the markup carries .${hook}`);
+      assert.ok(block.includes(`.${hook}`), `the mobile block styles .${hook}`);
+    }
+    assert.ok(/\.fin-out-row\{[^}]*align-items:flex-start !important/.test(block));
+    assert.ok(/\.fin-out-amount\{[^}]*align-self:flex-start !important/.test(block));
+    // The parent state stays neutral secondary metadata, not an error badge.
+    assert.ok(/data-testid="fin-no-parent" className="fin-out-parent"/.test(OVERVIEW));
+  });
+
+  it("110. identity WRAPS rather than truncating at 375px", () => {
+    // Truncation here is destructive — two students can ellipsis to the same
+    // string — and `overflow-wrap:anywhere` is what stops a single long token
+    // pushing the card wider than the phone and crowding the amount off it.
+    const block = financeBlock();
+    const rule = /\.fin-out-name,\.fin-out-meta\{([^}]*)\}/.exec(block);
+    assert.ok(rule, "name and meta are released from nowrap together");
+    assert.ok(rule![1].includes("white-space:normal !important"));
+    assert.ok(rule![1].includes("text-overflow:clip !important"));
+    assert.ok(rule![1].includes("overflow-wrap:anywhere"));
+    // The desktop half is unchanged: it still ellipsises inside its column.
+    assert.ok(/className="fin-out-name"[^>]*whiteSpace: "nowrap"/.test(OVERVIEW));
+  });
+
+  it("111. nothing is appended to the list — no +N, no note, no placeholder", () => {
+    const list = /className="fin-out-list"[\s\S]*?Top performing classes/.exec(OVERVIEW);
+    assert.ok(list, "the list is findable");
+    assert.ok(!/\{t\("more"\)\}/.test(list![0]), "no +N more");
+    assert.ok(!/fin-historical-note/.test(list![0]), "no historical note row");
+    assert.ok(!/hiddenRecords/.test(list![0]), "no hidden count at all");
+    assert.ok(!/Deleted|Unknown|Former/i.test(list![0]), "no placeholder person");
+  });
+
+  it("112. it grows no scroll region of its own", () => {
+    const block = financeBlock();
+    assert.ok(!/\.fin-out[^{]*\{[^}]*overflow-x/.test(block), "no local scroller");
+    assert.ok(!/\.fin-out[^{]*\{[^}]*min-width:\s*\d{3}/.test(block), "no width a phone cannot pay");
+  });
+});
+
+describe("Gate 5.5 · Top performing classes on a phone", () => {
+  it("113. the row stacks: rank and name first, the amount on its own line", () => {
+    const block = financeBlock();
+    for (const hook of ["fin-tpc-row", "fin-tpc-name", "fin-tpc-amount", "fin-tpc-label"]) {
+      assert.ok(OVERVIEW.includes(hook), `the markup carries .${hook}`);
+      assert.ok(block.includes(`.${hook}`), `the mobile block styles .${hook}`);
+    }
+    // `flex:1 0 100%` is what takes the amount out of the squeeze — a full-width
+    // line rather than a third column competing with the class name.
+    assert.ok(/\.fin-tpc-amount\{[^}]*flex:1 0 100% !important/.test(block));
+    assert.ok(/\.fin-tpc-row\{[^}]*flex-wrap:wrap !important/.test(block));
+  });
+
+  it("114. the amount says what it is once it leaves its column", () => {
+    // A bare figure needs no label beside a header; alone on a line it does. The
+    // word is the card's own existing one, and it is hidden by an INLINE style so
+    // switching it on can only ever happen at this breakpoint.
+    assert.equal((OVERVIEW.match(/className="fin-tpc-label"/g) ?? []).length, 2, "ranked and unrankable");
+    assert.ok(/className="fin-tpc-label" style=\{\{ display: "none" \}\}>\{t\("Collected"\)\}/.test(OVERVIEW));
+    assert.ok(/\.fin-tpc-label\{[\s\S]*?display:inline !important/.test(financeBlock()));
+  });
+
+  it("115. ranking, unknowns and absences are all unchanged", () => {
+    // A presentation change may not move a metric. An unknown collected total is
+    // still unrankable, still listed after the ranked ones, and still `No data`
+    // rather than a zero — asserted through the helper the card ranks with.
+    const { ranked, unknown } = rankByCollected([
+      { classId: "a", className: "A", billed: 10, collected: 4, outstanding: 6 },
+      { classId: "b", className: "B", billed: 10, collected: null, outstanding: null },
+      { classId: "c", className: "C", billed: 10, collected: 9, outstanding: 1 },
+    ]);
+    assert.deepEqual(ranked.map((c) => c.classId), ["c", "a"]);
+    assert.deepEqual(unknown.map((c) => c.classId), ["b"]);
+    assert.equal(money(null, fmt, NO_DATA), NO_DATA);
+    assert.ok(/data-testid="fin-unrankable-class"/.test(OVERVIEW));
+    // And no +N more, and no explanation a ranking card does not need.
+    const top = /Top performing classes[\s\S]*?Revenue by class/.exec(OVERVIEW);
+    assert.ok(top && !/\{t\("more"\)\}|fin-historical-note/.test(top[0]));
+  });
+});
+
+describe("Gate 5.5 · Revenue by class on a phone", () => {
+  it("116. the collapsed summary becomes a stacked card", () => {
+    // The dense part is two 88px money columns beside a flexible name. Below the
+    // breakpoint the name takes the first line and the two amounts share the
+    // second — each half the row, reading left-to-right under their own labels.
+    const block = financeBlock();
+    for (const hook of ["fin-class-row", "fin-class-main", "fin-class-name", "fin-class-amt"]) {
+      assert.ok(OVERVIEW.includes(hook), `the markup carries .${hook}`);
+      assert.ok(block.includes(`.${hook}`), `the mobile block styles .${hook}`);
+    }
+    assert.ok(/\.fin-class-main\{flex:1 0 calc\(100% - 20px\) !important\}/.test(block));
+    assert.ok(/\.fin-class-amt\{[^}]*flex:1 1 0 !important/.test(block));
+    assert.ok(/\.fin-class-amt\{[^}]*min-width:0 !important/.test(block), "it may shrink past its 88px floor");
+    assert.ok(/\.fin-class-amt\{[^}]*text-align:left !important/.test(block));
+  });
+
+  it("117. the pair is addressed by name, never by position", () => {
+    // `:first-of-type` would mean "the first <span> child", which is the colour
+    // dot — a selector that silently matches nothing at all. Both amounts say
+    // which they are, in the markup.
+    assert.ok(/className="fin-class-amt fin-class-collected"/.test(OVERVIEW));
+    assert.ok(/className="fin-class-amt fin-class-outstanding"/.test(OVERVIEW));
+    const block = financeBlock();
+    assert.ok(!/:first-of-type|:first-child|:nth-of-type/.test(block), "no positional selector");
+    assert.ok(/\.fin-class-collected\{padding-left:20px\}/.test(block));
+  });
+
+  it("118. the expand affordance exists on the phone and is decorative", () => {
+    // `aria-expanded` on the button states the accordion at every width and is
+    // what assistive technology reads. The chevron is for the phone, where there
+    // is no hover and no pointer cursor to reveal that the row opens at all.
+    assert.ok(/aria-expanded=\{open\}/.test(OVERVIEW), "the state is on the button");
+    assert.ok(/className="fin-class-chev" aria-hidden="true" style=\{\{ display: "none"/.test(OVERVIEW));
+    assert.ok(/\.fin-class-chev\{display:flex !important\}/.test(financeBlock()));
+    // It is inside the button, so it can never become a second control.
+    assert.ok(!/fin-class-chev[^>]*onClick/.test(OVERVIEW));
+  });
+
+  it("119. the expanded student grid keeps its own local scroll, unchanged", () => {
+    // Squeezing six columns into 347px is the density this gate is fixing, not a
+    // fix for it. The grid keeps the wrapper and the min-width it has always had,
+    // and the mobile block does not touch either.
+    const grid = /function ClassStudentGrid[\s\S]*?minWidth: 640/.exec(OVERVIEW);
+    assert.ok(grid, "the grid still declares its min-width inside its wrapper");
+    assert.ok(grid![0].includes('overflowX: "auto"'));
+    assert.ok(grid![0].includes('overflowY: "hidden"'));
+    assert.ok(!/fin-scroll/.test(financeBlock()), "the mobile block does not restyle the scroller");
+  });
+
+  it("120. the class's historical note lives in the expanded detail", () => {
+    // Where the class's aggregate and its student rows are on screen together.
+    // The collapsed summary line carries only the three status counts now — a
+    // "+N more" appended to them read as a fourth status.
+    const summary = /\{c\.counts\.paid\} \{t\("paid"\)\}[\s\S]{0,220}?<\/span>/.exec(OVERVIEW);
+    assert.ok(summary, "the status summary is findable");
+    assert.ok(!/more|hiddenRecords/.test(summary![0]), "nothing is appended to the counts");
+    const detail = /function ClassStudentGrid[\s\S]*$/.exec(OVERVIEW);
+    assert.ok(detail && /fin-historical-note/.test(detail[0]), "the note is in the detail");
+  });
+});
+
+describe("Gate 5.5 · the breakpoint contract", () => {
+  it("121. tablet and desktop see none of this", () => {
+    // Tablet passed its human pass, so the fixes may not reach it. Every rule is
+    // inside the 620px block (99), and the two bands above it are untouched by
+    // Finance — no `.fin-` selector appears in either.
+    const css = raw("src", "app", "globals.css").replace(/\/\*[\s\S]*?\*\//g, " ");
+    for (const q of ["(max-width:1100px)", "(max-width:860px) and (min-width:621px)"]) {
+      const start = css.indexOf(`@media ${q}{`);
+      assert.ok(start >= 0, `${q} exists`);
+      let depth = 0, i = start + `@media ${q}`.length;
+      for (; i < css.length; i++) {
+        if (css[i] === "{") depth++;
+        else if (css[i] === "}" && --depth === 0) break;
+      }
+      assert.ok(!css.slice(start, i).includes(".fin-"), `${q} must not style Finance`);
+    }
+  });
+
+  it("122. the mobile block reuses the app's own breakpoint, not a new one", () => {
+    assert.ok(MOBILE_QUERY.includes("620"), "the shell's narrow breakpoint is 620px");
+    const css = raw("src", "app", "globals.css");
+    // Its own block, opened by its own section header, rather than rules smuggled
+    // into one of the shell blocks that share this breakpoint.
+    const header = css.indexOf("/* ---- Finance, at <=620px");
+    assert.ok(header >= 0, "the Finance block states what it is");
+    assert.equal(css.slice(header).indexOf("@media "), css.slice(header).indexOf("@media (max-width:620px){"));
+    // No Finance rule at any width the app does not already change shape at.
+    for (const m of css.matchAll(/@media \(max-width:(\d+)px\)\{/g)) {
+      assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
+    }
+  });
+
+  it("123. still exactly three horizontal scroll regions, and no new one", () => {
+    // The invariant Gate 5 established: the tab strip, the Payments table and the
+    // expanded per-student grid. A mobile panel that scrolled sideways instead of
+    // restacking would be a fourth, and would be the same density fault wearing a
+    // scrollbar.
+    assert.equal([...ALL_UI.matchAll(/overflowX: "auto"/g)].length, 3);
+    const block = financeBlock();
+    assert.ok(!/overflow-x/.test(block), "the mobile block adds no scroll region");
+    assert.ok(!/overflow:hidden|overflow-x:hidden/.test(block), "and hides no overflow to fit");
+    assert.ok(!/100vw/.test(block), "and defines no viewport width");
   });
 });

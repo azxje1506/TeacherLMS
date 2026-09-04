@@ -25,6 +25,12 @@
  * than a second endpoint. Ghost rows cannot appear in any filter combination
  * because the server never sent them, and there is no "deleted student" option
  * to select.
+ *
+ * AND THE TABLE IS THE WHOLE OF IT (Gate 5.5). This tab shows current students'
+ * bills and says nothing about records it cannot show. A read-only table that
+ * ends in "+N more" is read as one that could load more; there is nothing to
+ * load, because the records that count are for students who no longer exist.
+ * The month's aggregate gap belongs beside the month's aggregate, on Overview.
  */
 
 import { useMemo, useState } from "react";
@@ -162,13 +168,13 @@ export function FinancePayments({ data }: { data: FinanceMonthPayload }) {
         </div>
       )}
 
-      {/* Records inside the month's totals that cannot be listed, because their
-        * student no longer exists. Never a placeholder row. */}
-      {data.billing.hiddenRecords > 0 && (
-        <div data-testid="fin-hidden-more" style={{ marginTop: 10, fontSize: 12, color: "var(--muted-2)", textAlign: "center" }}>
-          +{data.billing.hiddenRecords} {t("more")}
-        </div>
-      )}
+      {/* NOTHING FOLLOWS THE TABLE. It used to end with the count of records the
+        * month holds that no student can be named for, which under a filtered,
+        * read-only table read as "there are more payments here, load them" —
+        * a promise this screen cannot keep, since those bills have no student to
+        * show. The table is exactly the live students' bills, the filters can
+        * only ever offer a live student, and the month's own gap is explained on
+        * the Overview tab beside the total it is about. */}
     </>
   );
 }
