@@ -181,25 +181,33 @@ export interface AttendanceRecord {
   entries: Record<string, AttendanceEntry>; // keyed by Student.id
 }
 
-/** A monthly tuition bill for one student. Amounts are integer VND. */
+/** A monthly tuition bill for one student in one class. Amounts are integer VND.
+ *
+ * Identified by `(studentId, classId, month)` — NOT `(studentId, month)`. A
+ * student taught in two classes owes two tuitions that month and has two bills
+ * (PROJECT_RULES, Billing). */
 export interface Billing {
   id: string;
   studentId: string; // -> Student.id
   classId: string; // -> Klass.id
   month: string; // "YYYY-MM"
-  fee: number; // amount due, VND
+  /** Amount due, VND. A HISTORICAL SNAPSHOT of the class's fee for this period,
+   * not a cache of `Klass.fee`: editing a class's fee reaches back into no
+   * existing bill, and the Class no longer knows what it charged in March. */
+  fee: number;
   status: BillingStatus;
   paidDate: string | null; // ISO or null
   notes?: string;
-}
-
-/** A payment applied against a bill (the pay-drawer form shape). */
-export interface Payment {
-  id: string; // -> Billing.id being settled
-  status: BillingStatus;
-  paidDate: string; // ISO "YYYY-MM-DD"
-  amount?: number; // VND collected (derived for partials)
-  notes: string;
+  /** VND collected, stored ONLY on a `Partially Paid` bill and only when it was
+   * recorded — `0 < paidAmount < fee`.
+   *
+   * ABSENT IS NOT ZERO. `Paid` stores none because its collected value IS the
+   * fee, and `Unpaid` stores none because its collected value is zero; storing
+   * either would be a second copy of a value already known. A `Partially Paid`
+   * bill with no `paidAmount` is one whose amount was never recorded, and its
+   * collected value is genuinely UNKNOWN — never zero, never half. Every bill
+   * predating this field is in that state. See `collectedFor` in billing.ts. */
+  paidAmount?: number;
 }
 
 /** A homework assignment. */
