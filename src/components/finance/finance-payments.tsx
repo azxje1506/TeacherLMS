@@ -26,6 +26,14 @@
  * because the server never sent them, and there is no "deleted student" option
  * to select.
  *
+ * NO PAID OR REMAINING COLUMN EXISTS HERE (Gate 6). The comp's Payments table
+ * carries Student, Class, Monthly fee, Status and Paid date — the fee is Σ-free
+ * and always exact, so no cell on this table can be the unknown a legacy
+ * partial produces. A row whose amount was never recorded still says
+ * `Partially Paid`, still shows its stored paid date, and is never given an
+ * inferred half; the per-student grid on Overview is where its Paid and
+ * Remaining are asked for, and where they say `Insufficient data`.
+ *
  * AND THE TABLE IS THE WHOLE OF IT (Gate 5.5). This tab shows current students'
  * bills and says nothing about records it cannot show. A read-only table that
  * ends in "+N more" is read as one that could load more; there is nothing to
@@ -39,7 +47,7 @@ import { Select } from "@/components/ui/select";
 import { EM } from "@/lib/format";
 import type { FinanceMonthPayload } from "@/lib/finance-service";
 import { BILLING_STATUSES } from "@/lib/billing";
-import { STATUS_LABEL, statusBadgeStyle } from "./finance-ui";
+import { NO_BILLING_BODY, NO_BILLING_TITLE, STATUS_LABEL, billingState, statusBadgeStyle } from "./finance-ui";
 
 const ALL = "__all__";
 
@@ -78,6 +86,13 @@ export function FinancePayments({ data }: { data: FinanceMonthPayload }) {
 
   const cols = "minmax(150px,1.6fr) minmax(120px,1.4fr) 120px 110px 130px";
 
+  /* TWO REASONS FOR AN EMPTY TABLE, AND THEY ARE NOT THE SAME SENTENCE. Either
+   * the month holds no bills at all, or it holds bills and the filters in hand
+   * exclude every one of them. "No billing records match these filters" told a
+   * teacher to go and change a filter on a month where no filter would ever
+   * help. The row count answers it: the server sent what it had. */
+  const monthIsEmpty = billingState(data.billing) === "empty";
+
   return (
     <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -115,9 +130,13 @@ export function FinancePayments({ data }: { data: FinanceMonthPayload }) {
           <div style={{ minWidth: 52, width: 52, height: 52, borderRadius: "var(--r)", background: "var(--card-2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px", color: "var(--muted)" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" /><path d="M16 12h3" /></svg>
           </div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>{t("No payment records")}</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>
+            {monthIsEmpty ? t(NO_BILLING_TITLE) : t("No payment records")}
+          </div>
           <p style={{ color: "var(--muted)", fontSize: 13.5, maxWidth: 400, margin: "8px auto 0" }}>
-            {t("No billing records match these filters for")} {monthLabel}.
+            {monthIsEmpty
+              ? t(NO_BILLING_BODY)
+              : `${t("No billing records match these filters for")} ${monthLabel}.`}
           </p>
         </div>
       ) : (

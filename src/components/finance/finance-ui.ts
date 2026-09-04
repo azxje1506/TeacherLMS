@@ -239,11 +239,80 @@ export function historicalNote(count: number, t: (s: string) => string): string 
   return t(count === 1 ? HISTORICAL_NOTE_ONE : HISTORICAL_NOTE_MANY).replace("{N}", String(count));
 }
 
-/** How that sentence is drawn: muted, small, and INERT.
+/** How EVERY neutral Finance caption is drawn: muted, small, and INERT.
  *
  * No cursor, no underline, no colour that reads as a link — and callers attach
  * no handler. It is a caption on a number, not a control, and the whole reason
- * the old affordance was wrong was that it looked like one. */
-export const historicalNoteStyle: React.CSSProperties = {
+ * the old affordance was wrong was that it looked like one.
+ *
+ * Shared by the historical-record note above and by the unrecorded-partial note
+ * below: both are the same thing — one muted sentence explaining why an
+ * aggregate is not what the rows under it suggest — so they are one style
+ * rather than two that can drift apart. */
+export const financeNoteStyle: React.CSSProperties = {
   fontSize: 11.5, color: "var(--muted-2)", lineHeight: 1.45,
 };
+
+/* ------------------------------------- the three states a figure can be in
+ *
+ * PRODUCTION SHOWED WHY THIS SECTION EXISTS. Switching to a historical month
+ * filled the screen with `No data`, and the words could mean two unrelated
+ * things: "this month was never billed" or "this month WAS billed, but one old
+ * Partially Paid record never had its amount written down". A teacher cannot
+ * act on the first and can act on the second, so one label for both is a label
+ * that answers nothing.
+ *
+ * There are three states, and Finance now draws three different things:
+ *
+ *   KNOWN ZERO         `0đ`  — the figure is computable and it is zero.
+ *   INSUFFICIENT DATA        — bills exist; a legacy partial has no recorded
+ *                              amount, so this total is genuinely unknowable.
+ *                              Said with the count of records responsible.
+ *   NO BILLING RECORDS       — the month holds no bills at all. An empty state,
+ *                              not a figure, because there is no figure to give.
+ *
+ * `null` AND "UNKNOWN" ARE THE SAME THING HERE, and provably so: `totalsFor`
+ * sets `collected = unknownAmountBills > 0 ? null : collectedKnown`, so a null
+ * amount always has exactly one cause and `Insufficient data` always has a
+ * count behind it. (`collectionRate` is the one figure that is also null for a
+ * zero denominator — unreachable while fees are positive, and the empty-month
+ * branch catches the case that would produce it.)
+ *
+ * NOTHING HERE INFERS AN AMOUNT. No half, no proportion, no substitute zero:
+ * an amount nobody recorded stays unrecorded, and the screen says so. */
+
+/** The label for a bill-derived figure that cannot be computed. Replaces the
+ * app-wide `No data`, which other modules still use for their own absences —
+ * this one is specifically "the records exist, the number does not". */
+export const INSUFFICIENT_DATA = "Insufficient data";
+
+/** Why a bill-derived total is unknown, in the teacher's terms. Count-aware,
+ * as PROJECT_RULES' own preferred copy allows, because the count is what tells
+ * a teacher how much of the month is affected. */
+export const PARTIAL_NOTE_ONE = "{N} partial payment does not have a recorded amount.";
+export const PARTIAL_NOTE_MANY = "{N} partial payments do not have a recorded amount.";
+
+/** The month held no bills. A title and a description, not a value. */
+export const NO_BILLING_TITLE = "No tuition data for this month";
+export const NO_BILLING_BODY = "There are no billing records for this month yet.";
+
+/** The sentence for `count` unrecorded partials. Pluralised like
+ * `historicalNote`, and never rendered at zero — the caller guards. */
+export function partialNote(count: number, t: (s: string) => string): string {
+  return t(count === 1 ? PARTIAL_NOTE_ONE : PARTIAL_NOTE_MANY).replace("{N}", String(count));
+}
+
+/** Which of the three states a bill-derived scope is in.
+ *
+ * Order matters: a month with no bills is EMPTY even though every total in it
+ * is a legitimate zero, because "0đ collected out of 0đ billed" is a true
+ * sentence that tells a teacher nothing about why the screen is bare. */
+export type BillingState = "empty" | "insufficient" | "known";
+
+export function billingState(scope: {
+  counts: { total: number };
+  unknownAmountBills: number;
+}): BillingState {
+  if (scope.counts.total === 0) return "empty";
+  return scope.unknownAmountBills > 0 ? "insufficient" : "known";
+}
