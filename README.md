@@ -204,8 +204,114 @@ collection's count, digest, month histogram, ghost-review count and any duplicat
 `(studentId, month)` pairs, and it runs **observationally**. Global Search
 remains deferred: the header seam exists and calls nothing.
 
+**Implemented on the `sprint-9-finance` branch, merged to `main` and verified on
+a Vercel Production deployment:** **Finance** — the month's tuition, on three
+tabs at `/finance`:
+
+- **Overview** — three KPI cards, the money summary with its collection bar,
+  Outstanding students beside Top performing classes, and Revenue by class with
+  an expandable per-student grid;
+- **Revenue analytics** — the six-month trend, the lesson-type donut, revenue by
+  class and by lesson type;
+- **Payments** — the month's bills, filterable by status, class and student.
+
+The Class Detail **Revenue** card is live too, reading the same month payload.
+
+**Two different kinds of money, kept apart everywhere.** `billing` is tuition
+*asked for* — a flat 13,100,000đ a month across 14 bills — and `revenue` is
+money *earned by teaching*, lesson-derived and attendance-weighted under the
+rules in `CLAUDE.md`. They share no join: a Billing record carries no `lessonId`.
+The design comp already separates them — three solid bill-derived tiles beside a
+**dashed** "Lesson revenue · completed lessons · informational" tile — and the
+port keeps that separation in the code's vocabulary as well as on the screen: no
+bill-derived field, type or test is called `revenue`.
+
+Routes, both behind the session:
+
+- `GET /api/finance?month=YYYY-MM` — one month's billing and revenue branches,
+  plus the twelve-month window the selector offers
+- `PATCH /api/finance/:billId` — record a payment against one bill
+
+**Finance is read-only in the UI.** The mutation endpoint is complete and
+tested, and **nothing on any screen calls it**: no form, no drawer, no status
+dropdown, and no disabled button hinting at one. The comp draws Record / Manage
+buttons but contains no payment form anywhere, and two of its three row actions
+cannot be honestly shipped without one — so all three wait for a design, as
+PROJECT_RULES requires. The **Method** column is absent for the same reason:
+`methodIcon` / `methodLabel` exist in the comp with no field behind them, in the
+model, in production or in the dictionary.
+
+**Historical bills whose student was deleted are counted and never named.** They
+stay in every total — deleting a student must not move a closed month's figures —
+and they raise no row, because a working list of who owes money cannot contain
+somebody who is gone. No id, name, former parent or placeholder row for such a
+record ever reaches the client. Where that makes an **aggregate** larger than the
+rows beneath it, the screen says so in a sentence — "*{N} historical payment
+records no longer have student information.*" / "*Có {N} khoản thu lịch sử không
+còn thông tin học sinh.*" — shown in exactly two places, the month's money
+summary and a class's expanded student detail. It is a muted, inert caption: no
+handler, no cursor, no underline, nothing to press. Outstanding students, the
+Payments table and the Top-performing ranking disclose nothing at all, because
+they are lists a teacher acts on.
+
+**An unknown amount is never drawn as `0đ`.** Nine legacy `Partially Paid` bills
+were recorded without an amount and none is recoverable from their notes, so
+their collected value — and any total containing one — renders `No data`, and
+the collection bar shows a neutral unknown state rather than a proportion it
+cannot compute. **No 50% rule, and no backfill.** A class whose collected total
+is unknown is likewise **not ranked** and **not given a zero**: it is listed
+after the ranking, saying `No data`. Students with no linked Parent are marked
+`No linked parent` wherever Finance names someone who owes money.
+
+Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375, on
+Preview at `206084f` and again on Production. Finance's only stylesheet is one
+block at the app's existing 620px breakpoint, which restacks the three panels a
+phone cannot hold in a row; every other width is the comp's own inline values.
+Exactly three regions scroll horizontally — the tab strip, the Payments table
+and the expanded per-student grid — and the page itself never does.
+
+**No Billing document was created, edited or deleted at any point in Sprint 9**,
+rollout and Production verification included, and **no Billing index was created
+or declared**. `PATCH /api/finance/:billId` has never been invoked against
+production. `billings` still holds 84 documents at digest
+`b3e2fb7ae5dd0cc1baac3c4f62c7459bfa62292b839970a84703a8e02d9ca6ca` — 70 Paid /
+9 Partially Paid / 5 Unpaid, 24 ghost bills over 4 deleted students, 0 duplicate
+`(studentId, classId, month)` groups — with exactly the five indexes it has
+always had, and the Reviews and Homework baselines are untouched. The read-only
+check is `npm run finance:integrity`; it runs **observationally**, and its
+accepted baseline is deliberately still `null`: nothing has been intentionally
+written, so there is nothing to accept.
+
+That also settles Sprint 8's outstanding condition, recorded above: `2189895`
+was deployed to Vercel **Production** and verified on 2026-09-03, and this
+rollout supersedes it.
+
+**Deferred, and deliberately not repaired here** — each is a known fact about
+production data or a missing design, not an open defect:
+
+- **`c6`** stores `fee: 18,000,000` while its own historical bills store
+  `1,800,000`, exactly ten times smaller. It is 62–71% of every month's reported
+  revenue. Stored values are rendered exactly as they are; there is no
+  normalisation anywhere, and the remediation is its own authorised change.
+- **Revenue for deleted or unenrolled students** still cannot be reconstructed:
+  rosters are current-only and no enrolment history exists to derive it from.
+- **Six `paidDate` values after the app clock** are preserved as found. New
+  writes reject a future date; the existing six are history.
+- **Nine legacy `Partially Paid` bills without `paidAmount`** stay `No data`.
+- **`Student.balance`** remains inconsistent with Billing on the Students
+  surface, and was not touched.
+- **The Billing `(studentId, classId, month)` natural key** is documented and
+  observationally validated (0 duplicates in 84 documents) but **no unique index
+  was created or declared**. Declaring one in `models.ts` would make mongoose's
+  `autoIndex` build it at deploy time, which is production DDL and needs its own
+  authorised migration gate. Deferred technical hardening.
+- **No monthly Billing generator** exists, so a future month can legitimately
+  return no bills.
+- **Payment UI**, the **Student Profile Finance tab**, and Finance **reports /
+  export** all wait for a design.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons,
-Finance, Reports, Calendar and Settings screens — each ported
+Reports, Calendar and Settings screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.
 

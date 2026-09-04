@@ -1,5 +1,134 @@
 # Changelog
 
+## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
+- Billing contract, agreed before any code: the natural key is
+  `(studentId, classId, month)` — 84/84 unique — and **not** `(studentId, month)`,
+  because a student enrolled in two classes is legitimately billed twice in the
+  same month. `Billing.fee` is a **historical snapshot**, not a cache of
+  `Class.fee`: a class's fee has no history, so a bill has to carry the number it
+  was raised for. That is a deliberate, documented exemption from CLAUDE.md's
+  data-ownership rule rather than an oversight.
+- **Two unrelated definitions of money, and PROJECT_RULES governs only one.**
+  `billing` is tuition *asked for* — a flat 13,100,000đ a month — and `revenue`
+  is money *earned by teaching*, lesson-derived and attendance-weighted (~25.5M a
+  month). They have no join; a Billing record carries no `lessonId`. The comp
+  already separates them, drawing a **dashed** "Lesson revenue · completed
+  lessons · informational" tile beside three solid bill-derived ones, and the
+  port enforces the separation in code names too: no bill-derived field, type or
+  test is called `revenue`.
+- `computeRevenue` rewritten to count **shares** rather than accumulate floats. A
+  class-month is `fee × shares / regularScheduled`, rounded once, then split
+  across regular / makeup / extra by largest remainder, so `Σ perClass === total`
+  and `Σ byType === total` hold by construction. Verified against production:
+  all six months reproduce their previously observed figures identically. The
+  archived-student filter was removed as a real defect; it moved no production
+  month, because the only Archived student is on no roster.
+- `paidAmount?: number`, stored only on a `Partially Paid` bill. The nine legacy
+  partials in production carry empty notes, so no amount is recoverable from
+  them: they stay `null` and render **`No data`**, never `0đ` and never an
+  inferred 50%. The dead `calc.ts` `paidAmount` helper carrying that 50% rule was
+  deleted along with the unused `Payment` type and `paymentSchema`. **Zero
+  migration, zero backfill.**
+- Read service and API: `GET /api/finance?month=YYYY-MM` returns one month's
+  billing and revenue branches plus the twelve-month window the selector offers.
+  The window is the **server's** — no Finance file constructs a `Date`, reads a
+  browser clock or derives a month. The read-model shaping lives in the pure
+  `billing.ts`, not the service, so the ghost rule is provable without a database
+  in the loop.
+- `PATCH /api/finance/:billId` records a payment against one bill, rejects a
+  future `paidDate`, and answers a ghost bill with the **same 404 a missing bill
+  gets**, so the id space discloses nothing. It ships **without UI**: the comp
+  has Record / Manage buttons but no payment form anywhere in it, and two of its
+  three row actions cannot be honestly built without one. Implement the logic and
+  the API, do not invent the UI.
+- `/finance` screen, three tabs — **Overview**, **Revenue analytics**,
+  **Payments** — replacing the module placeholder, plus the Class Detail
+  **Revenue** card, which reads `/api/finance` sharing the same React Query key.
+  Deliberately **not** `/api/dashboard`: that GET runs the lesson lifecycle and
+  therefore writes, and opening a class page must not.
+- Deviations from the comp, all agreed in advance: no **Method** column
+  (`methodIcon` / `methodLabel` exist in the comp with no field behind them
+  anywhere — model, production, rules or dictionary), no row actions, and no
+  Overdue or Invoice concept. A class whose collected total is unknown is **not
+  ranked and not given a zero** — it is listed after the ranking, saying
+  `No data`, because sorting it as 0 would put a class that has collected almost
+  everything at the bottom of a list titled "highest-value".
+- **Ghost bills — those whose student was deleted — are counted in every total
+  and named in no list.** Both halves matter: a deletion must not move a closed
+  month's figures, and a worklist of who owes money cannot contain somebody who
+  is gone. No id, name, former parent or placeholder row reaches the client.
+  "Live student" means the Student document **exists**, not that its status is
+  Active: Trial, Paused and Archived students' bills are all payable.
+- Gate 5.5 (human visual pass) changed **how that gap is presented, not what it
+  means.** The comp's `+N more` was removed from all four surfaces: under an
+  actionable list of students who owe money it read as a control — press it and
+  see four more people to chase — and there are no more people to show. The fact
+  is now a sentence, in the two places where a total is genuinely larger than the
+  rows beneath it: "*{N} historical payment records no longer have student
+  information.*" / "*Có {N} khoản thu lịch sử không còn thông tin học sinh.*",
+  on the month's money summary and in a class's expanded student detail. It is a
+  muted, inert caption — no handler, no cursor, no underline — and it carries a
+  count and nothing else. Outstanding students, the Payments table and the
+  Top-performing ranking card disclose nothing at all.
+- Gate 5.5 also restacked the three panels a phone cannot hold in a row —
+  Outstanding students, Top performing classes and Revenue by class — in
+  Finance's **only** stylesheet: one block at the app's existing 620px
+  breakpoint, styling only `.fin-` hooks, with every other width left as the
+  comp's own inline values. Tablet and desktop are untouched by it. Exactly three
+  regions scroll horizontally — the tab strip, the Payments table and the
+  expanded per-student grid — and the page itself never does; no
+  `overflow-x: hidden` conceals anything. Human verification **passed** at ≥1100,
+  768–860, ≤620 and 375, on Preview at `206084f` and again on Production.
+- **`c6` is rendered honestly rather than repaired.** The class stores
+  `fee: 18,000,000` while its own six bills store `1,800,000`, exactly ten times
+  smaller, and it is 62–71% of every month's reported revenue. Stored values are
+  displayed exactly as stored; there is no normalisation in a formatter or
+  anywhere else, and the remediation is a separate authorised change.
+- **Rollout: merged to `main` and deployed to Vercel Production.** `main` was
+  fast-forwarded to `206084f`, preserving all fifteen Sprint 9 commits with no
+  squash and no history rewrite, and Vercel deployed it to **Production**
+  (`teacher-lms-lake.vercel.app`) at exactly that SHA. Production was then driven
+  **read-only** — a write-free login, the Finance screen, its stylesheet and
+  bundle, and `GET /api/finance` for all twelve offered months. The served CSS
+  carries the 620px Finance block; the served bundle carries the new copy and no
+  longer contains the removed disclosure hook; every payload named only live
+  students, leaked no ghost identity, and reported the expected 4 hidden records
+  a month over the six billed months.
+- **No production Billing document was created, edited or deleted at any point in
+  Sprint 9**, rollout and verification included, and
+  **`PATCH /api/finance/:billId` was never invoked against Production.** The
+  baseline reproduces exactly either side of the deployment: `billings` at 84 /
+  `b3e2fb7ae5dd0cc1baac3c4f62c7459bfa62292b839970a84703a8e02d9ca6ca`, statuses
+  70 / 9 / 5, 24 ghost bills over 4 deleted students, 0 duplicate
+  `(studentId, classId, month)` groups, 9 partials without an amount and 6
+  historical future `paidDate` values. Reviews (33 /
+  `c4418428f5d247b7c58caf046ce09c6e71f24dd30caab3bc86d4032a5fa8c4d5`) and
+  Homework (15 /
+  `aef736e9931fac3350c6b7a9a2d17834ca3f22566792f952183fc7ed9e85741f`) are
+  untouched.
+- **No DDL, and no Billing index — by decision.** The natural key is documented
+  and observationally validated (0 duplicates in 84 documents), but no unique
+  index was created and **none is declared in `models.ts`**: a declaration would
+  make mongoose's default `autoIndex` build it on the deployment's first model
+  use, which is production DDL and needs its own authorised migration gate. The
+  production index inventory is unchanged at exactly `_id_`, `id_1`,
+  `studentId_1`, `classId_1` and `month_1` — **0 indexes created, dropped or
+  changed at deploy**. Deferred technical hardening, not a blocker.
+- The Finance integrity probe's accepted baseline stays **`null`** deliberately.
+  Sprint 9 shipped code capable of a Billing write but performed none, so the
+  probe keeps reproducing the pre-implementation observation rather than
+  "accepting" the collection merely because a deployment succeeded. A baseline is
+  banked after an authorised, attributable write — not after a rollout.
+- Still deferred, and not pretended otherwise: revenue for deleted or unenrolled
+  students (rosters are current-only and no enrolment history exists to derive it
+  from), the six historical future `paidDate` values (preserved; new writes
+  reject a future date), the nine legacy partials without an amount, the
+  `Student.balance` inconsistency on the Students surface, the Billing natural-key
+  index, any monthly Billing generator (so a future month can legitimately return
+  no bills), the payment UI, the Student Profile Finance tab, and Finance
+  reports / export. Each waits on a design or on its own authorised change.
+- **Sprint 9 — Finance is closed.**
+
 ## Unreleased — Reviews MVP (Sprint 8) — **hosted Preview verified**
 - Reviews domain and validation: a Review is one student's month — ten skill
   ratings (integers 1–5, ten canonical dimensions, no eleventh) and five text
