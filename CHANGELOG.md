@@ -127,7 +127,15 @@
   index, any monthly Billing generator (so a future month can legitimately return
   no bills), the payment UI, the Student Profile Finance tab, and Finance
   reports / export. Each waits on a design or on its own authorised change.
-- **Sprint 9 — Finance is closed.**
+- **Rollout is complete; Sprint 9 remains open until a human browser pass
+  against the Vercel Production deployment is recorded.** The responsive pass on
+  record was taken against the **Preview** deployment at `206084f`. Production
+  now serves that same SHA — the closure commit on top of it is documentation
+  only — and was verified here **programmatically**: the served stylesheet
+  carries the 620px Finance block, the served bundle carries the new copy and no
+  longer contains the removed disclosure hook, and every month's payload named
+  only live students. That is strong evidence and it is not the visual pass, so
+  neither is reported as the other.
 
 ## Unreleased — Reviews MVP (Sprint 8) — **hosted Preview verified**
 - Reviews domain and validation: a Review is one student's month — ten skill

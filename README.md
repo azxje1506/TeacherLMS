@@ -204,8 +204,8 @@ collection's count, digest, month histogram, ghost-review count and any duplicat
 `(studentId, month)` pairs, and it runs **observationally**. Global Search
 remains deferred: the header seam exists and calls nothing.
 
-**Implemented on the `sprint-9-finance` branch, merged to `main` and verified on
-a Vercel Production deployment:** **Finance** — the month's tuition, on three
+**Implemented on the `sprint-9-finance` branch, merged to `main` and deployed to
+Vercel Production:** **Finance** — the month's tuition, on three
 tabs at `/finance`:
 
 - **Overview** — three KPI cards, the money summary with its collection bar,
@@ -263,8 +263,13 @@ is unknown is likewise **not ranked** and **not given a zero**: it is listed
 after the ranking, saying `No data`. Students with no linked Parent are marked
 `No linked parent` wherever Finance names someone who owes money.
 
-Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375, on
-Preview at `206084f` and again on Production. Finance's only stylesheet is one
+Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375 —
+against the **Preview** deployment at `206084f`. Production serves that same
+SHA, and the closure commit above it changes documentation only, so the two are
+the same application; Production itself was verified **programmatically** here
+(served stylesheet, served bundle and every month's payload). A human browser
+pass against Production is the one closure step still outstanding, and a Preview
+pass is deliberately not reported as a Production one. Finance's only stylesheet is one
 block at the app's existing 620px breakpoint, which restacks the three panels a
 phone cannot hold in a row; every other width is the comp's own inline values.
 Exactly three regions scroll horizontally — the tab strip, the Payments table
