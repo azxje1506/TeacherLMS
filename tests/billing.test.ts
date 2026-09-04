@@ -453,7 +453,20 @@ describe("Billing · checkPaymentWrite", () => {
     assert.equal(checkPaymentWrite.length, 2, "input and bill — no student, no roster");
     assert.ok(!CORE.includes("Archived"), "billing.ts must not name a student status");
     assert.ok(!CORE.includes("StudentStatus"));
-    assert.ok(!/\bimport\b[^;]*\bStudent\b/.test(CORE), "no Student type is imported at all");
+
+    // The module DOES know a Student type, because a row renders a name and an
+    // avatar. It knows it as a NARROW PROJECTION that deliberately omits
+    // `status`, so no code here — payment or otherwise — can consult one even by
+    // accident. That is the rule; "imports nothing called Student" was only ever
+    // a proxy for it, and stopped being true when the read model landed.
+    const ref = /export type BillingStudentRef = Pick<Student, ([^>]*)>/.exec(CORE);
+    assert.ok(ref, "the student projection is declared as a Pick");
+    assert.ok(!ref![1].includes("status"), "the projection must not carry status");
+    for (const field of ["id", "name", "initials", "avatarColor", "parentId"]) {
+      assert.ok(ref![1].includes(`"${field}"`), `the projection carries ${field}`);
+    }
+    // …and nothing wider than that projection is reachable.
+    assert.ok(!/:\s*Student\b/.test(CORE), "no bare Student value is ever held");
   });
 });
 
