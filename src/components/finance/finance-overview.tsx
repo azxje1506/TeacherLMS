@@ -336,13 +336,23 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
           </div>
         )}
 
-        {/* ---- Four tiles. `.ov-grid` collapses 4 -> 3 -> 2 with the app's own
-          * breakpoints rather than the comp's unguarded repeat(4,1fr). */}
-        <div className="ov-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
+        {/* ---- THREE tiles, not the comp's four.
+          *
+          * `Partially paid` used to be the second of them, and it is now the
+          * third metric in the summary directly above — the same word and the
+          * same number, twice on one screen, ten pixels apart. Two copies of a
+          * count are not two facts; the reader spends the difference checking
+          * they match. The summary keeps it, because that is where the money it
+          * qualifies is, and the tile goes.
+          *
+          * `.ov-grid` collapses the row 3 -> 3 -> 2 with the app's own
+          * breakpoints rather than the comp's unguarded repeat(4,1fr) — it is
+          * shared with the Dashboard, so the odd-tile rule that keeps the last
+          * card off a half-width slot at 620px is Finance-scoped, on
+          * `.fin-tiles`. */}
+        <div className="ov-grid fin-tiles" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 12 }}>
           <Tile dot="var(--green)" label={t("Paid students")} value={String(billing.counts.paid)} />
-          <Tile dot="var(--amber)" label={t("Partially paid")} value={String(billing.counts.partiallyPaid)} />
           <Tile dot="var(--accent)" label={t("Unpaid students")} value={String(billing.counts.unpaid)} />
-
           <LessonRevenueTile total={revenue.total} />
         </div>
       </div>

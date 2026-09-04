@@ -295,14 +295,42 @@ describe("Finance Overview · the KPI row", () => {
   });
 });
 
-describe("Finance Overview · the four summary tiles", () => {
-  it("31. three billing counts and one lesson-revenue tile", () => {
-    for (const label of ["Paid students", "Partially paid", "Unpaid students", "Lesson revenue"]) {
-      assert.ok(OVERVIEW.includes(`t("${label}")`), label);
+describe("Finance Overview · the three summary tiles", () => {
+  /** The tile row, sliced from its own grid to its closing tag. */
+  function tileRow(): string {
+    const at = OVERVIEW.indexOf('className="ov-grid fin-tiles"');
+    assert.ok(at > 0, "the tile row is identifiable");
+    return OVERVIEW.slice(at, OVERVIEW.indexOf("\n        </div>", at));
+  }
+
+  it("31. two billing counts and one lesson-revenue tile", () => {
+    for (const label of ["Paid students", "Unpaid students"]) {
+      assert.ok(tileRow().includes(`t("${label}")`), label);
     }
+    // The third is a component, so its label lives in its own definition.
+    assert.ok(tileRow().includes("<LessonRevenueTile "), "the lesson-revenue tile is in the row");
+    assert.ok(OVERVIEW.includes('t("Lesson revenue")'), "and it carries the comp's label");
+    const tiles = [...tileRow().matchAll(/<Tile |<LessonRevenueTile /g)];
+    assert.equal(tiles.length, 3, "exactly three tiles, and no fourth");
   });
 
-  it("32. the fourth tile keeps the comp's informational caption", () => {
+  it("31b. Partially paid is in the summary ABOVE, and only there", () => {
+    // The same word and the same number, twice on one screen, ten pixels apart:
+    // two copies of a count are not two facts, and the reader spends the
+    // difference checking they match. The summary keeps it, because that is
+    // where the money it qualifies is.
+    assert.ok(!tileRow().includes('t("Partially paid")'), "no duplicate tile");
+    assert.ok(!/counts\.partiallyPaid/.test(tileRow()), "and no duplicate count");
+    const legend = /className="fin-summary-legend"[\s\S]*?\n        <\/div>/.exec(OVERVIEW)!;
+    assert.ok(/\{t\("Partially paid"\)\} <b/.test(legend[0]), "it survives in the money summary");
+    assert.equal((OVERVIEW.match(/t\("Partially paid"\)/g) ?? []).length, 1, "rendered once on the tab");
+    // The status badge's own label is a different thing and is untouched.
+    assert.equal(STATUS_LABEL["Partially Paid"], "Partially paid");
+    // …and the key stays in the dictionary, because the summary still uses it.
+    assert.ok(raw("src", "lib", "i18n-vi.json").includes('"Partially paid"'));
+  });
+
+  it("32. the lesson-revenue tile keeps the comp's informational caption", () => {
     assert.ok(OVERVIEW.includes('t("completed lessons · informational")'));
   });
 
@@ -317,8 +345,26 @@ describe("Finance Overview · the four summary tiles", () => {
     assert.deepEqual([...new Set(revenueReads)], ["revenue.total"]);
   });
 
-  it("35. the tiles reflow through .ov-grid rather than a raw repeat(4)", () => {
-    assert.ok(/className="ov-grid"/.test(OVERVIEW));
+  it("35. the row declares three tracks and reflows through .ov-grid", () => {
+    // No fourth track left behind, so nothing renders a gap where the removed
+    // tile was; the shared utility still supplies the breakpoints.
+    assert.ok(/className="ov-grid fin-tiles"/.test(OVERVIEW));
+    assert.ok(/gridTemplateColumns: "repeat\(3,minmax\(0,1fr\)\)"[^}]*\}\}>\s*<Tile/.test(OVERVIEW));
+    assert.ok(!/repeat\(4,minmax\(0,1fr\)\)/.test(OVERVIEW), "no four-track row survives");
+    assert.ok(!/<Tile[^>]*value=\{""\}|placeholder/i.test(tileRow()), "no empty placeholder tile");
+  });
+
+  it("35b. and the odd tile spans rather than sitting beside a gap at 620px", () => {
+    // Three tiles in the shared utility's two columns leave one alone on the
+    // last row. The convention is the app's own — .att-summary does exactly
+    // this with its fifth card — and it is scoped to .fin-tiles because
+    // .ov-grid is shared with the Dashboard's six-across strip.
+    assert.ok(/\.fin-tiles>:last-child\{grid-column:1 \/ -1\}/.test(financeBlock()));
+    const css = raw("src", "app", "globals.css").replace(/\/\*[\s\S]*?\*\//g, " ");
+    assert.ok(/\.ov-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\) !important\}/.test(css),
+      "the shared utility's mobile count is untouched");
+    assert.ok(/className="ov-grid"/.test(read_dashboard()), "and the Dashboard still uses it unchanged");
+    function read_dashboard() { return raw("src", "app", "(app)", "dashboard", "page.tsx"); }
   });
 });
 

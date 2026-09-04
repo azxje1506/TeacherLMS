@@ -1252,6 +1252,19 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   .fin-summary-legend{grid-template-columns:minmax(0,1fr) !important;gap:12px !important}
   .fin-metric{min-width:0}
 
+  /* ---- The summary tiles ---------------------------------------------
+     THREE TILES IN TWO COLUMNS LEAVE ONE ALONE ON THE LAST ROW, and at half
+     width beside an empty slot it reads as a card that failed to lay out. The
+     odd one is Lesson revenue — the dashed, informational tile, the only one on
+     the row that is not a bill-derived count — so it takes the whole row rather
+     than half of it.
+
+     The convention is the app's own: .att-summary does exactly this with its
+     fifth card, for the same reason. It is scoped to .fin-tiles rather than
+     .ov-grid because .ov-grid is shared with the Dashboard's six-across strip,
+     which must keep its own last-child behaviour. */
+  .fin-tiles>:last-child{grid-column:1 / -1}
+
   /* ---- The month control gets its own row --------------------------------
      WHAT WAS WRONG. The heading is a space-between row: title on the left, the
      month control on the right. On a phone the title takes the width it needs

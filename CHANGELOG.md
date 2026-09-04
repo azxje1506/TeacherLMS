@@ -13,7 +13,7 @@
   is money *earned by teaching*, lesson-derived and attendance-weighted (~25.5M a
   month). They have no join; a Billing record carries no `lessonId`. The comp
   already separates them, drawing a **dashed** "Lesson revenue · completed
-  lessons · informational" tile beside three solid bill-derived ones, and the
+  lessons · informational" tile beside the solid bill-derived ones, and the
   port enforces the separation in code names too: no bill-derived field, type or
   test is called `revenue`.
 - `computeRevenue` rewritten to count **shares** rather than accumulate floats. A
@@ -51,7 +51,11 @@
   it. Two lines of qualification for a figure nobody uses, beside three they do.
   The summary is now a deliberate three across — **Collected, Outstanding and
   Partially paid**, the last a count of bills rather than an amount, because for
-  the legacy records that amount is exactly what nobody wrote down — plus the
+  the legacy records that amount is exactly what nobody wrote down (and it is
+  drawn once: the duplicate tile that used to repeat the same count ten pixels
+  below was removed, leaving Paid students, Unpaid students and Lesson revenue,
+  with the odd dashed tile spanning the row rather than sitting beside a gap at
+  620px) — plus the
   Unknown slice on a month that has one. `collectionRate` stays on the payload:
   it is correct, cheap and tested, and removing it from the domain to chase a UI
   decision would be churn in the service contract for no gain. Its copy

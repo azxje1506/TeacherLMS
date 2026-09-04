@@ -221,10 +221,12 @@ The Class Detail **Revenue** card is live too, reading the same month payload.
 *asked for* — a flat 13,100,000đ a month across 14 bills — and `revenue` is
 money *earned by teaching*, lesson-derived and attendance-weighted under the
 rules in `CLAUDE.md`. They share no join: a Billing record carries no `lessonId`.
-The design comp already separates them — three solid bill-derived tiles beside a
+The design comp already separates them — solid bill-derived tiles beside a
 **dashed** "Lesson revenue · completed lessons · informational" tile — and the
 port keeps that separation in the code's vocabulary as well as on the screen: no
-bill-derived field, type or test is called `revenue`.
+bill-derived field, type or test is called `revenue`. The tile row is Paid
+students, Unpaid students and that dashed tile; the Partially paid count lives
+in the money summary above it and is not drawn twice.
 
 Routes, both behind the session:
 
