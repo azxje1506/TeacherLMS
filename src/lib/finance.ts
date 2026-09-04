@@ -1,4 +1,4 @@
-/* Revenue engine — implements the CLAUDE.md tuition/revenue rules.
+/* Revenue engine — implements the PROJECT_RULES tuition/revenue rules.
  *
  * Per-lesson value = monthly fee ÷ number of REGULAR lessons scheduled that month
  * (a fixed baseline that does NOT shrink when lessons are cancelled). A student's
@@ -6,8 +6,20 @@
  * lessons are excluded unless flagged chargeable. Extra lessons add on top.
  * Makeup and Extra count toward revenue; Upcoming lessons never do.
  *
- * Revenue never reads a class's CURRENT status — see the note in computeRevenue.
- * Ending or archiving a class changes what it will teach, not what it taught. */
+ * Revenue never reads a class's CURRENT status, and since Sprint 9 never reads a
+ * STUDENT's either — see the notes in computeRevenue. Ending or archiving a class
+ * changes what it will teach, not what it taught, and filing a person away
+ * changes nothing about the months they were taught in.
+ *
+ * REVENUE IS NOT BILLING, and nothing in this file reads a bill. Revenue is money
+ * earned by teaching, derived from lessons and attendance and owned by
+ * `Lesson.date`. What was invoiced and collected is Billing, owned by
+ * `Billing.month`, and it lives in src/lib/billing.ts. The two are allowed to
+ * disagree and neither is computed from the other (PROJECT_RULES, Billing).
+ *
+ * EXACT INTEGER VND. Shares are counted and money is derived from them once, so
+ * `total`, `perClass` and `byType` reconcile exactly instead of each rounding
+ * independently — see `roundDiv` and `allocate` at the foot of this file. */
 
 import type { AllData, } from "./repo";
 import type { RevenueResult, AttendanceStatus } from "./types";
@@ -20,15 +32,36 @@ const inMonth = (iso: string, month: string) => iso.startsWith(month);
 export function computeRevenue(month: string, data: FinanceInput): RevenueResult {
   const { classes, students, lessons, attendance } = data;
   const attByLesson = new Map(attendance.map((a) => [a.lessonId, a.entries]));
-  // NOTE: the same "current status hides past facts" shape as §9.1 survives here
-  // on the STUDENT side — archiving a student removes their contribution from
-  // every past month too. Left exactly as it was: it is a different entity with a
-  // different status model (Trial / Paused as well as Archived) and its own
-  // enrolment questions, and changing it was not part of the class-lifecycle work.
-  // Recorded so it is not mistaken for something this change already covered.
-  const activeStudentIds = new Set(students.filter((s) => s.status !== "Archived").map((s) => s.id));
 
-  const byType = { regular: 0, makeup: 0, extra: 0 };
+  // STUDENT STATUS IS NOT CONSULTED. Membership is "the roster id resolves to a
+  // Student document", full stop.
+  //
+  // This line used to read `students.filter((s) => s.status !== "Archived")`,
+  // which was §9.1's "current status hides past facts" shape surviving on the
+  // STUDENT side: archiving somebody in October erased their contribution from
+  // every month they had already been taught in, including closed ones. Revenue
+  // is a fact about lessons that were delivered, and a person's filing status
+  // today says nothing about whether they were in the room in June.
+  //
+  // It also disagreed with the rest of the app. Attendance does not consult
+  // student status ("an enrolled student is in the room, whatever their status")
+  // and neither does Homework; only Reviews does, deliberately, because a review
+  // is an assessment authored ABOUT somebody. Revenue is not.
+  //
+  // WHAT THIS DOES NOT FIX, deliberately: a DELETED student is still excluded,
+  // because their id no longer resolves, so deletion still erases their history
+  // from every month. That defect is real and is explicitly deferred, not
+  // forgotten — the only membership record is `Klass.studentIds`, which is a
+  // single mutable current-value field with no history, so counting it would
+  // repair deletion while leaving the identical erasure caused by merely
+  // un-enrolling somebody. A correct fix needs enrolment history that does not
+  // exist, and inventing one here would be inventing history (Sprint 9 Gate 2).
+  const enrolledStudentIds = new Set(students.map((s) => s.id));
+
+  // Exact integer-VND accumulation. See `allocate` below: every share is summed
+  // as a rational with a common denominator instead of as a float, so nothing
+  // rounds until a whole class's figure is allocated, once.
+  const byTypeExact = { regular: 0, makeup: 0, extra: 0 };
   const perClass: { classId: string; name: string; amount: number }[] = [];
 
   // EVERY class is visited, whatever its current status.
@@ -55,10 +88,14 @@ export function computeRevenue(month: string, data: FinanceInput): RevenueResult
     const monthLessons = lessons.filter((l) => l.classId === c.id && inMonth(l.date, month));
     const regularScheduled = monthLessons.filter((l) => l.type === "regular").length;
     if (regularScheduled === 0) continue;
-    const perLessonValue = c.fee / regularScheduled;
 
-    let classAmount = 0;
-    const enrolled = c.studentIds.filter((id) => activeStudentIds.has(id));
+    // SHARES, NOT MONEY. Every countable (lesson × present-enough student) pair is
+    // worth exactly `fee / regularScheduled`, the same rational for the whole
+    // class-month, so counting the pairs and multiplying once at the end is the
+    // same arithmetic without the float. `750,000 / 9` repeats for ever in binary;
+    // `750,000 × 27 / 9` does not, because it is never a fraction at all.
+    const shares = { regular: 0, makeup: 0, extra: 0 };
+    const enrolled = c.studentIds.filter((id) => enrolledStudentIds.has(id));
 
     for (const l of monthLessons) {
       const countable =
@@ -66,34 +103,89 @@ export function computeRevenue(month: string, data: FinanceInput): RevenueResult
       if (!countable) continue;
       const entries = attByLesson.get(l.id) || {};
 
-      if (l.type === "regular" || l.type === "makeup") {
-        for (const sid of enrolled) {
-          const st = (entries[sid]?.status as AttendanceStatus | undefined) ?? "Present";
-          if (st === "Absent") continue; // Absent students don't count
-          classAmount += perLessonValue;
-          byType[l.type] += perLessonValue;
-        }
-      } else if (l.type === "extra") {
-        // Extra sessions add on top; one-on-one, so a single enrolled student.
-        for (const sid of enrolled) {
-          const st = (entries[sid]?.status as AttendanceStatus | undefined) ?? "Present";
-          if (st === "Absent") continue;
-          classAmount += perLessonValue;
-          byType.extra += perLessonValue;
-        }
+      // Extra sessions add on top; one-on-one, so a single enrolled student. The
+      // per-share value is the same for all three types — an Extra is an extra
+      // LESSON, not an extra rate — so the branches differ only in which bucket
+      // the share lands in.
+      const bucket = l.type === "regular" || l.type === "makeup" ? l.type : l.type === "extra" ? "extra" : null;
+      if (!bucket) continue;
+
+      for (const sid of enrolled) {
+        const st = (entries[sid]?.status as AttendanceStatus | undefined) ?? "Present";
+        if (st === "Absent") continue; // Absent students don't count
+        shares[bucket]++;
       }
     }
 
-    if (classAmount > 0) perClass.push({ classId: c.id, name: c.name, amount: Math.round(classAmount) });
+    const totalShares = shares.regular + shares.makeup + shares.extra;
+    if (totalShares === 0) continue;
+
+    // ONE ROUNDING, HERE. The class's whole month is `fee × shares ÷ regular`,
+    // rounded to a whole đồng exactly once.
+    const classAmount = roundDiv(c.fee * totalShares, regularScheduled);
+    if (classAmount === 0) continue;
+
+    // …and the class's three type buckets are that same integer split by share
+    // count, so they sum to it EXACTLY rather than each rounding independently.
+    const [r, m, e] = allocate(classAmount, [shares.regular, shares.makeup, shares.extra]);
+    byTypeExact.regular += r;
+    byTypeExact.makeup += m;
+    byTypeExact.extra += e;
+
+    perClass.push({ classId: c.id, name: c.name, amount: classAmount });
   }
 
   perClass.sort((a, b) => b.amount - a.amount);
   const total = perClass.reduce((s, r) => s + r.amount, 0);
-  return {
-    total,
-    perClass,
-    byType: { regular: Math.round(byType.regular), makeup: Math.round(byType.makeup), extra: Math.round(byType.extra) },
-  };
+  // Both invariants hold by construction, not by luck: `total` IS the sum of
+  // `perClass`, and each class's buckets sum to that class's amount, so the three
+  // buckets sum to `total` too. There is a test asserting both, including on a
+  // fixture whose per-lesson value repeats.
+  return { total, perClass, byType: { ...byTypeExact } };
+}
+
+/* ------------------------------------------------- exact integer VND helpers */
+
+/** `Math.round(n / d)` for non-negative integers, without trusting a float.
+ *
+ * `Math.floor(n / d)` is exact for the magnitudes here (a fee times a share count
+ * stays far below 2^53), and the remainder is then integer arithmetic, so the
+ * half-up decision is made on integers rather than on a value that may already
+ * have drifted. Ties round up, matching `Math.round`. */
+function roundDiv(n: number, d: number): number {
+  const q = Math.floor(n / d);
+  const r = n - q * d;
+  return r * 2 >= d ? q + 1 : q;
+}
+
+/** Split `total` across `weights` so the parts are integers summing EXACTLY to
+ * `total` — the largest-remainder method.
+ *
+ * Each part gets its floor, and the đồng left over by flooring go one each to the
+ * parts with the largest fractional remainders. That is the allocation with the
+ * smallest total deviation, and it is deterministic: ties are broken by position,
+ * so the same input always produces the same split and a test can assert the
+ * exact numbers rather than their sum alone.
+ *
+ * A zero weight never receives anything, including in the leftover pass — a
+ * lesson type with no shares earned nothing, and handing it a đồng to make the
+ * arithmetic tidy would be inventing revenue. */
+function allocate(total: number, weights: readonly number[]): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum === 0) return weights.map(() => 0);
+
+  const parts = weights.map((w) => Math.floor((total * w) / sum));
+  let left = total - parts.reduce((s, p) => s + p, 0);
+
+  const order = weights
+    .map((w, i) => ({ i, remainder: total * w - Math.floor((total * w) / sum) * sum, w }))
+    .filter((x) => x.w > 0)
+    .sort((a, b) => b.remainder - a.remainder || a.i - b.i);
+
+  for (let k = 0; left > 0 && order.length > 0; k++, left--) {
+    parts[order[k % order.length].i]++;
+  }
+  return parts;
 }
 
 /** Teaching hours from completed lessons in a month. */
