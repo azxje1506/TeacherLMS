@@ -4,12 +4,19 @@
  * button, header (colour bar, name + status, type · level · fee · classroom, and
  * the Edit / Archive / Restore / Delete actions) and the two-column body.
  *
- * Only Class-owned data is implemented this sprint — the header, the info line,
- * the Weekly schedule card and the Teacher notes card. Enrolled students,
- * Upcoming lessons and Revenue read from modules later in the priority order
- * (Enrolment, Lessons/Attendance, Finance), so they render the comp's own
- * placeholder state and are NOT wired to any data. The "Assign students" and
- * "Extra lesson" actions belong to those sprints and stay inert until then. */
+ * Class-owned data — the header, the info line, the Weekly schedule card and the
+ * Teacher notes card — has been implemented since Sprint 4.
+ *
+ * THE REVENUE CARD IS LIVE as of Sprint 9 Gate 5, and it is this page's whole
+ * involvement with Finance: it reads one month through `/api/finance` and
+ * renders two figures from it. It holds no Finance state, computes no Finance
+ * value and can write nothing — Finance's mutation endpoint exists and no screen
+ * in the application calls it yet.
+ *
+ * Enrolled students and Upcoming lessons still read from modules later in the
+ * priority order, so they keep the comp's own placeholder state and are NOT
+ * wired to any data. The "Assign students" and "Extra lesson" actions belong to
+ * those sprints and stay inert until then. */
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -28,7 +35,9 @@ import {
   deleteClass, fetchClass, saveClassNotes, classKeys, updateClass, setClassStatus,
   ClassConflictError,
 } from "@/components/classes/api";
+import { fetchFinanceMonth, financeKeys } from "@/components/finance/api";
 import { CURRENT_MONTH } from "@/lib/constants";
+import { EM } from "@/lib/format";
 import type { ClassInput } from "@/lib/schemas";
 import type { ClassStatus } from "@/lib/types";
 
@@ -55,6 +64,18 @@ export default function ClassDetailPage() {
     queryKey: classKeys.detail(id),
     queryFn: () => fetchClass(id),
   });
+
+  /* The Revenue card's data. One read of the application month, through
+   * Finance's own read-only endpoint — never `/api/dashboard`, whose GET
+   * advances the lesson lifecycle and therefore writes. The query key is the
+   * Finance month's, so the Finance screen and this card share one cache entry
+   * rather than fetching the same month twice. */
+  const { data: finance } = useQuery({
+    queryKey: financeKeys.month(CURRENT_MONTH),
+    queryFn: () => fetchFinanceMonth(CURRENT_MONTH),
+  });
+  const classRevenue = finance?.revenue.perClass.find((r) => r.classId === id)?.amount ?? 0;
+  const classBilling = finance?.billing.perClass.find((b) => b.classId === id);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: classKeys.all });
@@ -229,22 +250,46 @@ export default function ClassDetailPage() {
 
         {/* Right column */}
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--gap)", minWidth: 0 }}>
-          {/* Revenue — Finance module: placeholder only, nothing computed. */}
+          {/* Revenue — live as of Sprint 9 Gate 5.
+            *
+            * TWO KINDS OF MONEY, LABELLED SEPARATELY, exactly as the Finance
+            * screen keeps them apart. The headline is LESSON-DERIVED revenue for
+            * this class this month (`revenue.perClass`), which is what the card's
+            * title and its "No revenue recorded this month yet." empty state
+            * have always meant. The two counts beneath are BILL-DERIVED
+            * (`billing.perClass[].counts`) — how many of this class's students
+            * have settled their tuition, which is a different question about the
+            * same month. No third formula is invented for either.
+            *
+            * IT READS `/api/finance`, NOT `/api/dashboard`. Dashboard's GET runs
+            * the lesson lifecycle and therefore writes; opening a class page must
+            * not. Fetching a whole month to draw one card is heavier than this
+            * card strictly needs and that is recorded as a known cost — the
+            * alternative was a second Finance endpoint or a second revenue
+            * formula, and both are worse than one extra read.
+            *
+            * Attendance and Upcoming stay as the comp's em dashes: they belong to
+            * the Attendance and Lessons modules, and this card is not the place
+            * to invent either. */}
           <div style={{ ...cardStyle, padding: "16px 18px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>{t("Revenue")}</div>
               <span style={{ fontSize: 11.5, color: "var(--muted-2)" }}>{fmt.monthLabel(CURRENT_MONTH)}</span>
             </div>
-            <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", fontFamily: "'Geist Mono',monospace" }}>{fmt.vnd(0)}</div>
+            <div style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", fontFamily: "'Geist Mono',monospace" }}>
+              {fmt.vnd(classRevenue)}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 14 }}>
-              <RevStat label={t("Students paid")} value="—" />
-              <RevStat label={t("Unpaid")} value="—" />
-              <RevStat label={t("Attendance")} value="—" />
-              <RevStat label={t("Upcoming")} value="—" />
+              <RevStat label={t("Students paid")} value={classBilling ? String(classBilling.counts.paid) : EM} />
+              <RevStat label={t("Unpaid")} value={classBilling ? String(classBilling.counts.unpaid) : EM} />
+              <RevStat label={t("Attendance")} value={EM} />
+              <RevStat label={t("Upcoming")} value={EM} />
             </div>
-            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-2)", fontSize: 12, color: "var(--muted-2)" }}>
-              {t("No revenue recorded this month yet.")}
-            </div>
+            {classRevenue === 0 && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--border-2)", fontSize: 12, color: "var(--muted-2)" }}>
+                {t("No revenue recorded this month yet.")}
+              </div>
+            )}
           </div>
 
           {/* Weekly schedule — Class-owned, real. */}
