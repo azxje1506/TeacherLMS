@@ -47,10 +47,37 @@ import { useState } from "react";
 import { useSettings } from "@/lib/settings-context";
 import type { FinanceMonthPayload } from "@/lib/finance-service";
 import {
-  INSUFFICIENT_DATA, NO_BILLING_BODY, NO_BILLING_TITLE, STATUS_LABEL, barWidth,
-  billingState, financeNoteStyle, historicalNote, money, partialNote, percent,
-  rankByCollected, sortByOutstanding, statusBadgeStyle, statusColor,
+  NOT_DETERMINED, NOT_RECORDED, NO_BILLING_BODY, NO_BILLING_TITLE, RATE_BASIS,
+  STATUS_LABEL, UNKNOWN_SEGMENT, barWidth, billingState, financeNoteStyle,
+  historicalNote, historicalPartialNote, money, partialNote, rankByCollected,
+  rateText, sortByOutstanding, statusBadgeStyle, statusColor,
 } from "./finance-ui";
+
+/** Every place a scope's incomplete amounts have to be explained draws the same
+ * pair of sentences from the same two counts: the records a teacher could still
+ * settle, and the ones that are closed history. Rendered as captions, never as
+ * warnings, and never at zero. */
+function IncompleteNotes({ scope, style }: {
+  scope: { unknownLiveAmountBills: number; unknownHistoricalAmountBills: number };
+  style?: React.CSSProperties;
+}) {
+  const { t } = useSettings();
+  if (scope.unknownLiveAmountBills === 0 && scope.unknownHistoricalAmountBills === 0) return null;
+  return (
+    <>
+      {scope.unknownLiveAmountBills > 0 && (
+        <div data-testid="fin-partial-note" style={{ ...financeNoteStyle, ...style }}>
+          {partialNote(scope.unknownLiveAmountBills, t)}
+        </div>
+      )}
+      {scope.unknownHistoricalAmountBills > 0 && (
+        <div data-testid="fin-historical-partial-note" style={{ ...financeNoteStyle, ...style }}>
+          {historicalPartialNote(scope.unknownHistoricalAmountBills, t)}
+        </div>
+      )}
+    </>
+  );
+}
 
 const cardStyle: React.CSSProperties = {
   background: "var(--card)", border: "1px solid var(--border)",
@@ -74,9 +101,13 @@ const kpiValueStyle = (color?: string): React.CSSProperties => ({
   ...(color ? { color } : {}),
 });
 
-function Kpi({ label, icon, iconFg, iconBg, value, valueColor, caption }: {
+/* The caption keeps its designed content and `note` is an extra muted line
+ * under it, rather than the caption being replaced when amounts are incomplete.
+ * Both facts matter and they are different: the caption says how many bills are
+ * settled, the note says how many amounts were never written down. */
+function Kpi({ label, icon, iconFg, iconBg, value, valueColor, caption, note }: {
   label: string; icon: React.ReactNode; iconFg: string; iconBg: string;
-  value: string; valueColor?: string; caption: string;
+  value: string; valueColor?: string; caption: string; note?: React.ReactNode;
 }) {
   return (
     <div style={{ ...cardStyle, padding: "18px 16px", minWidth: 0 }}>
@@ -86,6 +117,7 @@ function Kpi({ label, icon, iconFg, iconBg, value, valueColor, caption }: {
       </div>
       <div style={kpiValueStyle(valueColor)}>{value}</div>
       <div style={{ fontSize: 12, color: "var(--muted-2)", marginTop: 5 }}>{caption}</div>
+      {note}
     </div>
   );
 }
@@ -102,11 +134,12 @@ const iconClock = (
 
 export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
   const { t, fmt } = useSettings();
-  /* NOT the app-wide `No data`. Every unknown on this tab is one specific
-   * thing — a legacy partial whose amount was never recorded — and saying which
-   * is the whole point of the Gate 6 fix. Other modules keep `No data` for
-   * their own absences; Finance does not borrow those two words any more. */
-  const unknownLabel = t(INSUFFICIENT_DATA);
+  /* THE ONE PLACE THIS TAB STILL HAS AN UNKNOWN. No aggregate uses one: a month
+   * or a class always reports the money it can prove. This is for a single
+   * bill's single field — an outstanding row whose amount was never recorded —
+   * where "so this cannot be worked out" is genuinely the whole truth. The
+   * per-student grid needs the other half of the pair and declares it itself. */
+  const notDetermined = t(NOT_DETERMINED);
   const monthLabel = fmt.monthLabel(data.month);
   const { billing, revenue } = data;
 
@@ -118,10 +151,12 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
    * month that went perfectly, when nothing was ever billed. So the billing
    * half of this tab becomes one explicit empty state that says which.
    *
-   * The lesson-revenue tile survives it, unchanged. Lessons were taught in
-   * months where no bill was raised — that is exactly the Billing / Revenue
-   * separation this screen exists to keep — so hiding a true figure to tidy up
-   * a different domain's emptiness would be the same mistake in reverse. */
+   * AND NOTHING ELSE IS ON IT. An earlier pass left the dashed lesson-revenue
+   * tile below this card, reasoning that lessons were taught even where no bill
+   * was raised. On a screen with nothing else on it that tile is not context,
+   * it is a lone unexplained figure under an empty state — the separation it
+   * exists to express only reads when there is billing beside it to be separate
+   * FROM. Lesson revenue keeps its whole tab, one click away. */
   if (billingState(billing) === "empty") {
     return (
       <>
@@ -134,16 +169,21 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
             {t(NO_BILLING_BODY)}
           </p>
         </div>
-        <LessonRevenueTile total={revenue.total} />
       </>
     );
   }
 
-  const collectedW = barWidth(billing.collected, billing.billed);
-  const outstandingW = barWidth(billing.outstanding, billing.billed);
-  const proportionKnown = collectedW !== null && outstandingW !== null;
+  /* THREE SEGMENTS, AND THEY ADD UP. `knownCollected + knownOutstanding +
+   * unknownAmount === billed` holds by construction in `totalsFor`, so the bar
+   * is full at every width and no segment has to be stretched to close a gap.
+   * The third one is the honest part: it is the slice of the month whose split
+   * nobody recorded, drawn in a neutral tone because it is a fact about old
+   * bookkeeping and not a problem to fix. */
+  const collectedW = barWidth(billing.knownCollected, billing.billed);
+  const outstandingW = barWidth(billing.knownOutstanding, billing.billed);
+  const unknownW = barWidth(billing.unknownAmount, billing.billed);
 
-  const { ranked, unknown } = rankByCollected(billing.perClass);
+  const ranked = rankByCollected(billing.perClass);
   const byOutstanding = sortByOutstanding(billing.perClass);
 
   return (
@@ -159,34 +199,30 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
           value={fmt.vnd(billing.billed)}
           caption={`${t("Total billable")} · ${monthLabel}`}
         />
-        {/* EXPECTED STAYS EXACT, and that is what makes the difference legible:
-          * Σ fee needs no partial amount, so this card is a real figure on a
-          * month where the other two cannot be computed at all.
+        {/* THE MONEY THAT IS KNOWN IS ALWAYS SHOWN. These two used to be
+          * replaced wholesale the moment one bill in the month lacked a
+          * recorded amount — 8,550,000đ of collected tuition hidden behind one
+          * 700,000đ record. They now show what the month can prove, and say
+          * underneath how much of it is still unaccounted for.
           *
-          * The caption is where the reason goes. It is the card's own third
-          * line, so nothing is restructured, and the counts it displaces are
-          * still on screen in the three tiles below. */}
+          * "x of y bills paid" counts bills SETTLED IN FULL. A partial that
+          * moved real money does not raise x; its money is already inside the
+          * figure above. The two are different statements and both are true. */}
         <Kpi
           label={t("Collected revenue")}
           icon={iconCheck} iconFg="var(--green)" iconBg="var(--green-soft)"
-          value={money(billing.collected, fmt, unknownLabel)}
+          value={fmt.vnd(billing.knownCollected)}
           valueColor="var(--green)"
-          caption={
-            billing.collected === null
-              ? partialNote(billing.unknownAmountBills, t)
-              : `${billing.counts.paid} ${t("of")} ${billing.counts.total} ${t("bills paid")}`
-          }
+          caption={`${billing.counts.paid} ${t("of")} ${billing.counts.total} ${t("bills paid")}`}
+          note={<IncompleteNotes scope={billing} style={{ marginTop: 4 }} />}
         />
         <Kpi
           label={t("Outstanding balance")}
           icon={iconClock} iconFg="var(--accent)" iconBg="var(--accent-soft)"
-          value={money(billing.outstanding, fmt, unknownLabel)}
+          value={fmt.vnd(billing.knownOutstanding)}
           valueColor="var(--accent)"
-          caption={
-            billing.outstanding === null
-              ? partialNote(billing.unknownAmountBills, t)
-              : t("Unpaid + partial still due")
-          }
+          caption={t("Unpaid + partial still due")}
+          note={<IncompleteNotes scope={billing} style={{ marginTop: 4 }} />}
         />
       </div>
 
@@ -201,45 +237,60 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
           </div>
         </div>
 
-        {/* THE BAR IS NOT DRAWN AT ZERO WHEN THE RATIO IS UNKNOWN. A bar at 0%
-          * would claim nothing was collected; an unknown proportion gets a
-          * neutral track and a sentence saying why. */}
+        {/* THE BAR IS ALWAYS DRAWN, AND IT ALWAYS ADDS UP. It used to vanish
+          * entirely the moment one amount was missing, leaving a teacher with a
+          * blank track where four fifths of a real proportion could have been.
+          * Now the two known slices are drawn at their true widths and the rest
+          * is a third, neutral segment: the part of the billed total whose split
+          * nobody recorded.
+          *
+          * THAT SEGMENT IS NOT MONEY NOT COLLECTED. It is the whole fee of a
+          * bill we know was partly paid and cannot split, so it is neither
+          * green nor accent — a muted band, because it is a fact about old
+          * bookkeeping rather than a debt or a warning. */}
         <div style={{ display: "flex", height: 16, borderRadius: 99, overflow: "hidden", background: "var(--card-2)", marginBottom: 9 }}>
-          {proportionKnown && (
-            <>
-              <div style={{ height: "100%", background: "var(--green)", width: collectedW! }} />
-              <div style={{ height: "100%", background: "var(--accent)", width: outstandingW! }} />
-            </>
-          )}
+          {collectedW && <div style={{ height: "100%", background: "var(--green)", width: collectedW }} />}
+          {outstandingW && <div style={{ height: "100%", background: "var(--accent)", width: outstandingW }} />}
+          {unknownW && <div data-testid="fin-bar-unknown" style={{ height: "100%", background: "var(--muted-2)", opacity: .35, width: unknownW }} />}
         </div>
-        {/* The bar is not drawn, so this line carries the whole answer: WHAT is
-          * unknown and WHY. It used to read "No data — N bills have no recorded
-          * amount", which named our storage rather than the teacher's books and
-          * borrowed the two words the rest of the app uses for every unrelated
-          * absence. */}
-        {!proportionKnown && (
-          <div data-testid="fin-bar-unknown" style={{ fontSize: 12, color: "var(--muted-2)", marginBottom: 9 }}>
-            {unknownLabel} — {partialNote(billing.unknownAmountBills, t)}
-          </div>
-        )}
 
-        <div className="fin-summary-legend" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <div className="fin-summary-legend" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 18 }}>
+          <div className="fin-metric" style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--green)" }} />
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-              {t("Collected")} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{money(billing.collected, fmt, unknownLabel)}</b>
+              {t("Collected")} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{fmt.vnd(billing.knownCollected)}</b>
             </span>
           </div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            <b style={{ color: "var(--fg)" }}>{percent(billing.collectionRate, unknownLabel)}</b> {t("of expected collected")}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div className="fin-metric" style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--accent)" }} />
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-              {t("Outstanding")} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{money(billing.outstanding, fmt, unknownLabel)}</b>
+              {t("Outstanding")} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{fmt.vnd(billing.knownOutstanding)}</b>
             </span>
           </div>
+          {/* The third segment earns a legend entry only when it exists. */}
+          {!billing.amountsComplete && (
+            <div className="fin-metric" data-testid="fin-legend-unknown" style={{ display: "flex", alignItems: "center", gap: 7 }}>
+              <span style={{ minWidth: 9, width: 9, height: 9, borderRadius: 3, background: "var(--muted-2)", opacity: .35 }} />
+              <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                {t(UNKNOWN_SEGMENT)} <b style={{ color: "var(--fg)", fontFamily: "'Geist Mono',monospace" }}>{fmt.vnd(billing.unknownAmount)}</b>
+              </span>
+            </div>
+          )}
+          {/* A RATE THAT IS A FLOOR SAYS SO IN THE VALUE, not in a footnote. An
+            * exact-looking percentage that is really a lower bound is the same
+            * class of mistake as a total that hides what it left out. */}
+          <div className="fin-metric" style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            <b style={{ color: "var(--fg)" }} data-testid="fin-rate">
+              {rateText(billing.collectionRate, billing.amountsComplete, t, t(NOT_DETERMINED))}
+            </b> {t("of expected collected")}
+            {!billing.amountsComplete && (
+              <div data-testid="fin-rate-basis" style={{ ...financeNoteStyle, marginTop: 2 }}>{t(RATE_BASIS)}</div>
+            )}
+          </div>
         </div>
+
+        {/* Why the month is incomplete, once, under the figures it qualifies. */}
+        <IncompleteNotes scope={billing} style={{ marginBottom: 16 }} />
 
         {/* THE ONE PLACE THE MONTH'S GAP IS EXPLAINED. Everything above this line
           * counts every bill the month holds; every list below names only
@@ -318,7 +369,7 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
                     )}
                   </div>
                   <div className="fin-out-amount" style={{ textAlign: "right", flex: "none", fontSize: 13, fontWeight: 600, fontFamily: "'Geist Mono',monospace", color: "var(--accent)" }}>
-                    {money(s.amount, fmt, unknownLabel)}
+                    {money(s.amount, fmt, notDetermined)}
                   </div>
                 </div>
               ))}
@@ -332,7 +383,7 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 6 }}>
             {t("Highest-value classes by collected revenue")}
           </div>
-          {ranked.length === 0 && unknown.length === 0 && (
+          {ranked.length === 0 && (
             <div style={{ padding: "26px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", borderTop: "1px solid var(--border-2)" }}>
               {t("No billing records for")} {monthLabel}.
             </div>
@@ -354,31 +405,28 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
               <div className="fin-tpc-main" style={{ minWidth: 0, flex: 1 }}>
                 <div className="fin-tpc-name" style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.className}</div>
                 <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                  {c.counts.total} {t("students")} · {percent(c.collectionRate, unknownLabel)} {t("collected")}
+                  {c.counts.total} {t("students")} · {rateText(c.collectionRate, c.amountsComplete, t, t(NOT_DETERMINED))} {t("collected")}
                 </div>
               </div>
+              {/* A CLASS WITH AN INCOMPLETE AMOUNT IS RANKED, NOT EXILED. It
+                * used to be dropped out of the ranking entirely and listed
+                * below it with `No data`, which said a class that had provably
+                * collected 700,000đ had no figure at all. It is now placed on
+                * the money it can prove — a FLOOR — and the row says so rather
+                * than presenting a floor as a total. */}
               <div className="fin-tpc-amount" style={{ fontSize: 12.5, fontWeight: 600, fontFamily: "'Geist Mono',monospace", color: "var(--green)", flex: "none" }}>
                 <span className="fin-tpc-label" style={{ display: "none" }}>{t("Collected")}</span>
-                {money(c.collected, fmt, unknownLabel)}
+                {!c.amountsComplete && <span data-testid="fin-at-least" style={{ fontWeight: 500, color: "var(--muted-2)" }}>≥ </span>}
+                {fmt.vnd(c.knownCollected)}
               </div>
             </div>
           ))}
-          {/* A class whose collected value is unknown is NOT ranked and NOT given
-            * a zero. It is listed after the ranking, saying so. */}
-          {unknown.map((c) => (
-            <div key={c.classId} data-testid="fin-unrankable-class" className="fin-tpc-row" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 0", borderTop: "1px solid var(--border-2)" }}>
-              <span style={{ minWidth: 26, width: 26, height: 26, borderRadius: 8, background: "var(--card-2)", color: "var(--muted-2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5 }}>–</span>
-              <span style={{ minWidth: 8, width: 8, height: 8, borderRadius: "50%", background: c.classColor }} />
-              <div className="fin-tpc-main" style={{ minWidth: 0, flex: 1 }}>
-                <div className="fin-tpc-name" style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.className}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>{c.counts.total} {t("students")}</div>
-              </div>
-              <div className="fin-tpc-amount" style={{ fontSize: 12.5, fontWeight: 600, fontFamily: "'Geist Mono',monospace", color: "var(--muted-2)", flex: "none" }}>
-                <span className="fin-tpc-label" style={{ display: "none" }}>{t("Collected")}</span>
-                {unknownLabel}
-              </div>
-            </div>
-          ))}
+          {/* THERE IS NO SECOND LIST ANY MORE. A class used to fall out of the
+            * ranking entirely if any of its bills lacked a recorded amount, and
+            * was listed under it with a dash for a rank. Every class now has a
+            * collected figure it can prove, so every class is placed; the ones
+            * whose figure is a floor are marked in the ranking rather than
+            * removed from it. */}
         </div>
       </div>
 
@@ -447,21 +495,27 @@ export function FinanceOverview({ data }: { data: FinanceMonthPayload }) {
                     {unpaidW && <span style={{ height: "100%", background: "var(--accent)", width: unpaidW }} />}
                   </span>
                 </span>
+                {/* Both figures are the class's own confirmed money, and both
+                  * carry the same floor marker when one of its bills has no
+                  * recorded amount — the class's collected is at least this and
+                  * its outstanding is at least this, and neither is a total. */}
                 <span className="fin-class-amt fin-class-collected" style={{ textAlign: "right", minWidth: 88 }}>
                   <span style={{ display: "block", fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Collected")}</span>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 600, fontFamily: "'Geist Mono',monospace", marginTop: 3, color: "var(--green)" }}>
-                    {money(c.collected, fmt, unknownLabel)}
+                    {!c.amountsComplete && <span style={{ fontWeight: 500, color: "var(--muted-2)" }}>≥ </span>}
+                    {fmt.vnd(c.knownCollected)}
                   </span>
                 </span>
                 <span className="fin-class-amt fin-class-outstanding" style={{ textAlign: "right", minWidth: 88 }}>
                   <span style={{ display: "block", fontSize: 10, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{t("Outstanding")}</span>
                   <span style={{ display: "block", fontSize: 13, fontWeight: 600, fontFamily: "'Geist Mono',monospace", marginTop: 3, color: "var(--accent)" }}>
-                    {money(c.outstanding, fmt, unknownLabel)}
+                    {!c.amountsComplete && <span style={{ fontWeight: 500, color: "var(--muted-2)" }}>≥ </span>}
+                    {fmt.vnd(c.knownOutstanding)}
                   </span>
                 </span>
               </button>
 
-              {open && <ClassStudentGrid rows={c.rows} hidden={c.hiddenRecords} unknownAmountBills={c.unknownAmountBills} />}
+              {open && <ClassStudentGrid rows={c.rows} hidden={c.hiddenRecords} scope={c} />}
             </div>
           );
         })}
@@ -515,13 +569,14 @@ function Tile({ dot, label, value }: { dot: string; label: string; value: string
  * `min-width` container the comp itself uses for its Payments table, so the
  * scrolling is local to the grid and the page never exceeds the viewport. The
  * layout, the column set and the order are unchanged. */
-function ClassStudentGrid({ rows, hidden, unknownAmountBills }: {
+function ClassStudentGrid({ rows, hidden, scope }: {
   rows: FinanceMonthPayload["billing"]["perClass"][number]["rows"];
   hidden: number;
-  unknownAmountBills: number;
+  scope: { unknownLiveAmountBills: number; unknownHistoricalAmountBills: number };
 }) {
   const { t, fmt } = useSettings();
-  const unknownLabel = t(INSUFFICIENT_DATA);
+  const notRecorded = t(NOT_RECORDED);
+  const notDetermined = t(NOT_DETERMINED);
   const cols = "minmax(0,1.5fr) 1fr 1fr 1fr 1fr 1fr";
 
   return (
@@ -545,11 +600,15 @@ function ClassStudentGrid({ rows, hidden, unknownAmountBills }: {
                 )}
               </span>
               <span style={{ fontSize: 12, fontFamily: "'Geist Mono',monospace", textAlign: "right" }}>{fmt.vnd(r.fee)}</span>
-              <span style={{ fontSize: 12, fontFamily: "'Geist Mono',monospace", textAlign: "right", color: "var(--green)" }}>
-                {money(r.collected, fmt, unknownLabel)}
+              {/* ONE BILL, TWO DIFFERENT MISSING FACTS. Nobody wrote down what
+                * was paid, and so what remains cannot be worked out. A single
+                * shared label would have flattened a cause into a consequence;
+                * these say which is which, and neither is 0đ or half the fee. */}
+              <span style={{ fontSize: 12, fontFamily: "'Geist Mono',monospace", textAlign: "right", color: r.collected === null ? "var(--muted-2)" : "var(--green)" }}>
+                {money(r.collected, fmt, notRecorded)}
               </span>
-              <span style={{ fontSize: 12, fontFamily: "'Geist Mono',monospace", textAlign: "right", color: "var(--accent)" }}>
-                {money(r.outstanding, fmt, unknownLabel)}
+              <span style={{ fontSize: 12, fontFamily: "'Geist Mono',monospace", textAlign: "right", color: r.outstanding === null ? "var(--muted-2)" : "var(--accent)" }}>
+                {money(r.outstanding, fmt, notDetermined)}
               </span>
               <span><span style={statusBadgeStyle(r.status)}>{t(STATUS_LABEL[r.status] ?? r.status)}</span></span>
               <span style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>
@@ -576,15 +635,12 @@ function ClassStudentGrid({ rows, hidden, unknownAmountBills }: {
         </div>
       )}
 
-      {/* AND WHY THIS CLASS'S OWN TOTALS SAY `Insufficient data`. Two different
-        * gaps can affect one class — records with no student, and records with
-        * no recorded amount — and they get two sentences because they are two
-        * facts. Both are muted, inert captions; neither is a warning. */}
-      {unknownAmountBills > 0 && (
-        <div data-testid="fin-partial-note" style={{ ...financeNoteStyle, padding: "8px 2px 0" }}>
-          {partialNote(unknownAmountBills, t)}
-        </div>
-      )}
+      {/* AND WHY THIS CLASS'S OWN FIGURES ARE FLOORS. Two different gaps can
+        * affect one class — records with no student, and records with no
+        * recorded amount — and the second splits again by whether the teacher
+        * could still go and settle it. Each is its own muted, inert caption;
+        * none is a warning. */}
+      <IncompleteNotes scope={scope} style={{ padding: "8px 2px 0" }} />
     </div>
   );
 }

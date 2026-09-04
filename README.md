@@ -254,14 +254,29 @@ handler, no cursor, no underline, nothing to press. Outstanding students, the
 Payments table and the Top-performing ranking disclose nothing at all, because
 they are lists a teacher acts on.
 
-**An unknown amount is never drawn as `0đ`.** Nine legacy `Partially Paid` bills
-were recorded without an amount and none is recoverable from their notes, so
-their collected value — and any total containing one — renders `No data`, and
-the collection bar shows a neutral unknown state rather than a proportion it
-cannot compute. **No 50% rule, and no backfill.** A class whose collected total
-is unknown is likewise **not ranked** and **not given a zero**: it is listed
-after the ranking, saying `No data`. Students with no linked Parent are marked
-`No linked parent` wherever Finance names someone who owes money.
+**Finance shows the money it can prove, and states the rest separately.** Nine
+legacy `Partially Paid` bills were recorded without an amount and none is
+recoverable from their notes, so their own Paid and Remaining cells read
+`Not recorded` and `Not determined` — two different facts, a cause and its
+consequence, and **never 0đ, never half the fee, never a backfill**.
+
+An aggregate is never withheld because of them. A month reports
+`knownCollected` and `knownOutstanding`, and
+
+    knownCollected + knownOutstanding + unknownAmount === billed
+
+holds by construction, where `unknownAmount` is the *fee* of every bill whose
+split nobody recorded — not a payment and not a debt. The collection bar draws
+all three, the third in a neutral tone, so the picture always adds up. Where
+amounts are incomplete the collection rate is shown as **"At least X%"** rather
+than as an exact figure, with "Based on recorded payment amounts." beneath it,
+and a muted caption says how many records are responsible — separately for the
+ones a teacher could still settle and the ones whose student no longer exists.
+**Expected revenue stays exact throughout**, because Σ fee needs no partial
+amount. Every class is ranked on its confirmed collected total, marked `≥` when
+that total is a floor rather than removed from the ranking. Students with no
+linked Parent are marked `No linked parent` wherever Finance names someone who
+owes money.
 
 Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375 —
 against the **Preview** deployment at `206084f`. Production serves that same
@@ -302,7 +317,18 @@ production data or a missing design, not an open defect:
   rosters are current-only and no enrolment history exists to derive it from.
 - **Six `paidDate` values after the app clock** are preserved as found. New
   writes reject a future date; the existing six are history.
-- **Nine legacy `Partially Paid` bills without `paidAmount`** stay `No data`.
+- **Nine legacy `Partially Paid` bills without `paidAmount`** are preserved and
+  shown as incomplete rather than repaired. Every *new* partial must record its
+  amount, so they are the only incomplete records there will ever be.
+- **Waived or exempt tuition is not modelled**, and `Unpaid` is deliberately not
+  overloaded to stand in for it: a bill nobody will ever collect would otherwise
+  sit in the outstanding total forever with nothing to distinguish it. A waiver
+  is also never inferred from a missing Student — a deleted student record
+  proves only that the record is gone. A future sprint gives this its own field
+  (e.g. `billingApplicability: "Billable" | "Waived"`) with its own write rules.
+- **The payment form** is deferred to a design, but its contract is written down
+  in `src/lib/billing.ts`: `Unpaid` and `Paid` take no amount input at all,
+  `Partially Paid` requires one beside a read-only remaining figure.
 - **`Student.balance`** remains inconsistent with Billing on the Students
   surface, and was not touched.
 - **The Billing `(studentId, classId, month)` natural key** is documented and

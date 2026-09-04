@@ -167,18 +167,33 @@ export interface BillingStatusCounts {
  * month, a class within a month, one student's history. This module does not
  * decide what "relevant" means and never filters. */
 export interface BillingTotals {
-  /** Σ fee. Always known. */
+  /** Σ fee. Always known: every bill has a fee, recorded or not. */
   billed: number;
-  /** Σ collected, or `null` if ANY bill in the scope has an unknown amount. */
-  collected: number | null;
-  /** `billed - collected`, or `null` when collected is. */
-  outstanding: number | null;
-  /** `collected / billed` as a whole percent; `null` when collected is unknown
-   * OR when `billed` is 0 — an empty denominator is `No data`, never `0%`. */
-  collectionRate: number | null;
-  /** Bills whose collected amount could not be determined. `0` whenever
-   * `collected` is a number, and the count a screen names when it is not. */
+  /** Σ of the collected amounts that ARE known. Never null, never a guess: a
+   * bill whose amount was never recorded contributes nothing to it. */
+  knownCollected: number;
+  /** Σ of the outstanding amounts that ARE known. Same rule, same reason. */
+  knownOutstanding: number;
+  /** `billed - knownCollected - knownOutstanding`: the slice of the billed
+   * total whose split between collected and outstanding nobody can state.
+   *
+   * IT IS NOT A PAYMENT AMOUNT. It is the FEE of every bill with an unrecorded
+   * amount — the money we know was asked for and cannot say the fate of. Zero
+   * whenever `amountsComplete`. */
+  unknownAmount: number;
+  /** How many bills produced that gap. */
   unknownAmountBills: number;
+  /** `unknownAmountBills === 0`. When true, and only then,
+   * `knownCollected + knownOutstanding === billed`. */
+  amountsComplete: boolean;
+  /** `knownCollected / billed` as a whole percent, or `null` when `billed` is
+   * 0 — an empty denominator has no share, and 0% would be a claim.
+   *
+   * IT IS A FLOOR, NOT A FIGURE, whenever `amountsComplete` is false: the real
+   * rate is this or higher, because every unrecorded partial collected
+   * SOMETHING. A caller that prints it as an exact percentage is lying, which
+   * is why the flag sits beside it in the same object. */
+  collectionRate: number | null;
   counts: BillingStatusCounts;
 }
 
@@ -191,38 +206,69 @@ export interface BillingTotals {
  * to have made before calling, and the person-shaped lists are the only place
  * that decision belongs (see `partitionByStudentResolution`).
  *
- * ONE UNKNOWN POISONS THE TOTAL, on purpose. A scope containing a partial with
- * no recorded amount has an unknowable collected figure, and reporting the sum
- * of the rest as though it were the whole would understate collection by exactly
- * the amount nobody recorded. `unknownAmountBills` says how many records did it.
+ * ONE UNKNOWN NO LONGER POISONS THE TOTAL. It used to: a scope holding a single
+ * partial with no recorded amount reported `collected: null`, and the screen
+ * said so for the whole month. That was defensible arithmetic and unusable
+ * information — production has one such record in most months, so a teacher who
+ * had collected 8,550,000đ was told the month could not be counted, and the
+ * 12,400,000đ nobody disputes disappeared behind one 700,000đ record.
+ *
+ * WHAT REPLACED IT. The scope reports the money it can actually stand behind —
+ * `knownCollected` and `knownOutstanding` — and reports the gap separately
+ * rather than folding it into either. Nothing is inferred: an unrecorded
+ * partial contributes its FEE to `billed` (it was genuinely asked for) and
+ * contributes to NEITHER known bucket, so
+ *
+ *     knownCollected + knownOutstanding + unknownAmount === billed
+ *
+ * holds always, and `unknownAmount` is exactly the part of the month whose
+ * fate nobody wrote down. The identity is the honesty: a screen cannot show
+ * these three and accidentally imply the month adds up to something it does not.
+ *
+ * `unknownAmount` IS NOT A PAYMENT. It is not "the money not collected" and it
+ * is not "what the partial paid" — it is the whole fee of a bill we know was
+ * partly paid and cannot split. Reading it as either is the mistake this shape
+ * exists to prevent.
  *
  * INTEGER ARITHMETIC THROUGHOUT. Every input is integer VND and only addition
  * and subtraction are used, so no rounding happens and none is needed. The one
  * division is the rate, which is rounded once, at the end, to a whole percent. */
 export function totalsFor(bills: readonly BillLike[]): BillingTotals {
   let billed = 0;
-  let collectedKnown = 0;
+  let knownCollected = 0;
+  let knownOutstanding = 0;
+  let unknownAmount = 0;
   let unknownAmountBills = 0;
   const counts: BillingStatusCounts = { paid: 0, partiallyPaid: 0, unpaid: 0, total: 0 };
 
   for (const bill of bills) {
     billed += bill.fee;
     counts.total++;
+    /* `paid` counts bills SETTLED IN FULL and nothing else. A partial that
+     * moved real money still does not make this number bigger — the caption it
+     * feeds says "x of y bills paid", which is a statement about bills, while
+     * its money is already in `knownCollected`. */
     if (bill.status === "Paid") counts.paid++;
     else if (bill.status === "Partially Paid") counts.partiallyPaid++;
     else if (bill.status === "Unpaid") counts.unpaid++;
 
     const collected = collectedFor(bill);
-    if (collected === null) unknownAmountBills++;
-    else collectedKnown += collected;
+    if (collected === null) {
+      unknownAmountBills++;
+      unknownAmount += bill.fee;
+    } else {
+      knownCollected += collected;
+      knownOutstanding += bill.fee - collected;
+    }
   }
 
-  const collected = unknownAmountBills > 0 ? null : collectedKnown;
-  const outstanding = collected === null ? null : billed - collected;
-  const collectionRate =
-    collected === null || billed === 0 ? null : Math.round((collected / billed) * 100);
+  const amountsComplete = unknownAmountBills === 0;
+  const collectionRate = billed === 0 ? null : Math.round((knownCollected / billed) * 100);
 
-  return { billed, collected, outstanding, collectionRate, unknownAmountBills, counts };
+  return {
+    billed, knownCollected, knownOutstanding, unknownAmount, unknownAmountBills,
+    amountsComplete, collectionRate, counts,
+  };
 }
 
 /** One class's totals within a scope, ready to roll up. */
@@ -326,6 +372,12 @@ export interface BillingRow {
   status: BillingStatus;
   /** Recorded amount for a partial, or `null` when it was never recorded. */
   paidAmount: number | null;
+  /** THIS null IS NOT THE AGGREGATE'S OLD null. A scope's totals never go null
+   * any more — they report what is known and count what is not. A ROW is one
+   * bill, and for one bill "the amount was never recorded" is an exact,
+   * unambiguous fact with nothing to add up around it. The screen names the two
+   * halves separately: nothing was written down (`Paid`), and so this cannot be
+   * worked out (`Remaining`). Never a half, never a zero. */
   collected: number | null;
   outstanding: number | null;
   paidDate: string | null;
@@ -336,8 +388,23 @@ export interface BillingRow {
   parentLinked: boolean;
 }
 
+/** How a scope's unrecorded partials split by whether their student resolves.
+ *
+ * TWO COUNTS BECAUSE THEY NEED TWO SENTENCES. "A partial payment has no
+ * recorded amount" is something a teacher can go and fix; the same fact about a
+ * record whose student is gone is a closed historical entry they cannot act on.
+ * The screen says which, and says nothing at all about WHY the student is
+ * missing — deleted, moved on, cleaned up, the data does not know and neither
+ * does this module. */
+export interface UnknownAmountSplit {
+  /** Unrecorded partials belonging to students who still exist. */
+  unknownLiveAmountBills: number;
+  /** Unrecorded partials whose student no longer resolves. No id, no name. */
+  unknownHistoricalAmountBills: number;
+}
+
 /** One class's tuition within the scope, plus the bills that may be named. */
-export interface BillingClassBlock extends BillingTotals {
+export interface BillingClassBlock extends BillingTotals, UnknownAmountSplit {
   classId: string;
   className: string;
   classColor: string;
@@ -363,7 +430,7 @@ export interface OutstandingStudentRow {
   parentLinked: boolean;
 }
 
-export interface FinanceBillingBranch extends BillingTotals {
+export interface FinanceBillingBranch extends BillingTotals, UnknownAmountSplit {
   perClass: BillingClassBlock[];
   outstandingStudents: OutstandingStudentRow[];
   rows: BillingRow[];
@@ -432,6 +499,20 @@ export function buildBillingBranch(
     };
   };
 
+  /* Which of a scope's unrecorded partials a teacher could still go and fix,
+   * and which are closed history. Counted here rather than in `totalsFor`,
+   * because it needs the resolution and that module must not know about it. */
+  const unknownSplit = (scope: readonly Billing[]): UnknownAmountSplit => {
+    let unknownLiveAmountBills = 0;
+    let unknownHistoricalAmountBills = 0;
+    for (const b of scope) {
+      if (!hasUnknownAmount(b)) continue;
+      if (resolvedStudentIds.has(b.studentId)) unknownLiveAmountBills++;
+      else unknownHistoricalAmountBills++;
+    }
+    return { unknownLiveAmountBills, unknownHistoricalAmountBills };
+  };
+
   const totals = totalsFor(bills);
   const { listable, hiddenCount } = partitionByStudentResolution(bills, resolvedStudentIds);
 
@@ -441,6 +522,7 @@ export function buildBillingBranch(
     const split = partitionByStudentResolution(ofClass, resolvedStudentIds);
     return {
       ...t,
+      ...unknownSplit(ofClass),
       className: c?.name ?? t.classId,
       classColor: c?.color || FALLBACK_COLOR,
       rows: split.listable.map(toRow),
@@ -469,12 +551,58 @@ export function buildBillingBranch(
 
   return {
     ...totals,
+    ...unknownSplit(bills),
     perClass,
     outstandingStudents,
     rows: listable.map(toRow),
     hiddenRecords: hiddenCount,
   };
 }
+
+/* ------------------------------------------------- two deferred decisions
+ *
+ * Recorded here because both are DOMAIN questions this module would be the one
+ * to answer, and because a rule that exists only in a gate transcript is a rule
+ * the next person re-invents differently.
+ *
+ * 1. THE PAYMENT FORM'S CONTRACT, for the sprint that draws one. The comp has
+ *    Record and Manage buttons and no form behind them, so no UI ships; the
+ *    shape it must take is already fixed by the write rules below:
+ *
+ *      Unpaid          — collected is zero. No amount input at all: there is
+ *                        nothing to type, and a field accepting one would be a
+ *                        way to record a payment against a bill that had none.
+ *      Partially Paid  — an amount is REQUIRED. One input, "Amount paid" /
+ *                        "Số tiền đã trả", integer VND, strictly between zero
+ *                        and the fee, beside a READ-ONLY remaining figure of
+ *                        `fee - paidAmount`. Remaining is shown and never
+ *                        typed: two independent inputs for one arithmetic
+ *                        relationship is how records that contradict
+ *                        themselves get written.
+ *      Paid            — collected IS the fee. No amount input, for the same
+ *                        reason as Unpaid and with the same consequence: the
+ *                        value is derived from the status, not restated beside
+ *                        it.
+ *
+ *    Every future partial is therefore exactly calculable, and the legacy
+ *    records with no amount stay the only incomplete ones in the collection.
+ *    They are not backfilled: nobody knows what those students paid.
+ *
+ * 2. WAIVED / EXEMPT TUITION IS NOT MODELLED, and must not be faked. A bill
+ *    that will never be collected — waived, a student who stopped studying
+ *    mid-month, a month a student was not billable for — is today indistinguishable
+ *    from one that is simply unpaid, and `Unpaid` must not be overloaded to
+ *    mean any of them: it would put money in `knownOutstanding` that nobody is
+ *    ever going to chase, and no screen could tell the two apart afterwards.
+ *
+ *    Nor may a waiver be inferred from a MISSING STUDENT. A bill whose student
+ *    no longer resolves proves only that: the student record is gone. Deleted,
+ *    left, merged, cleaned up — the data says nothing, so neither does the UI.
+ *
+ *    A future sprint gives this its own field, e.g.
+ *    `billingApplicability: "Billable" | "Waived"`, with its own write rules and
+ *    its own effect on the totals above. Until then the honest answer is that
+ *    the model cannot express it. */
 
 /* ------------------------------------------------------- the payment write
  *

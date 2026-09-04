@@ -94,9 +94,12 @@ describe("Finance · the month's tuition branch", () => {
 
   it("2. collects exactly what is known", () => {
     const b = buildBillingBranch(bills, ctx);
-    assert.equal(b.collected, 1_100_000);
-    assert.equal(b.outstanding, 1_250_000);
+    assert.equal(b.knownCollected, 1_100_000);
+    assert.equal(b.knownOutstanding, 1_250_000);
     assert.equal(b.unknownAmountBills, 0);
+    assert.equal(b.unknownAmount, 0);
+    assert.equal(b.amountsComplete, true);
+    assert.equal(b.knownCollected + b.knownOutstanding, b.billed);
   });
 
   it("3. counts each status", () => {
@@ -139,20 +142,29 @@ describe("Finance · legacy partials propagate as unknown", () => {
   ];
   const ctx = resolution([student("s2"), student("s9")], [klass("c1")]);
 
-  it("7. the month's collected becomes null, and outstanding with it", () => {
+  it("7. the month keeps the money it can prove, and flags the rest", () => {
     const b = buildBillingBranch(bills, ctx);
     assert.equal(b.billed, 1_500_000, "billed is always knowable");
-    assert.equal(b.collected, null);
-    assert.equal(b.outstanding, null);
-    assert.equal(b.collectionRate, null);
+    assert.equal(b.knownCollected, 800_000, "the Paid bill is not hidden by the incomplete one");
+    assert.equal(b.knownOutstanding, 0);
+    assert.equal(b.unknownAmount, 700_000, "the incomplete bill's whole fee");
+    assert.equal(b.amountsComplete, false);
+    assert.equal(b.collectionRate, 53, "a floor: at least 53% was collected");
   });
 
-  it("8. …and says how many records are responsible", () => {
-    assert.equal(buildBillingBranch(bills, ctx).unknownAmountBills, 1);
+  it("8. …and says how many records are responsible, and whose", () => {
+    const b = buildBillingBranch(bills, ctx);
+    assert.equal(b.unknownAmountBills, 1);
+    // s9 still exists here, so this is a gap a teacher could go and settle.
+    assert.equal(b.unknownLiveAmountBills, 1);
+    assert.equal(b.unknownHistoricalAmountBills, 0);
   });
 
-  it("9. the known 800,000 is NOT reported as the whole", () => {
-    assert.notEqual(buildBillingBranch(bills, ctx).collected, 800_000);
+  it("9. the incomplete record's own fee is never counted as collected", () => {
+    const b = buildBillingBranch(bills, ctx);
+    assert.notEqual(b.knownCollected, 1_500_000, "not treated as paid in full");
+    assert.notEqual(b.knownCollected, 1_150_000, "and not as half paid");
+    assert.equal(b.knownCollected, 800_000);
   });
 
   it("10. no reader substitutes half the fee", () => {
@@ -183,7 +195,7 @@ describe("Finance · per class", () => {
     const perClass = buildBillingBranch(bills, ctx).perClass;
     assert.deepEqual(perClass.map((p) => p.classId), ["c1", "c2"]);
     assert.equal(perClass[0].billed, 1_600_000);
-    assert.equal(perClass[0].collected, 800_000);
+    assert.equal(perClass[0].knownCollected, 800_000);
     assert.equal(perClass[1].billed, 750_000);
   });
 
@@ -198,13 +210,42 @@ describe("Finance · per class", () => {
     assert.deepEqual(perClass[1].rows.map((r) => r.billId), ["B3"]);
   });
 
-  it("15. an unknown amount in one class does not poison another", () => {
+  it("15. an unrecorded amount marks only its own class incomplete", () => {
     const withLegacy = [...bills,
       bill({ id: "B4", studentId: "s9", classId: "c3", fee: 700_000, status: "Partially Paid", paidDate: "2026-07-01" })];
     const b = buildBillingBranch(withLegacy, resolution(ctx.students as Student[], [klass("c1"), klass("c2"), klass("c3")]));
-    assert.equal(b.perClass.find((p) => p.classId === "c1")!.collected, 800_000);
-    assert.equal(b.perClass.find((p) => p.classId === "c3")!.collected, null);
-    assert.equal(b.collected, null, "…but the month's own total is unknown");
+    const c1 = b.perClass.find((p) => p.classId === "c1")!;
+    const c3 = b.perClass.find((p) => p.classId === "c3")!;
+    assert.equal(c1.knownCollected, 800_000);
+    assert.equal(c1.amountsComplete, true);
+    assert.equal(c3.knownCollected, 0);
+    assert.equal(c3.unknownAmount, 700_000);
+    assert.equal(c3.amountsComplete, false);
+    // The month is incomplete because c3 is, and still reports every other
+    // class's money rather than reporting nothing.
+    assert.equal(b.amountsComplete, false);
+    assert.equal(b.knownCollected, 800_000);
+    assert.equal(b.unknownAmountBills, 1);
+  });
+
+  it("15b. each class carries its own live/historical split of the gap", () => {
+    // Two incomplete partials in one class: one student still exists, one does
+    // not. They are two different sentences on screen, so they are two counts.
+    const mixed = [
+      bill({ id: "B5", studentId: "s2", classId: "c1", fee: 700_000, status: "Partially Paid", paidDate: "2026-07-01" }),
+      bill({ id: "B6", studentId: "s99", classId: "c1", fee: 700_000, status: "Partially Paid", paidDate: "2026-07-01" }),
+    ];
+    const b = buildBillingBranch(mixed, resolution([student("s2")], [klass("c1")]));
+    const c1 = b.perClass.find((p) => p.classId === "c1")!;
+    assert.equal(c1.unknownAmountBills, 2);
+    assert.equal(c1.unknownLiveAmountBills, 1);
+    assert.equal(c1.unknownHistoricalAmountBills, 1);
+    assert.equal(b.unknownLiveAmountBills, 1);
+    assert.equal(b.unknownHistoricalAmountBills, 1);
+    // …and the ghost half still raises no row and discloses no identity.
+    assert.deepEqual(c1.rows.map((r) => r.billId), ["B5"]);
+    assert.equal(c1.hiddenRecords, 1);
+    assert.ok(!JSON.stringify(b).includes("s99"));
   });
 });
 
@@ -246,8 +287,9 @@ describe("Finance · ghosts count and are never named", () => {
 
   it("20. …and in collected, outstanding and the status counts", () => {
     const b = buildBillingBranch(bills, ctx);
-    assert.equal(b.collected, 750_000, "the ghost's Paid bill still counts as collected");
-    assert.equal(b.outstanding, 1_600_000);
+    assert.equal(b.knownCollected, 750_000, "the ghost's Paid bill still counts as collected");
+    assert.equal(b.knownOutstanding, 1_600_000);
+    assert.equal(b.amountsComplete, true, "a ghost bill is not an incomplete one");
     assert.deepEqual(b.counts, { paid: 1, partiallyPaid: 0, unpaid: 2, total: 3 });
   });
 

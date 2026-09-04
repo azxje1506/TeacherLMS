@@ -23,10 +23,13 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
-  HISTORICAL_NOTE_MANY, HISTORICAL_NOTE_ONE, INSUFFICIENT_DATA, NO_BILLING_BODY,
-  NO_BILLING_TITLE, PARTIAL_NOTE_MANY, PARTIAL_NOTE_ONE, STATUS_LABEL, barWidth,
-  billingState, donutArcs, financeNoteStyle, historicalNote, money, partialNote,
-  percent, rankByCollected, sortByOutstanding, statusBadgeStyle, trendGeometry,
+  AT_LEAST_PERCENT, HISTORICAL_NOTE_MANY, HISTORICAL_NOTE_ONE,
+  HISTORICAL_PARTIAL_MANY, HISTORICAL_PARTIAL_ONE, NOT_DETERMINED, NOT_RECORDED,
+  NO_BILLING_BODY, NO_BILLING_TITLE, PARTIAL_NOTE_MANY, PARTIAL_NOTE_ONE,
+  RATE_BASIS, STATUS_LABEL, UNKNOWN_SEGMENT, barWidth, billingState, donutArcs,
+  financeNoteStyle, historicalNote, historicalPartialNote, money, partialNote,
+  percent, rankByCollected, rateText, sortByOutstanding, statusBadgeStyle,
+  trendGeometry,
 } from "../src/components/finance/finance-ui";
 import { createFormat, DEFAULT_REGIONAL, EM } from "../src/lib/format";
 import { translate } from "../src/lib/i18n";
@@ -226,15 +229,17 @@ describe("Finance UI · No data is never 0đ", () => {
     assert.equal(percent(72, NO_DATA), "72%");
   });
 
-  it("22. every unknown-capable amount on screen goes through money()", () => {
-    // collected / outstanding / an outstanding row's amount are the three that
-    // can be null. None may be formatted with a bare fmt.vnd.
-    assert.ok(!/fmt\.vnd\(billing\.collected\)/.test(OVERVIEW));
-    assert.ok(!/fmt\.vnd\(billing\.outstanding\)/.test(OVERVIEW));
-    assert.ok(!/fmt\.vnd\(c\.collected\)/.test(OVERVIEW));
+  it("22. only per-BILL amounts can be unknown, and those go through money()", () => {
+    // The aggregates report confirmed money and are formatted directly; the
+    // three values that can still be null all belong to ONE bill — a student
+    // row's Paid and Remaining, and an outstanding row's amount — and none of
+    // them may be formatted with a bare fmt.vnd, which would print "NaNđ".
+    assert.ok(!/fmt\.vnd\(r\.collected\)/.test(OVERVIEW));
+    assert.ok(!/fmt\.vnd\(r\.outstanding\)/.test(OVERVIEW));
     assert.ok(!/fmt\.vnd\(s\.amount\)/.test(OVERVIEW));
-    assert.ok(/money\(billing\.collected, fmt, unknownLabel\)/.test(OVERVIEW));
-    assert.ok(/money\(billing\.outstanding, fmt, unknownLabel\)/.test(OVERVIEW));
+    assert.ok(/money\(r\.collected, fmt, notRecorded\)/.test(OVERVIEW));
+    assert.ok(/money\(r\.outstanding, fmt, notDetermined\)/.test(OVERVIEW));
+    assert.ok(/money\(s\.amount, fmt, notDetermined\)/.test(OVERVIEW));
   });
 
   it("23. the collection bar is not drawn at zero when the ratio is unknown", () => {
@@ -244,10 +249,14 @@ describe("Finance UI · No data is never 0đ", () => {
     assert.equal(barWidth(0, 1_000_000), "0%", "a known zero IS a zero-width bar");
   });
 
-  it("24. …and the overview renders a neutral state instead", () => {
-    assert.ok(/proportionKnown/.test(OVERVIEW));
-    assert.ok(/data-testid="fin-bar-unknown"/.test(OVERVIEW));
-    assert.ok(/\{proportionKnown && \(/.test(OVERVIEW), "the segments are conditional");
+  it("24. …and each segment is drawn only when it has a width", () => {
+    // The bar itself is no longer all-or-nothing: it always renders, with a
+    // third neutral segment standing for the part of the month whose split
+    // nobody recorded. A zero-width segment is simply not drawn.
+    assert.ok(!/proportionKnown/.test(OVERVIEW), "the all-or-nothing branch is gone");
+    assert.ok(/\{collectedW && <div/.test(OVERVIEW));
+    assert.ok(/\{outstandingW && <div/.test(OVERVIEW));
+    assert.ok(/\{unknownW && <div data-testid="fin-bar-unknown"/.test(OVERVIEW));
   });
 
   it("25. no UI file infers half a fee", () => {
@@ -315,54 +324,64 @@ describe("Finance Overview · the four summary tiles", () => {
 });
 
 describe("Finance Overview · top performing classes", () => {
-  const cls = (classId: string, className: string, collected: number | null, outstanding: number | null) =>
-    ({ classId, className, billed: 1_000_000, collected, outstanding });
+  const cls = (
+    classId: string, className: string,
+    knownCollected: number, knownOutstanding: number, amountsComplete = true
+  ) => ({ classId, className, billed: 1_000_000, knownCollected, knownOutstanding, amountsComplete });
 
-  it("36. ranks known collected values, highest first", () => {
-    const { ranked } = rankByCollected([
+  it("36. ranks by confirmed collected money, highest first", () => {
+    const ranked = rankByCollected([
       cls("c1", "Alpha", 300_000, 700_000),
       cls("c2", "Beta", 900_000, 100_000),
     ]);
     assert.deepEqual(ranked.map((c) => c.classId), ["c2", "c1"]);
   });
 
-  it("37. a class whose collected is unknown is NOT ranked", () => {
-    const { ranked, unknown } = rankByCollected([
-      cls("c1", "Alpha", 300_000, 700_000),
-      cls("c2", "Beta", null, null),
+  it("37. a class with an unrecorded amount is RANKED, not exiled", () => {
+    // It used to be dropped from the ranking and listed underneath with
+    // `No data`, which said a class that had provably collected 300,000đ had no
+    // figure at all. It is placed on what it can prove.
+    const ranked = rankByCollected([
+      cls("c1", "Alpha", 300_000, 0, false),
+      cls("c2", "Beta", 900_000, 100_000),
     ]);
-    assert.deepEqual(ranked.map((c) => c.classId), ["c1"]);
-    assert.deepEqual(unknown.map((c) => c.classId), ["c2"]);
+    assert.deepEqual(ranked.map((c) => c.classId), ["c2", "c1"]);
+    assert.equal(ranked.length, 2, "every class is placed");
   });
 
-  it("38. …and is NOT given a zero, which would bury it at the bottom", () => {
-    const { ranked } = rankByCollected([
-      cls("c1", "Alpha", 100, 0),
-      cls("c2", "Beta", null, null),
+  it("38. …on a FLOOR, and never on an invented zero or half", () => {
+    // Its real collected total may be higher; it is never lower. Ranking it as
+    // zero would bury a class that had collected almost everything, and that is
+    // still not done — it is ranked on the money, not on the completeness.
+    const ranked = rankByCollected([
+      cls("c1", "Alpha", 700_000, 0, false),
+      cls("c2", "Beta", 100_000, 900_000),
     ]);
-    assert.ok(!ranked.some((c) => c.classId === "c2"), "not placed at all");
-    assert.equal(ranked.length, 1);
+    assert.deepEqual(ranked.map((c) => c.classId), ["c1", "c2"], "700,000 outranks 100,000");
   });
 
-  it("39. …and is still shown, with No data — unplaceable is not absent", () => {
-    assert.ok(/data-testid="fin-unrankable-class"/.test(OVERVIEW));
-    assert.ok(/unknown\.map/.test(OVERVIEW));
+  it("39. and the screen marks a floor rather than presenting it as a total", () => {
+    assert.ok(!/data-testid="fin-unrankable-class"/.test(OVERVIEW), "no second list any more");
+    assert.ok(!/unknown\.map/.test(OVERVIEW));
+    assert.ok(/!c\.amountsComplete && <span data-testid="fin-at-least"/.test(OVERVIEW));
+    assert.ok(/fmt\.vnd\(c\.knownCollected\)/.test(OVERVIEW));
   });
 
   it("40. ranking is deterministic on ties", () => {
     const a = rankByCollected([cls("c2", "Beta", 500, 0), cls("c1", "Alpha", 500, 0)]);
     const b = rankByCollected([cls("c1", "Alpha", 500, 0), cls("c2", "Beta", 500, 0)]);
-    assert.deepEqual(a.ranked.map((c) => c.classId), b.ranked.map((c) => c.classId));
-    assert.deepEqual(a.ranked.map((c) => c.classId), ["c1", "c2"]);
+    assert.deepEqual(a.map((c) => c.classId), b.map((c) => c.classId));
+    assert.deepEqual(a.map((c) => c.classId), ["c1", "c2"]);
   });
 
-  it("41. revenue-by-class sorts by outstanding, unknowns last", () => {
+  it("41. revenue-by-class sorts by confirmed outstanding, highest first", () => {
     const sorted = sortByOutstanding([
       cls("c1", "Alpha", 500, 100),
-      cls("c2", "Beta", null, null),
+      cls("c2", "Beta", 0, 0, false),
       cls("c3", "Gamma", 200, 900),
     ]);
     assert.deepEqual(sorted.map((c) => c.classId), ["c3", "c1", "c2"]);
+    assert.equal(sorted.length, 3, "no class is dropped for being incomplete");
   });
 });
 
@@ -374,8 +393,8 @@ describe("Finance Overview · the per-student class grid", () => {
   });
 
   it("43. Paid and Remaining are the server's collected and outstanding", () => {
-    assert.ok(/money\(r\.collected, fmt, unknownLabel\)/.test(OVERVIEW));
-    assert.ok(/money\(r\.outstanding, fmt, unknownLabel\)/.test(OVERVIEW));
+    assert.ok(/money\(r\.collected, fmt, notRecorded\)/.test(OVERVIEW));
+    assert.ok(/money\(r\.outstanding, fmt, notDetermined\)/.test(OVERVIEW));
   });
 
   it("44. it is wrapped in a LOCAL horizontal scroll region", () => {
@@ -779,8 +798,10 @@ describe("Finance UI · vocabulary and forbidden terms", () => {
       "No billing records match these filters for", "No outstanding tuition for",
       "Couldn't load finance", "collected", "paid", "partial", "unpaid",
       HISTORICAL_NOTE_ONE, HISTORICAL_NOTE_MANY,
-      INSUFFICIENT_DATA, PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY,
+      PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY,
+      HISTORICAL_PARTIAL_ONE, HISTORICAL_PARTIAL_MANY,
       NO_BILLING_TITLE, NO_BILLING_BODY,
+      NOT_RECORDED, NOT_DETERMINED, UNKNOWN_SEGMENT, AT_LEAST_PERCENT, RATE_BASIS,
     ]) {
       assert.ok(vi.includes(`"${key}":`), `missing translation: ${key}`);
     }
@@ -1048,24 +1069,22 @@ describe("Gate 5.5 · Top performing classes on a phone", () => {
     // A bare figure needs no label beside a header; alone on a line it does. The
     // word is the card's own existing one, and it is hidden by an INLINE style so
     // switching it on can only ever happen at this breakpoint.
-    assert.equal((OVERVIEW.match(/className="fin-tpc-label"/g) ?? []).length, 2, "ranked and unrankable");
+    assert.equal((OVERVIEW.match(/className="fin-tpc-label"/g) ?? []).length, 1, "one ranking list");
     assert.ok(/className="fin-tpc-label" style=\{\{ display: "none" \}\}>\{t\("Collected"\)\}/.test(OVERVIEW));
     assert.ok(/\.fin-tpc-label\{[\s\S]*?display:inline !important/.test(financeBlock()));
   });
 
-  it("115. ranking, unknowns and absences are all unchanged", () => {
-    // A presentation change may not move a metric. An unknown collected total is
-    // still unrankable, still listed after the ranked ones, and still `No data`
-    // rather than a zero — asserted through the helper the card ranks with.
-    const { ranked, unknown } = rankByCollected([
-      { classId: "a", className: "A", billed: 10, collected: 4, outstanding: 6 },
-      { classId: "b", className: "B", billed: 10, collected: null, outstanding: null },
-      { classId: "c", className: "C", billed: 10, collected: 9, outstanding: 1 },
+  it("115. every class is ranked on the money it can prove", () => {
+    // The mobile restack does not decide the ordering, and the ordering is now
+    // one list: a class with an unrecorded amount is placed on its confirmed
+    // collected total rather than removed from the ranking.
+    const ranked = rankByCollected([
+      { classId: "a", className: "A", billed: 10, knownCollected: 4, knownOutstanding: 6, amountsComplete: true },
+      { classId: "b", className: "B", billed: 10, knownCollected: 0, knownOutstanding: 0, amountsComplete: false },
+      { classId: "c", className: "C", billed: 10, knownCollected: 9, knownOutstanding: 1, amountsComplete: true },
     ]);
-    assert.deepEqual(ranked.map((c) => c.classId), ["c", "a"]);
-    assert.deepEqual(unknown.map((c) => c.classId), ["b"]);
-    assert.equal(money(null, fmt, NO_DATA), NO_DATA);
-    assert.ok(/data-testid="fin-unrankable-class"/.test(OVERVIEW));
+    assert.deepEqual(ranked.map((c) => c.classId), ["c", "a", "b"]);
+    assert.ok(!/data-testid="fin-unrankable-class"/.test(OVERVIEW), "no second list");
     // And no +N more, and no explanation a ranking card does not need.
     const top = /Top performing classes[\s\S]*?Revenue by class/.exec(OVERVIEW);
     assert.ok(top && !/\{t\("more"\)\}|fin-historical-note/.test(top[0]));
@@ -1178,247 +1197,350 @@ describe("Gate 5.5 · the breakpoint contract", () => {
   });
 });
 
-/* ============================================ Gate 6 — the three empty states
+/* =============================== Gate 6 — the known-amount money contract
  *
- * PRODUCTION FOUND THIS, not a test. Switching to a historical month filled the
- * screen with `No data`, and those two words were being asked to mean two
- * unrelated things: "nothing was ever billed this month" and "this month WAS
- * billed, but one legacy Partially Paid record never had its amount written
- * down". A teacher can act on the second and cannot act on the first, so one
- * label for both answers neither.
+ * TWO ROUNDS OF PRODUCTION REVIEW GOT US HERE, and the second overturned the
+ * first. Round one made `No data` unambiguous by splitting it in three: a real
+ * `0đ`, an `Insufficient data` label, and an empty-month state. Round two found
+ * the middle one was answering the wrong question — a month where 8,550,000đ
+ * had demonstrably been collected reported nothing at all, because ONE bill of
+ * 700,000đ had no recorded amount. Arithmetically defensible, useless to a
+ * teacher, and it hid twelve knowable figures behind one unknowable one.
  *
- * Three states, three different things on screen:
+ * The contract now reports the money it can stand behind and states the gap
+ * separately:
  *
- *   known zero          `0đ`
- *   insufficient data   `Insufficient data` + the count of records responsible
- *   no billing records  an explicit empty state, not a figure
+ *     knownCollected + knownOutstanding + unknownAmount === billed
  *
- * Everything below is presentation. No total moved, no amount was inferred, and
- * `billing.ts` was not touched — the suites above still pin its arithmetic.
+ * always, by construction. `unknownAmount` is the FEE of every bill whose split
+ * nobody recorded — not a payment, not a debt, not an estimate of either.
+ *
+ * Nothing is inferred anywhere: no half, no zero substituted for an unknown, no
+ * backfill. What changed is which true things are shown, not what is true.
  * ====================================================================== */
 
-describe("Gate 6 · the three states are one function", () => {
-  it("124. `billingState` separates empty, insufficient and known", () => {
-    // Order matters. A month with no bills is EMPTY even though every total in
-    // it is a legitimate zero: "0đ of 0đ, 0 of 0 bills paid" is true and tells
-    // a teacher nothing about why the screen is bare.
-    assert.equal(billingState({ counts: { total: 0 }, unknownAmountBills: 0 }), "empty");
-    assert.equal(billingState({ counts: { total: 0 }, unknownAmountBills: 3 }), "empty");
-    assert.equal(billingState({ counts: { total: 14 }, unknownAmountBills: 1 }), "insufficient");
-    assert.equal(billingState({ counts: { total: 14 }, unknownAmountBills: 0 }), "known");
-  });
-
-  it("125. a KNOWN ZERO is `0đ`, and never an unknown", () => {
-    // The distinction the whole fix rests on: the system can compute this and
-    // the answer is zero. It is a number, so it is formatted as one.
-    assert.equal(money(0, fmt, INSUFFICIENT_DATA), "0đ");
-    assert.notEqual(money(0, fmt, INSUFFICIENT_DATA), INSUFFICIENT_DATA);
-    assert.equal(percent(0, INSUFFICIENT_DATA), "0%");
-    // …and an unknown is never quietly completed with one.
-    assert.equal(money(null, fmt, INSUFFICIENT_DATA), INSUFFICIENT_DATA);
-    assert.equal(percent(null, INSUFFICIENT_DATA), INSUFFICIENT_DATA);
-    assert.notEqual(money(null, fmt, INSUFFICIENT_DATA), "0đ");
-  });
-
-  it("126. `null` and \"unknown\" are the same thing, provably", () => {
-    // `totalsFor` sets `collected = unknownAmountBills > 0 ? null : known`, so a
-    // null amount has exactly one cause and `Insufficient data` always has a
-    // count behind it. Read out of billing.ts rather than restated here.
+describe("Gate 6 · the aggregate identity", () => {
+  it("124. the three parts always sum to billed", () => {
+    // Asserted here as well as in tests/billing.test.ts because it is the
+    // property the SCREEN depends on: a bar drawn from three widths that do not
+    // total the whole is a picture of a month that does not add up.
+    assert.ok(/knownCollected \+ knownOutstanding \+ unknownAmount === billed/.test(
+      raw("src", "lib", "billing.ts")
+    ), "the identity is stated where it is enforced");
+    // And it is enforced by construction: each bill adds its fee to billed, and
+    // then adds that same fee to exactly one of the three buckets.
     const src = code("src", "lib", "billing.ts");
-    assert.ok(/collected\s*=\s*unknownAmountBills > 0\s*\?\s*null\s*:/.test(src));
-    assert.ok(/if \(collected === null\) unknownAmountBills\+\+/.test(src));
+    assert.ok(/billed \+= bill\.fee;/.test(src));
+    assert.ok(/knownCollected \+= collected;/.test(src));
+    assert.ok(/knownOutstanding \+= bill\.fee - collected;/.test(src));
+    assert.ok(/unknownAmount \+= bill\.fee;/.test(src));
   });
 
-  it("127. no amount is inferred anywhere — still no half, still no substitute", () => {
+  it("125. `amountsComplete` is exactly `unknownAmountBills === 0`", () => {
+    const src = code("src", "lib", "billing.ts");
+    assert.ok(/const amountsComplete = unknownAmountBills === 0;/.test(src));
+    // Equality of the two known buckets with billed is guaranteed only then.
+    assert.ok(/knownOutstanding \+= bill\.fee - collected;/.test(src));
+    assert.ok(/unknownAmount \+= bill\.fee;/.test(src), "the whole fee, never a split");
+  });
+
+  it("126. a KNOWN ZERO is still `0đ`, and is not an unknown", () => {
+    assert.equal(money(0, fmt, NOT_RECORDED), "0đ");
+    assert.notEqual(money(0, fmt, NOT_RECORDED), NOT_RECORDED);
+    assert.equal(percent(0, NOT_DETERMINED), "0%");
+    assert.equal(rateText(0, true, en, NOT_DETERMINED), "0%");
+  });
+
+  it("127. nothing is inferred — no half, no substitute zero, no backfill", () => {
     for (const [name, src] of UI_FILES) {
-      assert.ok(!/fee\s*\/\s*2|\*\s*0\.5|\/ 2\b/.test(src), `${name} must infer no partial`);
-      assert.ok(!/\?\?\s*0\b/.test(src.replace(/barWidth\([^)]*\) \?\? "0%"/g, "")), `${name} must not default an amount to 0`);
+      assert.ok(!/fee\s*\/\s*2|\*\s*0\.5/.test(src), `${name} must infer no partial`);
     }
-    // And the dead 50% helper is still deleted, not merely unused.
-    assert.ok(!/paidAmount/.test(code("src", "lib", "calc.ts")), "calc.ts must not hold a paidAmount rule");
+    const billing = code("src", "lib", "billing.ts");
+    assert.ok(!/fee\s*\/\s*2|\*\s*0\.5/.test(billing), "and neither does the domain");
+    assert.ok(!/paidAmount/.test(code("src", "lib", "calc.ts")), "the dead 50% helper stays deleted");
   });
 });
 
-describe("Gate 6 · insufficient data, and why", () => {
-  it("128. Finance no longer borrows the app-wide `No data`", () => {
-    // Other modules still use it for their own absences — Reviews draws it for a
-    // month with no attendance — and that is exactly why Finance stopped: two
-    // words meaning "some fact is missing somewhere" cannot also mean "this
-    // total is uncomputable because of one legacy record".
-    assert.ok(!/t\("No data"\)/.test(OVERVIEW), "Overview must not use the generic label");
-    assert.ok(!/t\("No data"\)/.test(PAYMENTS), "Payments must not use it either");
-    assert.ok(!/\bnoData\b/.test(OVERVIEW), "and the identifier is gone with it");
-    assert.ok(OVERVIEW.includes("t(INSUFFICIENT_DATA)"), "it names the state it means");
-    assert.equal(INSUFFICIENT_DATA, "Insufficient data");
+describe("Gate 6 · the KPIs show the money that is known", () => {
+  it("128. collected and outstanding are always real amounts", () => {
+    // They used to be replaced wholesale by a label. Both now format a number
+    // that the month can prove, at every level of completeness.
+    assert.ok(/value=\{fmt\.vnd\(billing\.knownCollected\)\}/.test(OVERVIEW));
+    assert.ok(/value=\{fmt\.vnd\(billing\.knownOutstanding\)\}/.test(OVERVIEW));
+    assert.ok(!/money\(billing\.(?:collected|knownCollected)/.test(OVERVIEW), "no unknown branch left");
   });
 
-  it("129. every bill-derived unknown renders the SAME label", () => {
-    // Six figures can be unknown on Overview: the two KPI values, the two
-    // summary legend amounts, the collection rate, a class's collected and
-    // outstanding, an outstanding row's amount, and a student row's Paid and
-    // Remaining. Each goes through money()/percent() with the one label.
-    const uses = [...OVERVIEW.matchAll(/(?:money|percent)\([^)]*unknownLabel\)/g)];
-    assert.ok(uses.length >= 9, `expected every unknown-capable figure, saw ${uses.length}`);
-    // No second label, and no bare formatting that would skip the distinction.
-    assert.ok(!/fmt\.vnd\(billing\.collected\)/.test(OVERVIEW));
-    assert.ok(!/fmt\.vnd\(billing\.outstanding\)/.test(OVERVIEW));
-    assert.ok(!/fmt\.vnd\(r\.collected\)|fmt\.vnd\(r\.outstanding\)/.test(OVERVIEW));
+  it("129. no aggregate anywhere is replaced by a label", () => {
+    // The `Insufficient data` constant is deleted rather than left unused: an
+    // exported label meaning "this total cannot be given" would invite exactly
+    // the substitution this contract removed.
+    assert.ok(!ALL_UI.includes("Insufficient data"), "the label is gone from the UI");
+    assert.ok(!raw("src", "components", "finance", "finance-ui.ts").includes("INSUFFICIENT_DATA"));
+    assert.ok(!raw("src", "lib", "i18n-vi.json").includes('"Insufficient data"'), "and from the dictionary");
+    // Per-class figures too: the class card formats its own confirmed money.
+    assert.ok(/fmt\.vnd\(c\.knownCollected\)/.test(OVERVIEW));
+    assert.ok(/fmt\.vnd\(c\.knownOutstanding\)/.test(OVERVIEW));
   });
 
-  it("130. the collection rate is a label, never 0% and never a dash", () => {
-    assert.ok(/percent\(billing\.collectionRate, unknownLabel\)/.test(OVERVIEW));
-    assert.ok(/percent\(c\.collectionRate, unknownLabel\)/.test(OVERVIEW));
-    assert.equal(percent(null, INSUFFICIENT_DATA), INSUFFICIENT_DATA);
-    assert.notEqual(percent(null, INSUFFICIENT_DATA), "0%");
-    assert.notEqual(percent(null, INSUFFICIENT_DATA), EM);
-  });
-
-  it("131. EXPECTED REVENUE stays exact, because Σ fee always is", () => {
-    // The card that makes the difference legible: expected is a real figure on
-    // a month where collected and outstanding cannot be computed at all. It is
-    // formatted directly, with no unknown branch, and that is deliberate.
+  it("130. EXPECTED stays exact and unbranched", () => {
     assert.ok(/value=\{fmt\.vnd\(billing\.billed\)\}/.test(OVERVIEW));
-    assert.ok(!/money\(billing\.billed/.test(OVERVIEW), "billed is never unknown-capable");
+    assert.ok(!/money\(billing\.billed/.test(OVERVIEW), "Σ fee is never unknown");
   });
 
-  it("132. the reason is stated wherever the value is unknown", () => {
-    // Three places, each beside the figure it explains: the two KPI captions,
-    // the caption under the undrawn proportion bar, and a class's expanded
-    // detail. Count-aware, as the gate's own preferred copy allows.
+  it("131. `x of y bills paid` counts bills SETTLED IN FULL", () => {
+    // A partial that moved real money does not raise x — its money is already
+    // inside the figure above it. The caption is a statement about bills.
+    assert.ok(/\$\{billing\.counts\.paid\} \$\{t\("of"\)\} \$\{billing\.counts\.total\} \$\{t\("bills paid"\)\}/.test(OVERVIEW));
+    const src = code("src", "lib", "billing.ts");
+    assert.ok(/if \(bill\.status === "Paid"\) counts\.paid\+\+;/.test(src));
+    assert.equal((src.match(/counts\.paid\+\+/g) ?? []).length, 1, "incremented in one place only");
+    assert.ok(/Partially Paid"\) counts\.partiallyPaid\+\+/.test(src), "a partial has its own counter");
+    // And the caption is no longer replaced when amounts are incomplete: both
+    // facts are true and they are shown as two lines, not one.
+    assert.ok(/caption=\{`\$\{billing\.counts\.paid\}/.test(OVERVIEW));
+    assert.ok(/note=\{<IncompleteNotes scope=\{billing\}/.test(OVERVIEW));
+  });
+});
+
+describe("Gate 6 · a rate that is a floor says so", () => {
+  it("132. exact when complete, `At least X%` when not", () => {
+    assert.equal(rateText(64, true, en, NOT_DETERMINED), "64%");
+    assert.equal(rateText(64, false, en, NOT_DETERMINED), "At least 64%");
+    assert.equal(AT_LEAST_PERCENT, "At least {X}%");
+    // Vietnamese places the number where its own grammar wants it.
+    const vi = (x: string) => translate(x, "vi");
+    assert.equal(rateText(64, false, vi, NOT_DETERMINED), "Ít nhất 64%");
+    assert.equal(vi(RATE_BASIS), "Dựa trên các khoản thanh toán đã ghi nhận.");
+  });
+
+  it("133. never an exact-looking percentage over incomplete amounts", () => {
+    assert.notEqual(rateText(64, false, en, NOT_DETERMINED), "64%");
+    assert.ok(rateText(64, false, en, NOT_DETERMINED).includes("64%"), "the number is still shown");
+    // And never 0% for a denominator that is only unknown, nor a dash.
+    assert.equal(rateText(null, true, en, NOT_DETERMINED), NOT_DETERMINED);
+    assert.notEqual(rateText(null, true, en, NOT_DETERMINED), "0%");
+    assert.notEqual(rateText(null, true, en, NOT_DETERMINED), EM);
+  });
+
+  it("134. the screen renders it through that one helper, with its basis", () => {
+    assert.ok(/rateText\(billing\.collectionRate, billing\.amountsComplete, t,/.test(OVERVIEW));
+    assert.ok(/rateText\(c\.collectionRate, c\.amountsComplete, t,/.test(OVERVIEW), "per class too");
+    assert.ok(/data-testid="fin-rate-basis"/.test(OVERVIEW));
+    assert.ok(OVERVIEW.includes("t(RATE_BASIS)"));
+    assert.ok(/!billing\.amountsComplete && \(/.test(OVERVIEW), "only when it is a floor");
+  });
+});
+
+describe("Gate 6 · the proportion bar has a third segment", () => {
+  it("135. it is always drawn, and it always adds up", () => {
+    // It used to disappear entirely when one amount was missing, leaving a
+    // blank track where four fifths of a real proportion could have been.
+    assert.ok(/barWidth\(billing\.knownCollected, billing\.billed\)/.test(OVERVIEW));
+    assert.ok(/barWidth\(billing\.knownOutstanding, billing\.billed\)/.test(OVERVIEW));
+    assert.ok(/barWidth\(billing\.unknownAmount, billing\.billed\)/.test(OVERVIEW));
+    assert.ok(!/proportionKnown/.test(OVERVIEW), "no all-or-nothing branch survives");
+  });
+
+  it("136. the third segment is neutral, not an alarm", () => {
+    const seg = /data-testid="fin-bar-unknown"[^/]*\/>/.exec(OVERVIEW);
+    assert.ok(seg, "the segment is readable");
+    assert.ok(/var\(--muted-2\)/.test(seg[0]), "muted");
+    assert.ok(!/var\(--accent\)|var\(--amber\)|red|danger/i.test(seg[0]), "not a warning colour");
+  });
+
+  it("137. and it earns a legend entry only when it exists", () => {
+    assert.ok(/data-testid="fin-legend-unknown"/.test(OVERVIEW));
+    assert.ok(/\{!billing\.amountsComplete && \(\s*<div className="fin-metric" data-testid="fin-legend-unknown"/.test(OVERVIEW));
+    assert.ok(OVERVIEW.includes("t(UNKNOWN_SEGMENT)"));
+    assert.ok(/fmt\.vnd\(billing\.unknownAmount\)/.test(OVERVIEW), "labelled with its own amount");
+    assert.equal(UNKNOWN_SEGMENT, "Unknown");
+  });
+});
+
+describe("Gate 6 · why a scope is incomplete, in the teacher's words", () => {
+  it("138. two counts, because they are two different situations", () => {
+    // An unrecorded partial for a student who still exists is something a
+    // teacher can go and settle. The same gap on a record whose student is gone
+    // is closed history. Same defect, different sentence.
     assert.equal(PARTIAL_NOTE_MANY, "{N} partial payments do not have a recorded amount.");
+    assert.equal(HISTORICAL_PARTIAL_MANY, "{N} historical payments do not have a recorded amount.");
     assert.equal(partialNote(2, en), "2 partial payments do not have a recorded amount.");
+    assert.equal(historicalPartialNote(2, en), "2 historical payments do not have a recorded amount.");
     assert.equal(partialNote(1, en), "1 partial payment does not have a recorded amount.");
-    assert.ok(!partialNote(1, en).includes("payments"), "pluralised");
-
-    assert.ok(/billing\.collected === null\s*\?\s*partialNote\(billing\.unknownAmountBills, t\)/.test(OVERVIEW));
-    assert.ok(/billing\.outstanding === null\s*\?\s*partialNote\(billing\.unknownAmountBills, t\)/.test(OVERVIEW));
-    assert.ok(/\{unknownLabel\} — \{partialNote\(billing\.unknownAmountBills, t\)\}/.test(OVERVIEW));
-    assert.ok(/\{unknownAmountBills > 0 && \(/.test(OVERVIEW), "and per class, from the class's own count");
-    assert.ok(/data-testid="fin-partial-note"/.test(OVERVIEW));
+    assert.equal(historicalPartialNote(1, en), "1 historical payment does not have a recorded amount.");
+    assert.notEqual(PARTIAL_NOTE_MANY, HISTORICAL_PARTIAL_MANY);
   });
 
-  it("133. it is NEVER shown at zero, and never as an alarm", () => {
-    // A note explaining nothing is the clutter Gate 5.5 removed; a warning
-    // colour would turn a fact about old data into a problem to fix.
-    assert.ok(!/unknownAmountBills >= 0/.test(OVERVIEW));
-    assert.ok(!/partialNote\(0/.test(OVERVIEW));
-    const site = /data-testid="fin-partial-note"([\s\S]{0,300}?)<\/div>/.exec(OVERVIEW);
-    assert.ok(site, "the per-class note is readable");
-    assert.ok(site![1].includes("financeNoteStyle"), "it reuses the one neutral caption style");
-    assert.ok(!/onClick|role=|tabIndex|cursor: "pointer"|<button|<a\b/.test(site![1]), "inert");
-    assert.ok(!/var\(--accent\)|var\(--amber\)|Warning|Error|!/.test(site![1]), "not an alarm");
-    assert.equal(financeNoteStyle.color, "var(--muted-2)", "muted, like every other caption");
+  it("139. the split comes from the service, not from the screen", () => {
+    const billing = code("src", "lib", "billing.ts");
+    assert.ok(/unknownLiveAmountBills/.test(billing));
+    assert.ok(/unknownHistoricalAmountBills/.test(billing));
+    assert.ok(/if \(resolvedStudentIds\.has\(b\.studentId\)\) unknownLiveAmountBills\+\+;/.test(billing));
+    assert.ok(/else unknownHistoricalAmountBills\+\+;/.test(billing));
+    assert.ok(/if \(!hasUnknownAmount\(b\)\) continue;/.test(billing), "only unrecorded partials count");
+    // The UI reads the counts and derives neither.
+    assert.ok(!/(?:const|let|var)\s+unknownLiveAmountBills/.test(ALL_UI));
   });
 
-  it("134. the two notes are two different sentences about two different gaps", () => {
-    // Records with no student, and records with no recorded amount. They can
-    // both apply to one class and they never collapse into one line.
-    assert.notEqual(HISTORICAL_NOTE_MANY, PARTIAL_NOTE_MANY);
-    assert.ok(/student information/.test(HISTORICAL_NOTE_MANY));
-    assert.ok(/recorded amount/.test(PARTIAL_NOTE_MANY));
-    assert.ok(/data-testid="fin-historical-note"/.test(OVERVIEW));
-    assert.ok(/data-testid="fin-partial-note"/.test(OVERVIEW));
+  it("140. it never claims to know WHY a student is missing", () => {
+    // Deleted, stopped studying, waived, cleaned up — the model proves none of
+    // them, so no copy asserts any of them.
+    for (const claim of [
+      "stopped studying", "no longer enrolled", "waived", "exempt", "dropped out",
+      "left the class", "deleted",
+    ]) {
+      assert.ok(!ALL_UI.toLowerCase().includes(claim), `must not claim "${claim}"`);
+      assert.ok(!HISTORICAL_PARTIAL_MANY.toLowerCase().includes(claim));
+      assert.ok(!HISTORICAL_NOTE_MANY.toLowerCase().includes(claim));
+    }
+    assert.ok(!raw("src", "lib", "i18n-vi.json").includes("nghỉ học"), "nor in Vietnamese");
+  });
+
+  it("141. one component renders both, muted and inert, never at zero", () => {
+    assert.ok(/function IncompleteNotes/.test(OVERVIEW), "one definition");
+    // Sliced to the next top-level declaration: the component's own parameter
+    // type ends with a line-initial "}", so a lazy match on that stops at the
+    // signature and proves nothing about the body.
+    const at = OVERVIEW.indexOf("function IncompleteNotes");
+    assert.ok(at > 0);
+    const body = OVERVIEW.slice(at, OVERVIEW.indexOf("\nconst cardStyle", at) + 1 || undefined)
+      .slice(0, OVERVIEW.slice(at).indexOf("\n\n") + 1 || undefined);
+    assert.ok(/scope\.unknownLiveAmountBills === 0 && scope\.unknownHistoricalAmountBills === 0\) return null/.test(body),
+      "nothing is drawn when there is nothing to explain");
+    assert.ok(body.includes("financeNoteStyle"), "the one neutral caption style");
+    assert.ok(!/onClick|role=|tabIndex|cursor: "pointer"|<button|<a\b/.test(body), "inert");
+    assert.ok(!/var\(--accent\)|var\(--amber\)|Warning|Error/i.test(body), "not an alarm");
+    assert.equal(financeNoteStyle.color, "var(--muted-2)");
+  });
+
+  it("142. it appears beside every figure it qualifies", () => {
+    // Both KPI cards, the money summary, and a class's expanded detail.
+    assert.ok((OVERVIEW.match(/<IncompleteNotes scope=/g) ?? []).length >= 4);
+    assert.ok(/<IncompleteNotes scope=\{scope\}/.test(OVERVIEW), "the per-class detail");
+  });
+});
+
+describe("Gate 6 · per-student rows name the two missing facts", () => {
+  it("143. Paid says nothing was recorded; Remaining says it cannot be worked out", () => {
+    assert.equal(NOT_RECORDED, "Not recorded");
+    assert.equal(NOT_DETERMINED, "Not determined");
+    assert.ok(/money\(r\.collected, fmt, notRecorded\)/.test(OVERVIEW));
+    assert.ok(/money\(r\.outstanding, fmt, notDetermined\)/.test(OVERVIEW));
+    const vi = (x: string) => translate(x, "vi");
+    assert.equal(vi(NOT_RECORDED), "Chưa ghi nhận");
+    assert.equal(vi(NOT_DETERMINED), "Chưa xác định");
+    assert.notEqual(vi(NOT_RECORDED), vi(NOT_DETERMINED), "a cause is not its consequence");
+  });
+
+  it("144. and a complete row still shows its exact split", () => {
+    // Paid → fee / 0, Unpaid → 0 / fee, known partial → amount / fee-amount.
+    // Read out of the pure helpers the row is built from.
+    const billing = code("src", "lib", "billing.ts");
+    assert.ok(/case "Paid":\s*return bill\.fee;|status === "Paid"[\s\S]{0,60}bill\.fee/.test(billing));
+    assert.ok(/collected === null \? null : bill\.fee - collected/.test(billing));
+    assert.equal(money(0, fmt, NOT_RECORDED), "0đ", "a settled row's Remaining is a real zero");
+  });
+
+  it("145. an outstanding row's unknown amount is field-specific too", () => {
+    assert.ok(/money\(s\.amount, fmt, notDetermined\)/.test(OVERVIEW));
   });
 });
 
 describe("Gate 6 · a month with no billing records", () => {
-  it("135. it gets an explicit empty state, not a screen of zeroes", () => {
+  it("146. it gets an explicit empty state, not a screen of zeroes", () => {
     assert.ok(/if \(billingState\(billing\) === "empty"\)/.test(OVERVIEW));
     assert.ok(/data-testid="fin-billing-empty"/.test(OVERVIEW));
     assert.ok(OVERVIEW.includes("t(NO_BILLING_TITLE)"));
     assert.ok(OVERVIEW.includes("t(NO_BILLING_BODY)"));
     assert.equal(NO_BILLING_TITLE, "No tuition data for this month");
     assert.equal(NO_BILLING_BODY, "There are no billing records for this month yet.");
+    assert.equal(billingState({ counts: { total: 0 }, unknownAmountBills: 0 }), "empty");
+    assert.equal(billingState({ counts: { total: 14 }, unknownAmountBills: 1 }), "insufficient");
+    assert.equal(billingState({ counts: { total: 14 }, unknownAmountBills: 0 }), "known");
   });
 
-  it("136. and it says something DIFFERENT from the unknown-amount case", () => {
-    // The whole complaint was one label doing two jobs. These three must not
-    // collapse back into each other.
-    const distinct = new Set([INSUFFICIENT_DATA, NO_BILLING_TITLE, NO_BILLING_BODY, "0đ"]);
-    assert.equal(distinct.size, 4);
-    for (const k of [NO_BILLING_TITLE, NO_BILLING_BODY]) {
-      assert.ok(!k.includes("Insufficient"), "the empty state is not the unknown label");
-    }
-    // …and the empty branch never draws the legacy-partial explanation: with no
-    // bills there is no partial to explain, and it returns before reaching one.
+  it("147. and NOTHING else is on it — the lesson-revenue tile is gone", () => {
+    // It was left there on the reasoning that lessons were taught even where no
+    // bill was raised. On a screen with nothing else on it that tile is not
+    // context, it is a lone unexplained figure under an empty state.
     const empty = /if \(billingState\(billing\) === "empty"\)[\s\S]*?^  \}/m.exec(OVERVIEW);
     assert.ok(empty, "the empty branch is readable");
-    assert.ok(!/partialNote|fin-partial-note|unknownAmountBills/.test(empty![0]));
-    assert.ok(!/fin-historical-note/.test(empty![0]));
+    assert.ok(!/LessonRevenueTile/.test(empty[0]), "no lesson-revenue tile beneath it");
+    assert.ok(!/partialNote|IncompleteNotes|unknownAmountBills/.test(empty[0]), "and no incomplete note");
+    assert.ok(!/fin-historical-note/.test(empty[0]));
+    assert.ok(!/Everyone has paid|No outstanding tuition/.test(empty[0]), "and no false reassurance");
+    // The tile still exists for months that have billing beside it.
+    assert.equal((OVERVIEW.match(/<LessonRevenueTile /g) ?? []).length, 1);
+    assert.ok(/function LessonRevenueTile/.test(OVERVIEW));
   });
 
-  it("137. the empty state does NOT claim everyone paid", () => {
-    // The old behaviour on an unbilled month: "Everyone has paid · No
-    // outstanding tuition for July." — true of an empty list, and a lie about
-    // the month. It is now unreachable, because the branch returns first.
-    const empty = /if \(billingState\(billing\) === "empty"\)[\s\S]*?^  \}/m.exec(OVERVIEW);
-    assert.ok(empty && !/Everyone has paid|No outstanding tuition/.test(empty[0]));
-    // The reassurance still exists for the month it is true of: bills exist and
-    // none of them is outstanding.
-    assert.ok(/t\("Everyone has paid"\)/.test(OVERVIEW));
-  });
-
-  it("138. the Payments tab tells the same two reasons apart", () => {
-    // "No billing records match these filters" told a teacher to change a
-    // filter on a month where no filter would ever help.
+  it("148. the Payments tab tells its two empty reasons apart", () => {
     assert.ok(/const monthIsEmpty = billingState\(data\.billing\) === "empty"/.test(PAYMENTS));
     assert.ok(/monthIsEmpty \? t\(NO_BILLING_TITLE\) : t\("No payment records"\)/.test(PAYMENTS));
-    assert.ok(PAYMENTS.includes("t(NO_BILLING_BODY)"));
     assert.ok(/No billing records match these filters for/.test(PAYMENTS), "the filter case survives");
-  });
-
-  it("139. lesson revenue survives an unbilled month, and is one component", () => {
-    // Lessons were taught in months where no bill was raised. Hiding a true
-    // lesson-derived figure to tidy up a different domain's emptiness would be
-    // the Billing/Revenue confusion this screen exists to prevent.
-    assert.ok(/<LessonRevenueTile total=\{revenue\.total\} \/>/.test(OVERVIEW));
-    assert.equal((OVERVIEW.match(/<LessonRevenueTile /g) ?? []).length, 2, "the grid and the empty state");
-    assert.equal((OVERVIEW.match(/data-testid="fin-lesson-revenue"/g) ?? []).length, 1, "one definition, not two");
-    assert.ok(/function LessonRevenueTile/.test(OVERVIEW));
   });
 });
 
 describe("Gate 6 · Billing and Revenue stay separate", () => {
-  it("140. the Revenue analytics empty state is untouched", () => {
-    // Lesson-derived revenue keeps its own designed wording. A month can have
-    // no bills and real revenue, or bills and no completed lessons; one
-    // domain's emptiness never speaks for the other.
+  it("149. the Revenue analytics empty state is untouched", () => {
     assert.ok(/data-testid="fin-revenue-empty"/.test(ANALYTICS));
     assert.ok(ANALYTICS.includes('t("No revenue recorded for")'));
     assert.ok(ANALYTICS.includes('t("Complete lessons to start tracking revenue for this month.")'));
     assert.ok(/revenue\.total <= 0/.test(ANALYTICS), "and it keys on revenue, not on bills");
   });
 
-  it("141. no Billing copy leaks into Revenue analytics", () => {
-    for (const key of [NO_BILLING_TITLE, NO_BILLING_BODY, INSUFFICIENT_DATA, PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY]) {
+  it("150. no Billing copy leaks into Revenue analytics", () => {
+    for (const key of [
+      NO_BILLING_TITLE, NO_BILLING_BODY, NOT_RECORDED, NOT_DETERMINED,
+      PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY, AT_LEAST_PERCENT, RATE_BASIS,
+    ]) {
       assert.ok(!ANALYTICS.includes(key), `Revenue analytics must not say "${key}"`);
     }
-    assert.ok(!/billingState|unknownAmountBills|billing\./.test(ANALYTICS), "it reads revenue and nothing else");
-    // It keeps the generic label for its own donut, which is a different fact.
-    assert.ok(/emptyLabel=\{t\("No data"\)\}/.test(ANALYTICS));
-  });
-
-  it("142. and no Revenue copy leaks into the Billing empty state", () => {
-    const empty = /if \(billingState\(billing\) === "empty"\)[\s\S]*?^  \}/m.exec(OVERVIEW);
-    assert.ok(empty && !/No revenue recorded for|Complete lessons to start/.test(empty[0]));
+    assert.ok(!/billingState|unknownAmountBills|knownCollected|billing\./.test(ANALYTICS));
+    assert.ok(/emptyLabel=\{t\("No data"\)\}/.test(ANALYTICS), "it keeps its own generic label");
   });
 });
 
-describe("Gate 6 · the fix changed presentation and nothing else", () => {
-  it("143. no Billing arithmetic moved", () => {
-    // The read model still decides what is known; the screen only decides what
-    // to say about it. Every total on this tab is still the server's.
-    for (const [name, src] of UI_FILES) {
-      assert.ok(!/collected\s*\+\s*outstanding|billed\s*-\s*collected/.test(src), `${name} recomputes nothing`);
-    }
-    // The count is read off the payload. `unknownAmountBills={...}` passing it
-    // down a prop is fine; declaring or incrementing one here would be a second,
-    // divergent definition of what "unknown" means.
-    assert.ok(!/(?:const|let|var)\s+unknownAmountBills\s*=/.test(ALL_UI), "never declared here");
-    assert.ok(!/unknownAmountBills\s*\+\+/.test(ALL_UI), "and never counted here");
+describe("Gate 6 · the mobile Money summary is a stack, not a wrap", () => {
+  it("151. one metric per row, stated as a grid", () => {
+    // flex-wrap is not stacking: what wraps is whatever happens not to fit, so
+    // two short metrics share a line, the split changes with the language, and
+    // the rate lands beside an amount with its basis line squeezed under both.
+    const block = financeBlock();
+    const rule = /\.fin-summary-legend\{([^}]*)\}/.exec(block);
+    assert.ok(rule, "the legend is restacked at 620px");
+    assert.ok(/display:grid !important/.test(rule[1]));
+    assert.ok(/grid-template-columns:minmax\(0,1fr\) !important/.test(rule[1]), "exactly one column");
+    assert.ok(/flex-wrap:nowrap !important/.test(rule[1]), "and wrapping cannot come back");
   });
 
-  it("144. no mutation, no dashboard, no clock — still", () => {
+  it("152. every metric is addressable as its own block", () => {
+    // Collected, Outstanding, Unknown when it exists, and the rate: each is a
+    // .fin-metric, so no two can ever share a row by accident.
+    assert.ok(block_has(".fin-metric"), "the hook is styled at the breakpoint");
+    const metrics = (OVERVIEW.match(/className="fin-metric"/g) ?? []).length;
+    assert.equal(metrics, 4, "collected, outstanding, unknown, rate");
+    function block_has(sel: string) { return financeBlock().includes(sel); }
+  });
+
+  it("153. and it introduces no overflow workaround", () => {
+    const block = financeBlock();
+    assert.ok(!/overflow-x/.test(block), "still no fourth scroll region");
+    assert.ok(!/100vw/.test(block));
+    assert.equal([...ALL_UI.matchAll(/overflowX: "auto"/g)].length, 3, "still exactly three");
+  });
+});
+
+describe("Gate 6 · what did not change", () => {
+  it("154. no Billing arithmetic is done in the browser", () => {
+    for (const [name, src] of UI_FILES) {
+      assert.ok(!/knownCollected\s*\+\s*knownOutstanding|billed\s*-\s*known/.test(src), `${name} recomputes nothing`);
+    }
+    assert.ok(!/(?:const|let|var)\s+unknownAmountBills\s*=/.test(ALL_UI));
+    assert.ok(!/unknownAmountBills\s*\+\+/.test(ALL_UI));
+  });
+
+  it("155. no mutation, no dashboard, no clock — still", () => {
     for (const [name, src] of UI_FILES) {
       assert.ok(!/\/api\/finance\/\$\{|method: "PATCH"/.test(src), `${name} must not mutate`);
       assert.ok(!/api\/dashboard/.test(src), `${name} must not call the writing endpoint`);
@@ -1426,40 +1548,42 @@ describe("Gate 6 · the fix changed presentation and nothing else", () => {
     }
   });
 
-  it("145. the stored Billing statuses are unchanged", () => {
-    assert.equal(STATUS_LABEL["Partially Paid"], "Partially paid", "the comp's casing, on the stored key");
+  it("156. the stored statuses and the write rules are untouched", () => {
+    assert.equal(STATUS_LABEL["Partially Paid"], "Partially paid");
     assert.equal(STATUS_LABEL["Paid"], "Paid");
     assert.equal(STATUS_LABEL["Unpaid"], "Unpaid");
-    // A row with no recorded amount is still Partially Paid, and still shows
-    // whatever paid date is stored.
+    const billing = code("src", "lib", "billing.ts");
+    assert.ok(/"amount-required"/.test(billing), "a new partial still requires its amount");
+    assert.ok(/"amount-out-of-range"/.test(billing), "strictly between zero and the fee");
+    // A row with no recorded amount is still Partially Paid, with its stored date.
     assert.ok(/statusBadgeStyle\(r\.status\)/.test(OVERVIEW));
     assert.ok(/r\.paidDate \? fmt\.dateLabel\(r\.paidDate\)/.test(OVERVIEW));
-    assert.ok(/r\.paidDate \? fmt\.dateLabel\(r\.paidDate\)/.test(PAYMENTS));
   });
 
-  it("146. the Vietnamese says the same three things", () => {
-    const vi = (x: string) => translate(x, "vi");
-    assert.equal(vi(INSUFFICIENT_DATA), "Chưa đủ dữ liệu");
-    assert.equal(vi(NO_BILLING_TITLE), "Chưa có dữ liệu học phí cho tháng này");
-    assert.equal(vi(NO_BILLING_BODY), "Tháng này chưa có bản ghi học phí nào.");
-    assert.equal(partialNote(2, vi), "Có 2 khoản thanh toán một phần chưa ghi nhận số tiền.");
-    assert.equal(partialNote(1, vi), "Có 1 khoản thanh toán một phần chưa ghi nhận số tiền.");
-    // The placeholder survives translation; it is filled afterwards.
-    for (const form of [PARTIAL_NOTE_ONE, PARTIAL_NOTE_MANY]) {
-      assert.ok(vi(form).includes("{N}"));
-      assert.notEqual(vi(form), form);
-    }
-    // And the generic label is still the generic label, for the modules that
-    // legitimately use it.
-    assert.equal(vi("No data"), "Không có dữ liệu");
-    assert.notEqual(vi("No data"), vi(INSUFFICIENT_DATA));
+  it("157. the two deferred decisions are written down, not left in a transcript", () => {
+    const billing = raw("src", "lib", "billing.ts");
+    assert.ok(/Amount paid/.test(billing), "the future payment form's contract");
+    assert.ok(/READ-ONLY remaining figure/.test(billing));
+    assert.ok(/billingApplicability: "Billable" \| "Waived"/.test(billing), "the waiver deferral");
+    assert.ok(/must not be overloaded/.test(billing), "and why Unpaid may not stand in for it");
+    // Waived is not in the model, and no status was added for it.
+    assert.ok(!/"Waived"/.test(code("src", "lib", "types.ts")), "no Waived status shipped");
   });
 
-  it("147. the ambiguous line is gone from the dictionary too", () => {
-    // Nothing renders it any more, and a phrase left in the dictionary is a
-    // phrase that can be reintroduced by accident.
-    const vi = raw("src", "lib", "i18n-vi.json");
-    assert.ok(!vi.includes('"bills have no recorded amount"'));
-    assert.ok(!ALL_UI.includes("bills have no recorded amount"));
+  it("158. every new key is translated", () => {
+    const vi = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
+    const expected: Record<string, string> = {
+      [NOT_RECORDED]: "Chưa ghi nhận",
+      [NOT_DETERMINED]: "Chưa xác định",
+      [UNKNOWN_SEGMENT]: "Chưa xác định",
+      [AT_LEAST_PERCENT]: "Ít nhất {X}%",
+      [RATE_BASIS]: "Dựa trên các khoản thanh toán đã ghi nhận.",
+      [HISTORICAL_PARTIAL_MANY]: "Có {N} khoản thanh toán lịch sử chưa ghi nhận số tiền.",
+      [PARTIAL_NOTE_MANY]: "Có {N} khoản thanh toán một phần chưa ghi nhận số tiền.",
+    };
+    for (const [k, v] of Object.entries(expected)) assert.equal(vi[k], v, k);
+    // The placeholders survive translation; they are filled afterwards.
+    assert.ok(vi[AT_LEAST_PERCENT].includes("{X}"));
+    assert.ok(vi[HISTORICAL_PARTIAL_MANY].includes("{N}"));
   });
 });

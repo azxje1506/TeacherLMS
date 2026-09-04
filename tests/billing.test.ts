@@ -150,69 +150,130 @@ describe("Billing · totals over a scope", () => {
   it("14. bills everything given, and collects what is known", () => {
     const t = totalsFor([paid(800_000), unpaid(750_000), partialKnown(300_000, 700_000)]);
     assert.equal(t.billed, 2_250_000);
-    assert.equal(t.collected, 1_100_000);
-    assert.equal(t.outstanding, 1_150_000);
+    assert.equal(t.knownCollected, 1_100_000);
+    assert.equal(t.knownOutstanding, 1_150_000);
     assert.equal(t.unknownAmountBills, 0);
+    assert.equal(t.unknownAmount, 0);
+    assert.equal(t.amountsComplete, true);
   });
 
-  it("15. billed + outstanding reconcile: billed - collected === outstanding", () => {
-    const t = totalsFor([paid(800_000), unpaid(750_000), partialKnown(300_000, 700_000)]);
-    assert.equal(t.billed - (t.collected ?? NaN), t.outstanding);
+  it("15. the three parts always sum to billed, exactly", () => {
+    // The identity the whole shape rests on. It holds whether or not any amount
+    // is recorded, which is what lets a screen draw all three without ever
+    // implying the month adds up to something it does not.
+    for (const scope of [
+      [paid(800_000), unpaid(750_000), partialKnown(300_000, 700_000)],
+      [paid(800_000), unpaid(750_000), partialLegacy(700_000)],
+      [partialLegacy(700_000)],
+      [],
+    ]) {
+      const t = totalsFor(scope);
+      assert.equal(t.knownCollected + t.knownOutstanding + t.unknownAmount, t.billed);
+    }
   });
 
-  it("16. ONE unrecorded partial makes the whole scope's collected unknown", () => {
+  it("16. an unrecorded partial withholds only ITS OWN money", () => {
+    // It used to null the entire scope. The known 800,000 collected and 750,000
+    // outstanding are facts, and hiding them behind one incomplete record was
+    // the defect this contract replaced.
     const t = totalsFor([paid(800_000), unpaid(750_000), partialLegacy(700_000)]);
-    assert.equal(t.billed, 2_250_000, "billed is always knowable");
-    assert.equal(t.collected, null);
-    assert.equal(t.outstanding, null);
+    assert.equal(t.billed, 2_250_000, "its fee still counts: it WAS asked for");
+    assert.equal(t.knownCollected, 800_000);
+    assert.equal(t.knownOutstanding, 750_000);
     assert.equal(t.unknownAmountBills, 1);
+    assert.equal(t.unknownAmount, 700_000, "the whole fee, whose split nobody recorded");
+    assert.equal(t.amountsComplete, false);
   });
 
-  it("17. …and the known part is not reported as though it were the whole", () => {
-    // 800,000 was definitely collected. Reporting it as the total would understate
-    // collection by exactly the amount nobody recorded, which is the failure this
-    // null exists to prevent.
+  it("17. …and NOTHING is inferred for it — not zero, not half, not full", () => {
     const t = totalsFor([paid(800_000), partialLegacy(700_000)]);
-    assert.notEqual(t.collected, 800_000);
-    assert.equal(t.collected, null);
+    assert.equal(t.knownCollected, 800_000, "only the money that is known");
+    for (const wrong of [800_000 + 350_000, 800_000 + 700_000, 1_500_000]) {
+      assert.notEqual(t.knownCollected, wrong, "no amount was invented");
+    }
+    assert.equal(t.knownOutstanding, 0, "nothing is provably still due");
+    assert.notEqual(t.knownOutstanding, 350_000, "and half is not owed either");
   });
 
-  it("18. collectionRate is exact where known", () => {
+  it("18. knownCollected + knownOutstanding < billed exactly when incomplete", () => {
+    const incomplete = totalsFor([paid(800_000), partialLegacy(700_000)]);
+    assert.ok(incomplete.knownCollected + incomplete.knownOutstanding < incomplete.billed);
+    assert.equal(incomplete.amountsComplete, false);
+
+    const complete = totalsFor([paid(800_000), unpaid(700_000)]);
+    assert.equal(complete.knownCollected + complete.knownOutstanding, complete.billed);
+    assert.equal(complete.amountsComplete, true);
+  });
+
+  it("19. collectionRate is exact where every amount is recorded", () => {
     const t = totalsFor([paid(800_000), unpaid(800_000)]);
     assert.equal(t.collectionRate, 50);
+    assert.equal(t.amountsComplete, true);
   });
 
-  it("19. collectionRate is null when any amount is unknown", () => {
-    assert.equal(totalsFor([paid(800_000), partialLegacy(700_000)]).collectionRate, null);
+  it("20. and is a FLOOR, not null, when one is not", () => {
+    // 800,000 of 1,500,000 is provably collected. The real rate is at least 53%
+    // and the flag beside it is what stops a caller printing it as exact.
+    const t = totalsFor([paid(800_000), partialLegacy(700_000)]);
+    assert.equal(t.collectionRate, 53);
+    assert.equal(t.amountsComplete, false);
   });
 
-  it("20. collectionRate is null on a zero denominator — No data, never 0%", () => {
+  it("21. collectionRate is null ONLY on a zero denominator", () => {
     const t = totalsFor([]);
     assert.equal(t.billed, 0);
-    assert.equal(t.collected, 0, "nothing billed and nothing unknown is genuinely zero collected");
-    assert.equal(t.collectionRate, null);
+    assert.equal(t.knownCollected, 0, "nothing billed is genuinely zero collected");
+    assert.equal(t.knownOutstanding, 0);
+    assert.equal(t.amountsComplete, true, "no bill, nothing unrecorded");
+    assert.equal(t.collectionRate, null, "no share of nothing — never 0%");
   });
 
-  it("21. status counts tally, and total counts every bill", () => {
+  it("22. every status contributes exactly what the contract says", () => {
+    assert.deepEqual(
+      (({ knownCollected, knownOutstanding, unknownAmount }) => ({ knownCollected, knownOutstanding, unknownAmount }))(totalsFor([paid(800_000)])),
+      { knownCollected: 800_000, knownOutstanding: 0, unknownAmount: 0 }
+    );
+    assert.deepEqual(
+      (({ knownCollected, knownOutstanding, unknownAmount }) => ({ knownCollected, knownOutstanding, unknownAmount }))(totalsFor([unpaid(800_000)])),
+      { knownCollected: 0, knownOutstanding: 800_000, unknownAmount: 0 }
+    );
+    assert.deepEqual(
+      (({ knownCollected, knownOutstanding, unknownAmount }) => ({ knownCollected, knownOutstanding, unknownAmount }))(totalsFor([partialKnown(300_000, 800_000)])),
+      { knownCollected: 300_000, knownOutstanding: 500_000, unknownAmount: 0 }
+    );
+    assert.deepEqual(
+      (({ knownCollected, knownOutstanding, unknownAmount }) => ({ knownCollected, knownOutstanding, unknownAmount }))(totalsFor([partialLegacy(800_000)])),
+      { knownCollected: 0, knownOutstanding: 0, unknownAmount: 800_000 }
+    );
+  });
+
+  it("23. status counts tally, and `paid` means SETTLED IN FULL", () => {
     const t = totalsFor([paid(), paid(), partialLegacy(), partialKnown(1), unpaid()]);
     assert.deepEqual(t.counts, { paid: 2, partiallyPaid: 2, unpaid: 1, total: 5 });
+    // The caption reading "2 of 5 bills paid" is a statement about BILLS. A
+    // partial that moved real money does not raise it; its money is in
+    // knownCollected instead, and the two are different questions.
+    assert.equal(totalsFor([paid(100), partialKnown(50, 100)]).counts.paid, 1);
+    assert.equal(totalsFor([paid(100), partialKnown(50, 100)]).knownCollected, 150);
   });
 
-  it("22. an unrecognised status is counted in total but in no bucket", () => {
+  it("24. an unrecognised status is counted in total but in no bucket", () => {
     const rogue = { status: "Overdue", fee: 100 } as unknown as BillLike;
     const t = totalsFor([paid(100), rogue]);
     assert.equal(t.counts.total, 2);
     assert.equal(t.counts.paid + t.counts.partiallyPaid + t.counts.unpaid, 1);
   });
 
-  it("23. reproduces the audited production month 2026-02 — 14 bills, all Paid", () => {
+  it("25. reproduces the audited production month 2026-02 — 14 bills, all Paid", () => {
     const fees = [800_000, 800_000, 800_000, 800_000, 750_000, 750_000, 750_000, 750_000,
       700_000, 700_000, 700_000, 1_500_000, 1_500_000, 1_800_000];
     const t = totalsFor(fees.map((f) => paid(f)));
     assert.equal(t.counts.total, 14);
     assert.equal(t.billed, 13_100_000);
-    assert.equal(t.collected, 13_100_000);
-    assert.equal(t.outstanding, 0);
+    assert.equal(t.knownCollected, 13_100_000);
+    assert.equal(t.knownOutstanding, 0);
+    assert.equal(t.unknownAmount, 0);
+    assert.equal(t.amountsComplete, true, "the one month production can state exactly");
     assert.equal(t.collectionRate, 100);
   });
 });
@@ -224,30 +285,38 @@ describe("Billing · per class", () => {
     { ...partialKnown(300_000, 750_000), classId: "c2" },
   ];
 
-  it("24. groups by class and totals each group", () => {
+  it("26. groups by class and totals each group", () => {
     const byClass = totalsByClass(rows);
     assert.deepEqual(byClass.map((r) => r.classId), ["c1", "c2"]);
     assert.equal(byClass[0].billed, 1_600_000);
-    assert.equal(byClass[0].collected, 800_000);
+    assert.equal(byClass[0].knownCollected, 800_000);
     assert.equal(byClass[1].billed, 750_000);
-    assert.equal(byClass[1].collected, 300_000);
+    assert.equal(byClass[1].knownCollected, 300_000);
   });
 
-  it("25. per-class billed sums exactly to the scope's billed", () => {
+  it("27. per-class billed sums exactly to the scope's billed", () => {
     const scope = totalsFor(rows);
     const summed = totalsByClass(rows).reduce((s, r) => s + r.billed, 0);
     assert.equal(summed, scope.billed);
   });
 
-  it("26. an unknown amount poisons only its own class, not the others", () => {
+  it("28. an unrecorded amount marks only its own class incomplete", () => {
     const withLegacy = [...rows, { ...partialLegacy(700_000), classId: "c3" }];
     const byClass = totalsByClass(withLegacy);
-    assert.equal(byClass.find((r) => r.classId === "c1")!.collected, 800_000);
-    assert.equal(byClass.find((r) => r.classId === "c3")!.collected, null);
-    assert.equal(totalsFor(withLegacy).collected, null, "…but the scope total is unknown");
+    const c1 = byClass.find((r) => r.classId === "c1")!;
+    const c3 = byClass.find((r) => r.classId === "c3")!;
+    assert.equal(c1.knownCollected, 800_000);
+    assert.equal(c1.amountsComplete, true, "c1 knows all of its own amounts");
+    assert.equal(c3.knownCollected, 0);
+    assert.equal(c3.unknownAmount, 700_000);
+    assert.equal(c3.amountsComplete, false);
+    // The scope is incomplete because one class is, and still reports its money.
+    const scope = totalsFor(withLegacy);
+    assert.equal(scope.amountsComplete, false);
+    assert.equal(scope.knownCollected, 1_100_000, "every other class's money survives");
   });
 
-  it("27. class order is first appearance — no sort is invented", () => {
+  it("29. class order is first appearance — no sort is invented", () => {
     const shuffled = [rows[2], rows[0], rows[1]];
     assert.deepEqual(totalsByClass(shuffled).map((r) => r.classId), ["c2", "c1"]);
   });

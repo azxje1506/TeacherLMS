@@ -94,56 +94,54 @@ export interface RankableClass {
   classId: string;
   className: string;
   billed: number;
-  collected: number | null;
-  outstanding: number | null;
+  knownCollected: number;
+  knownOutstanding: number;
+  amountsComplete: boolean;
 }
 
-/** "Top performing classes — highest-value classes by collected revenue",
- * split into the classes that can be ranked and the ones that cannot.
+/** "Top performing classes — highest-value classes by collected revenue."
  *
- * A CLASS WHOSE COLLECTED VALUE IS UNKNOWN IS NOT RANKED, and is not given a
- * zero either. It holds a `Partially Paid` bill whose amount was never recorded,
- * so its collected total is genuinely unknowable; sorting it as 0 would put a
- * class that has collected almost everything at the bottom of a list titled
- * "highest-value", which is worse than not placing it at all. The unrankable
- * ones are returned separately so the screen can show them with `No data`
- * rather than silently dropping them — being unplaceable is not being absent.
+ * RANKED BY `knownCollected`, WHICH EVERY CLASS NOW HAS. The old version split
+ * the list in two: a class holding one unrecorded partial had no collected
+ * total at all, so it could not be placed and was listed after the ranking with
+ * `No data` beside it. That was true of the old contract and useless under it —
+ * a class that had demonstrably collected 700,000đ was shown as having no
+ * figure, purely because one of its three bills was incomplete.
+ *
+ * NOW EVERY CLASS IS PLACED, on the money it can actually prove. The number is
+ * a FLOOR for a class whose amounts are incomplete — its real collected total
+ * is that or higher — so the ranking may understate such a class, and the
+ * screen marks it rather than silently presenting a floor as a total.
+ * `amountsComplete` travels with each class for exactly that reason.
+ *
+ * STILL NO ZERO SUBSTITUTED. A class with an unrecorded partial is ranked on
+ * what it did collect, never on an assumed 0 and never on an assumed half.
  *
  * DETERMINISTIC. Ties break on class name, then id, so the same payload always
  * produces the same order. */
-export function rankByCollected<T extends RankableClass>(
-  classes: readonly T[]
-): { ranked: T[]; unknown: T[] } {
-  const ranked = classes.filter((c) => typeof c.collected === "number");
-  const unknown = classes.filter((c) => typeof c.collected !== "number");
-  ranked.sort(
+export function rankByCollected<T extends RankableClass>(classes: readonly T[]): T[] {
+  return [...classes].sort(
     (a, b) =>
-      (b.collected as number) - (a.collected as number) ||
+      b.knownCollected - a.knownCollected ||
       a.className.localeCompare(b.className) ||
       a.classId.localeCompare(b.classId)
   );
-  unknown.sort((a, b) => a.className.localeCompare(b.className) || a.classId.localeCompare(b.classId));
-  return { ranked, unknown };
 }
 
 /** "Revenue by class — sorted by outstanding balance, classes that still owe
  * appear first."
  *
- * Same treatment for the same reason: a class whose outstanding is unknown
- * cannot be placed on a scale of how much it owes, so it sorts after every class
- * that can be, rather than being read as owing nothing. Deterministic ties. */
+ * Same change for the same reason: `knownOutstanding` is a number for every
+ * class, so no class is exiled to the end of the list because one of its bills
+ * is incomplete. A class whose amounts are incomplete sorts on the debt it can
+ * prove, which is a floor, and the row says so. Deterministic ties. */
 export function sortByOutstanding<T extends RankableClass>(classes: readonly T[]): T[] {
-  return [...classes].sort((a, b) => {
-    const ao = a.outstanding, bo = b.outstanding;
-    if (typeof ao === "number" && typeof bo === "number") {
-      if (bo !== ao) return bo - ao;
-    } else if (typeof ao === "number") {
-      return -1;
-    } else if (typeof bo === "number") {
-      return 1;
-    }
-    return a.className.localeCompare(b.className) || a.classId.localeCompare(b.classId);
-  });
+  return [...classes].sort(
+    (a, b) =>
+      b.knownOutstanding - a.knownOutstanding ||
+      a.className.localeCompare(b.className) ||
+      a.classId.localeCompare(b.classId)
+  );
 }
 
 /* ----------------------------------------------------------- chart geometry */
@@ -281,25 +279,80 @@ export const financeNoteStyle: React.CSSProperties = {
  * NOTHING HERE INFERS AN AMOUNT. No half, no proportion, no substitute zero:
  * an amount nobody recorded stays unrecorded, and the screen says so. */
 
-/** The label for a bill-derived figure that cannot be computed. Replaces the
- * app-wide `No data`, which other modules still use for their own absences —
- * this one is specifically "the records exist, the number does not". */
-export const INSUFFICIENT_DATA = "Insufficient data";
+/** THE AGGREGATE LABEL IS GONE. There was an `Insufficient data` constant
+ * here, shown in place of a month's collected and outstanding totals whenever a
+ * single legacy partial lacked an amount. It is deleted rather than deprecated:
+ * no aggregate on this screen is unshowable any more, so a label meaning "this
+ * total cannot be given" has nothing left to label, and leaving it exported
+ * would invite exactly the substitution the fix removed.
+ *
+ * The two places a FIGURE is genuinely missing are single cells of a single
+ * bill, and they get their own words, because "nothing was written down" and
+ * "so this cannot be worked out" are different facts about the same row. */
+export const NOT_RECORDED = "Not recorded";
+export const NOT_DETERMINED = "Not determined";
 
-/** Why a bill-derived total is unknown, in the teacher's terms. Count-aware,
+/** The proportion bar's third segment, and its legend. Not a payment: the slice
+ * of the billed total whose split between collected and outstanding is unknown. */
+export const UNKNOWN_SEGMENT = "Unknown";
+
+/** A collection rate that is a FLOOR rather than a figure, and the sentence
+ * that says on what basis. Shown whenever `amountsComplete` is false — the
+ * real rate is this or higher, because every unrecorded partial collected
+ * something. */
+export const AT_LEAST_PERCENT = "At least {X}%";
+export const RATE_BASIS = "Based on recorded payment amounts.";
+
+/** Why a bill-derived total is incomplete, in the teacher's terms. Count-aware,
  * as PROJECT_RULES' own preferred copy allows, because the count is what tells
  * a teacher how much of the month is affected. */
 export const PARTIAL_NOTE_ONE = "{N} partial payment does not have a recorded amount.";
 export const PARTIAL_NOTE_MANY = "{N} partial payments do not have a recorded amount.";
 
+/** The same fact about records whose student no longer resolves.
+ *
+ * A DIFFERENT SENTENCE BECAUSE IT IS A DIFFERENT SITUATION, not because it is a
+ * different kind of record. An unrecorded partial belonging to a student who
+ * still exists is something a teacher can go and settle; the same gap on a
+ * record whose student is gone is closed history they cannot act on.
+ *
+ * IT SAYS NOTHING ABOUT WHY THE STUDENT IS MISSING. Deleted, stopped studying,
+ * cleaned up, waived — the data model proves none of them, so the copy claims
+ * none of them. "Historical" is a statement about the record's age and nothing
+ * else, and no id or name travels with it. */
+export const HISTORICAL_PARTIAL_ONE = "{N} historical payment does not have a recorded amount.";
+export const HISTORICAL_PARTIAL_MANY = "{N} historical payments do not have a recorded amount.";
+
 /** The month held no bills. A title and a description, not a value. */
 export const NO_BILLING_TITLE = "No tuition data for this month";
 export const NO_BILLING_BODY = "There are no billing records for this month yet.";
 
-/** The sentence for `count` unrecorded partials. Pluralised like
- * `historicalNote`, and never rendered at zero — the caller guards. */
+/** The sentence for `count` unrecorded partials belonging to live students.
+ * Pluralised like `historicalNote`, and never rendered at zero — the caller
+ * guards, because a note explaining nothing is clutter. */
 export function partialNote(count: number, t: (s: string) => string): string {
   return t(count === 1 ? PARTIAL_NOTE_ONE : PARTIAL_NOTE_MANY).replace("{N}", String(count));
+}
+
+/** The same, for records whose student no longer resolves. */
+export function historicalPartialNote(count: number, t: (s: string) => string): string {
+  return t(count === 1 ? HISTORICAL_PARTIAL_ONE : HISTORICAL_PARTIAL_MANY).replace("{N}", String(count));
+}
+
+/** A collection rate, as a percentage or as a floor.
+ *
+ * `null` is the one case that has no percentage at all: nothing was billed, so
+ * no share of it exists, and `0%` would be a claim about a month that asked for
+ * nothing. Everything else has a number — exact when every amount is recorded,
+ * and "At least X%" when one is not, because the real rate can only be higher. */
+export function rateText(
+  rate: number | null,
+  amountsComplete: boolean,
+  t: (s: string) => string,
+  noRate: string
+): string {
+  if (rate === null) return noRate;
+  return amountsComplete ? `${rate}%` : t(AT_LEAST_PERCENT).replace("{X}", String(rate));
 }
 
 /** Which of the three states a bill-derived scope is in.

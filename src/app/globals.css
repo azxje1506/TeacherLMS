@@ -1233,6 +1233,29 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
     font-size:11px;font-weight:500;color:var(--muted);
   }
 
+  /* ---- Money summary metrics ---------------------------------------------
+     ONE METRIC PER ROW, AND IT IS A GRID SAYING SO. The legend row is a
+     space-between flex row of three or four metrics — Collected, Outstanding,
+     Unknown when it exists, and the collection rate with its basis line beneath
+     it. At 375px that row wraps, which is not the same thing as stacking: what
+     wraps is whatever happens not to fit, so two short metrics share a line and
+     a third drops below them, the split changes with the language, and the rate
+     lands beside an amount with its supporting sentence squeezed under both.
+
+     A single-column grid states the intent instead of leaving it to arithmetic:
+     every metric owns a full row at every width, in the order it is written, in
+     every language, whatever the numbers happen to be. flex-wrap is switched
+     off with it so no wrapping rule can quietly come back and re-pair them.
+
+     Each metric is then its own block — label, value, supporting copy — which is
+     what makes the rate's "Based on recorded payment amounts." read as belonging
+     to the rate rather than to the row. */
+  .fin-summary-legend{
+    display:grid !important;grid-template-columns:minmax(0,1fr) !important;
+    flex-wrap:nowrap !important;gap:12px !important;align-items:start !important;
+  }
+  .fin-metric{min-width:0}
+
   /* ---- Revenue by class ---------------------------------------------------
      The densest panel: a name, a status summary, a proportion bar and TWO
      right-aligned money columns, all on one row. The two columns are what breaks

@@ -25,10 +25,25 @@
   month, because the only Archived student is on no roster.
 - `paidAmount?: number`, stored only on a `Partially Paid` bill. The nine legacy
   partials in production carry empty notes, so no amount is recoverable from
-  them: they stay `null` and render **`No data`**, never `0đ` and never an
-  inferred 50%. The dead `calc.ts` `paidAmount` helper carrying that 50% rule was
-  deleted along with the unused `Payment` type and `paymentSchema`. **Zero
-  migration, zero backfill.**
+  them: their own cells read `Not recorded` and `Not determined`, never `0đ` and
+  never an inferred 50%. The dead `calc.ts` `paidAmount` helper carrying that 50%
+  rule was deleted along with the unused `Payment` type and `paymentSchema`.
+  **Zero migration, zero backfill.**
+- **Aggregates report confirmed money rather than refusing to report at all.**
+  The first contract nulled a whole scope's collected and outstanding totals if
+  any bill in it lacked a recorded amount. Production review overturned it: a
+  month where 8,550,000đ had demonstrably been collected reported nothing,
+  because one bill of 700,000đ was incomplete. A scope now carries
+  `knownCollected`, `knownOutstanding`, `unknownAmount`, `unknownAmountBills`
+  and `amountsComplete`, with
+  `knownCollected + knownOutstanding + unknownAmount === billed` true by
+  construction — `unknownAmount` being the *fee* of every unrecorded bill, which
+  is neither a payment nor a debt. The collection rate is exact when complete
+  and a floor ("At least X%") when not; the proportion bar draws a third neutral
+  segment for the gap; `x of y bills paid` counts bills settled in full, while a
+  partial's money is already inside the collected figure. Ranking uses confirmed
+  collected totals, so no class is exiled from the list for holding one
+  incomplete bill. Still nothing inferred, and no stored document touched.
 - Read service and API: `GET /api/finance?month=YYYY-MM` returns one month's
   billing and revenue branches plus the twelve-month window the selector offers.
   The window is the **server's** — no Finance file constructs a `Date`, reads a
@@ -49,10 +64,11 @@
 - Deviations from the comp, all agreed in advance: no **Method** column
   (`methodIcon` / `methodLabel` exist in the comp with no field behind them
   anywhere — model, production, rules or dictionary), no row actions, and no
-  Overdue or Invoice concept. A class whose collected total is unknown is **not
-  ranked and not given a zero** — it is listed after the ranking, saying
-  `No data`, because sorting it as 0 would put a class that has collected almost
-  everything at the bottom of a list titled "highest-value".
+  Overdue or Invoice concept. A class holding an incomplete bill is **ranked on
+  the money it can prove and never on an assumed zero** — sorting it as 0 would
+  put a class that has collected almost everything at the bottom of a list
+  titled "highest-value" — and the row marks that figure as a floor rather than
+  presenting it as a total.
 - **Ghost bills — those whose student was deleted — are counted in every total
   and named in no list.** Both halves matter: a deletion must not move a closed
   month's figures, and a worklist of who owes money cannot contain somebody who
