@@ -287,17 +287,22 @@ drawn as a floor with a sentence explaining the arithmetic underneath. The
 figure is still computed and still on the payload for any future surface that
 wants it; nothing renders it.
 
-Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375 —
-against the **Preview** deployment at `206084f`. Production serves that same
-SHA, and the closure commit above it changes documentation only, so the two are
-the same application; Production itself was verified **programmatically** here
-(served stylesheet, served bundle and every month's payload). A human browser
-pass against Production is the one closure step still outstanding, and a Preview
-pass is deliberately not reported as a Production one. Finance's only stylesheet is one
-block at the app's existing 620px breakpoint, which restacks the three panels a
-phone cannot hold in a row; every other width is the comp's own inline values.
-Exactly three regions scroll horizontally — the tab strip, the Payments table
-and the expanded per-student grid — and the page itself never does.
+Responsive verification **passed** by hand at ≥1100, 768–860, ≤620 and 375, on
+the hosted **Preview** deployment, over four review rounds: the first found an
+ambiguous `+N more`, the second an ambiguous `No data`, the third a collection
+rate nobody could act on, and the fourth a count drawn twice. The final pass was
+taken against Preview at `e3e757c`, which is the exact SHA `main` was then
+fast-forwarded to and Vercel deployed to **Production** — the same commit, the
+same bytes, so the pass carries. Production itself was additionally verified
+**programmatically**: the served stylesheet, the served bundle and every month's
+payload were read back and checked, and the two facts are kept apart rather than
+one being reported as the other.
+
+Finance's only stylesheet is one block at the app's existing 620px breakpoint,
+which restacks the panels a phone cannot hold in a row and gives the month
+selector a full-width row of its own; every other width is the comp's own inline
+values. Exactly three regions scroll horizontally — the tab strip, the Payments
+table and the expanded per-student grid — and the page itself never does.
 
 **No Billing document was created, edited or deleted at any point in Sprint 9**,
 rollout and Production verification included, and **no Billing index was created

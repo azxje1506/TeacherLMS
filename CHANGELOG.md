@@ -169,15 +169,28 @@
   index, any monthly Billing generator (so a future month can legitimately return
   no bills), the payment UI, the Student Profile Finance tab, and Finance
   reports / export. Each waits on a design or on its own authorised change.
-- **Rollout is complete; Sprint 9 remains open until a human browser pass
-  against the Vercel Production deployment is recorded.** The responsive pass on
-  record was taken against the **Preview** deployment at `206084f`. Production
-  now serves that same SHA — the closure commit on top of it is documentation
-  only — and was verified here **programmatically**: the served stylesheet
-  carries the 620px Finance block, the served bundle carries the new copy and no
-  longer contains the removed disclosure hook, and every month's payload named
-  only live students. That is strong evidence and it is not the visual pass, so
-  neither is reported as the other.
+- **Rollout complete: merged to `main` and deployed to Vercel Production at
+  `e3e757c`.** The human responsive pass — ≥1100, 768–860, ≤620 and 375 — was
+  taken on the hosted **Preview** at that exact SHA, which `main` was then
+  fast-forwarded to, so Production runs the same commit and the same bytes.
+  Production was additionally read back **programmatically**: the served
+  stylesheet carries the 620px Finance block and the new tile and header rules,
+  the served bundle carries the current copy and none of the four removed
+  affordances (`+N more`, `Insufficient data`, the collection rate, the
+  duplicate Partially paid tile), and all twelve months' payloads satisfy
+  `knownCollected + knownOutstanding + unknownAmount === billed` while naming
+  only live students. The two kinds of evidence are recorded separately rather
+  than one standing in for the other.
+- **No production Billing document was created, edited or deleted at any point
+  in Sprint 9** — implementation, four review rounds, rollout and verification
+  included — and `PATCH /api/finance/:billId` was **never invoked against
+  Production**. No DDL ran and no index changed: the inventory is still exactly
+  `_id_`, `id_1`, `studentId_1`, `classId_1`, `month_1`, and mongoose's
+  `autoIndex` was a no-op again because no Billing index is declared. The three
+  baselines reproduce identically either side of the deployment. The Finance
+  integrity probe's accepted baseline stays `null` deliberately: nothing was
+  written, so there is nothing to accept.
+- **Sprint 9 — Finance is closed.**
 
 ## Unreleased — Reviews MVP (Sprint 8) — **hosted Preview verified**
 - Reviews domain and validation: a Review is one student's month — ten skill
