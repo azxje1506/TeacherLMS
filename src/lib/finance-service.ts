@@ -352,4 +352,3 @@ export async function recordPayment(
     },
   };
 }
-
