@@ -352,11 +352,35 @@ production data or a missing design, not an open defect:
   authorised migration gate. Deferred technical hardening.
 - **No monthly Billing generator** exists, so a future month can legitimately
   return no bills.
-- **Payment UI**, the **Student Profile Finance tab**, and Finance **reports /
-  export** all wait for a design.
+- **Payment UI** and the **Student Profile Finance tab** wait for a design. The
+  **Finance figures a report would show** are no longer waiting: Reports is
+  Sprint 10 and its contract is approved (below). Finance's own **Excel export**
+  remains deferred.
+
+**Sprint 10 — Reports: discovery and contract complete, implementation not
+begun.** Gate 1 discovery passed and the Gate 2 contract is approved and written
+into [`PROJECT_RULES.md`](./PROJECT_RULES.md) — no Reports code exists yet.
+`/reports` is still the module placeholder: there is no Reports API route, no
+read model, no DTO, no preview, no export and no Reports test suite.
+
+The contract authorises exactly **five** report types — Monthly Revenue Report,
+Class Revenue Report, Student Payment Report, Attendance Summary and Homework
+Summary. Reports is read-only and composes figures the owning domains already
+produce; it owns no arithmetic and no month semantics of its own. Reports are
+**generated, never stored**: there is no Report model, id, lifecycle, history or
+cache, and previewing, printing or exporting writes nothing.
+
+`Performance Summary` is deliberately **not** a Reports type, and the **Monthly
+Progress Report stays Reviews-owned** — a second student academic document over
+the same ratings, average and month would be the same report twice. **Export
+PDF** and **Print** are authorised for Sprint 10; **Excel is deferred** to its
+own export gate, with nothing ported from the reference builder and no disabled
+control drawn; **CSV is out of scope**. Reports are teacher-facing, and the
+missing-parent indication is carried by the Student Payment Report's per-student
+rows alone.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons,
-Reports, Calendar and Settings screens — each ported
+Calendar and Settings screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.
 

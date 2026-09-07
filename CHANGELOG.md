@@ -1,5 +1,75 @@
 # Changelog
 
+## Unreleased — Reports (Sprint 10) — **contract only, no implementation**
+- **Gate 1 discovery passed.** `/reports` is a four-line module placeholder;
+  there is no Report model, stored report entity, Reports API route, DTO, export
+  or Reports test suite anywhere in the repository, and production holds no
+  reports collection. Recorded so a later gate is judged against what was
+  actually there.
+- **The Reports contract was agreed before any code**, as Billing's was in
+  Sprint 9, and is now written into `PROJECT_RULES.md` as a `## Reports`
+  section. **No Reports implementation exists.**
+- **Five authorised report types, and no others:** Monthly Revenue Report, Class
+  Revenue Report, Student Payment Report, Attendance Summary, Homework Summary.
+  Reports owns presentation and composition only — it calls the helper that owns
+  each figure and duplicates no arithmetic.
+- **`Performance Summary` is excluded** to avoid duplicating Sprint 8. A
+  field-by-field audit found nothing it could own that the **Reviews-owned
+  Monthly Progress Report** does not already own: the same ten ratings, the same
+  average, the same attendance and homework figures, the same month, and the
+  same preview/print/PDF. A sixth type would have been the same report twice,
+  differing only in layout. An unused i18n string is not an authorisation.
+- **Generated, never stored.** No Report model, id, status, lifecycle, saved
+  history or cached document. Previewing, printing and exporting perform zero
+  database writes. `Generated on` is ephemeral document metadata taken from the
+  application day and creates no persisted timestamp — the rule Reviews already
+  holds its own report to.
+- **Month ownership stays with the owning domain, per report type:** revenue by
+  `Lesson.date`, Student Payment by `Billing.month`, Attendance by the Lesson
+  (never `AttendanceRecord.date`), Homework by the assignment's due date.
+  Reports introduces no third interpretation of a month, `paidDate` never
+  replaces `Billing.month`, and the reporting window is the server-owned twelve
+  months ending at the application month — never the seed's `FINANCE_MONTHS`.
+- **Billing and Revenue are never mixed in one report body.** They may both
+  appear in the Reports selector as separate types, but a single sheet with one
+  masthead and one table cannot say which definition a number belongs to.
+  Sprint 9's semantics carry unchanged: no guessed partial amount, `unknownAmount`
+  is a fee and not a payment, an incomplete collection rate stays a floor, and
+  stored anomalies such as `c6` are reported exactly as stored.
+- **Ghost handling stays owner-domain-specific**, and **Reports never invents a
+  count**: it may surface a neutral hidden-record count a domain already supplies
+  (Billing's `hiddenRecords`), and where a domain supplies none it shows none.
+  No cross-domain ghost algorithm exists, because one filter applied across every
+  domain would silently move figures in at least one of them.
+- **Reports are teacher-facing analytical documents** — no salutation, recipient,
+  address, signature, send action or notification. A missing Parent never blocks
+  generation. **The Student Payment Report alone carries the missing-parent
+  indication**, reusing Finance's existing `parentLinked` boolean and its
+  `No linked parent` line; no parent name, phone, email or address is carried
+  anywhere in Reports. `Student & Parents` gained one clarifying paragraph
+  recording that the rule requires an indication where linkage is relevant, not
+  that every named feature becomes parent-facing.
+- **Export PDF and Print are authorised for Sprint 10.** PDF is client-side, A4
+  portrait, Unicode-safe with a loud failure if the font cannot load, and is
+  never persisted. Print gets its **own** isolated Reports scope — the Reviews
+  print path is not borrowed, extended or altered, and the CSS block removed in
+  Gate 4.4E is not restored.
+- **Excel is deferred** to its own export gate: nothing is ported from
+  `design-reference/lib/etlms-export.js`, no CSV is substituted, and **no
+  disabled Excel control is drawn**. The action row therefore carries two
+  controls where the design draws three — an accepted, recorded divergence.
+  **CSV is out of scope.**
+- **Responsive stacking below 768px is explicitly approved** as a minimal
+  design-reference divergence: the design's fixed 300px options rail leaves
+  roughly fifty pixels for the document on a phone. The rail stacks above the
+  preview at full width, sticky is dropped where it would collide with the app
+  header, and a wide table may scroll inside its own bounded container — the page
+  never scrolls horizontally, and neither PDF nor Print may depend on that
+  scroller. No other screen's responsive behaviour changes.
+- **Nothing was implemented.** No UI, no `/api/reports`, no read model, no DTO,
+  no PDF or Print code, no tests, no schema change, no index, no production write
+  and no DDL. Documentation only.
+
 ## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
 - Billing contract, agreed before any code: the natural key is
   `(studentId, classId, month)` — 84/84 unique — and **not** `(studentId, month)`,
