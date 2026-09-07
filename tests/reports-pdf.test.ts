@@ -33,7 +33,7 @@ import {
   type ReportPdfBlock, type ReportPdfDocument,
 } from "../src/lib/reports-pdf-document";
 import { columnWidths, renderReportPdf, reportPdfSafeText, type ReportJsPdf } from "../src/lib/reports-pdf";
-import { renderSummaryValue, renderValue } from "../src/components/reports/reports-ui";
+import { canActOnReport, renderSummaryValue, renderValue } from "../src/components/reports/reports-ui";
 import { REPORT_TITLE, REPORT_TYPES, type ReportPayload, type ReportValue } from "../src/lib/reports";
 import { createFormat, DEFAULT_REGIONAL } from "../src/lib/format";
 
@@ -1006,17 +1006,30 @@ describe("Reports · the final action block", () => {
   it("88. both actions are genuinely disabled only when unusable", () => {
     assert.ok(/disabled=\{!canAct \|\| exporting\}/.test(CONTROLS), "export: no payload, or already running");
     assert.ok(/disabled=\{!canAct\}/.test(CONTROLS), "print: no payload");
-    assert.ok(/const canAct = !isLoading && !isError && !!data/.test(PAGE));
+    // ONE condition, and the page does not restate it: it calls the helper.
+    assert.ok(/const canAct = canActOnReport\(\{/.test(PAGE));
+    assert.ok(/canActOnReport/.test(code("src", "components", "reports", "reports-ui.ts")),
+      "and the helper is where the rule lives");
   });
 
-  it("89. a refetch does NOT disable them — the sheet still shows a document", () => {
-    /* Read the DEFINITION, not the JSX: `aria-busy={isFetching}` lives a few
-     * lines below the prop that passes `canAct` down, and a loose scan matches
-     * across both. */
+  it("89. a refetch DOES disable them — the sheet's document is not the current one", () => {
+    /* REVERSED IN GATE 5.1, DELIBERATELY. This assertion used to say the
+     * opposite: that a refetch left both actions live, because `keepPreviousData`
+     * kept a real document on screen. It does — but that document belongs to the
+     * PREVIOUS selection while the controls already show the new one, and a file
+     * exported or printed then carries A's figures under B's filters. The screen
+     * corrects itself when B lands; the file never does.
+     *
+     * Read the DEFINITION, not the JSX: `aria-busy={isFetching}` lives further
+     * down and a loose scan would match across both. */
     const def = PAGE.slice(PAGE.indexOf("const canAct ="));
-    assert.ok(!def.slice(0, def.indexOf("\n")).includes("isFetching"),
-      "keepPreviousData keeps a real report on screen while the next loads");
+    const call = def.slice(0, def.indexOf("});") + 3);
+    assert.ok(call.includes("isFetching"), "an in-flight read makes the actions unavailable");
+    assert.ok(call.includes("isPlaceholderData"),
+      "and so does a payload belonging to an earlier selection");
+    // The continuity itself is untouched — only actionability changed.
     assert.ok(PAGE.includes("placeholderData: keepPreviousData"));
+    assert.ok(/aria-busy=\{isFetching/.test(PAGE), "the sheet still says busy rather than blanking");
   });
 
   it("90. the export acts on the payload the sheet is showing", () => {
@@ -1026,8 +1039,8 @@ describe("Reports · the final action block", () => {
     assert.ok(!/refetch\(\)[\s\S]{0,80}exportReportPdf/.test(PAGE));
   });
 
-  it("91. a double press cannot produce two files", () => {
-    assert.ok(/if \(!data \|\| exporting\) return;/.test(PAGE));
+  it("91. a double press cannot produce two files — and nor can a stale one", () => {
+    assert.ok(/if \(!canAct \|\| !data \|\| exporting\) return;/.test(PAGE));
   });
 
   it("92. a failed export is reported and leaves nothing behind", () => {
@@ -1043,5 +1056,180 @@ describe("Reports · the final action block", () => {
       "The report could not be exported.", "The report font could not be loaded."]) {
       assert.ok(dict[k], `${k} must be in the dictionary`);
     }
+  });
+});
+
+/* ======================================================== the stale payload */
+
+describe("Reports · a stale keepPreviousData payload is never actionable", () => {
+  /* THE BUG THIS SECTION EXISTS FOR.
+   *
+   *   1. Selection A's report is loaded and on screen.
+   *   2. The teacher changes a control, so the rail now says B.
+   *   3. React Query starts B and, because of `keepPreviousData`, keeps A's
+   *      payload rendered: `data` is A, `isFetching` is true,
+   *      `isPlaceholderData` is true.
+   *   4. Before Gate 5.1 both actions stayed live, because the condition was
+   *      `!isLoading && !isError && !!data` — and `data` is A, so it was true.
+   *   5. Export produced a PDF of A under B's filters; Print produced the same
+   *      page on paper.
+   *
+   * The screen recovers when B lands. A file does not. So the previous payload
+   * is display continuity only, and `canActOnReport` is the one place that says
+   * so — both buttons read it, and both handlers re-read it.
+   *
+   * WHAT THIS SUITE CAN AND CANNOT DO. There is no DOM runner in this project
+   * (see the head of tests/reports-ui.test.ts), so no test here clicks a button.
+   * What it does instead is exercise the REAL decision function over the real
+   * transition, and then scan the two handlers to prove they consult it before
+   * reaching anything with an effect — the export before `exportReportPdf`, the
+   * print before `printReportSheet` and therefore before `body.print-report`
+   * and `window.print()`. A human still re-verifies in a browser. */
+
+  /** The four React Query facts, at each step of A to B. */
+  const loadedA = {
+    hasReport: true, isError: false, isFetching: false, isPlaceholderData: false,
+  };
+  /** Controls say B; the sheet still says A. THE BUG STATE. */
+  const switchingToB = {
+    hasReport: true, isError: false, isFetching: true, isPlaceholderData: true,
+  };
+  const resolvedB = {
+    hasReport: true, isError: false, isFetching: false, isPlaceholderData: false,
+  };
+
+  /* ---------------------------------------------------------------- export */
+
+  it("94. Export PDF is unavailable while the newer selection is unresolved", () => {
+    assert.equal(canActOnReport(loadedA), true, "A is loaded and exportable");
+    assert.equal(canActOnReport(switchingToB), false,
+      "a payload that is not this selection's cannot be exported");
+  });
+
+  it("95. …and a non-null payload is exactly why the old condition was not enough", () => {
+    // Every ingredient of the pre-5.1 condition is still TRUE in the bug state.
+    assert.equal(switchingToB.hasReport, true, "there IS a payload");
+    assert.equal(switchingToB.isError, false, "nothing failed");
+    // Only the two facts the fix added tell the states apart.
+    assert.notEqual(switchingToB.isFetching, resolvedB.isFetching);
+    assert.notEqual(switchingToB.isPlaceholderData, resolvedB.isPlaceholderData);
+    assert.equal(canActOnReport(switchingToB), false);
+  });
+
+  it("96. the export handler fails closed before it generates anything", () => {
+    const fn = PAGE.slice(PAGE.indexOf("const onExport"), PAGE.indexOf("const onPrint"));
+    const guard = fn.indexOf("if (!canAct || !data || exporting) return;");
+    assert.ok(guard > -1, "the handler re-reads the same condition");
+    // Nothing with an effect happens before it: no drawing, no busy flag.
+    assert.ok(guard < fn.indexOf("exportReportPdf"), "the guard precedes the PDF generation");
+    assert.ok(guard < fn.indexOf("buildReportPdfDocument"), "and the document build");
+    assert.ok(guard < fn.indexOf("setExporting(true)"), "and even the busy flag");
+  });
+
+  it("97. Export becomes available again once the new selection resolves", () => {
+    assert.equal(canActOnReport(resolvedB), true);
+  });
+
+  it("98. the payload exported is the one the current controls asked for", () => {
+    /* The query key IS the selection — type, period, class, student — and it is
+     * computed from the same state the rail renders, in the same render. So a
+     * NON-placeholder payload is by construction the current selection's, and
+     * the export takes `data` directly rather than a copy taken earlier. */
+    assert.ok(/queryKey: reportKeys\.one\(type, period, classId, studentId\)/.test(PAGE));
+    assert.ok(/queryFn: \(\) => fetchReport\(type, period, classId, studentId\)/.test(PAGE));
+    assert.ok(/buildReportPdfDocument\(data, \{ t, fmt \}\)/.test(PAGE),
+      "the export reads the render's own payload, not a snapshot");
+    assert.ok(!/useState[^\n]*ReportPayload/.test(PAGE), "no payload is copied into state");
+  });
+
+  /* ----------------------------------------------------------------- print */
+
+  it("99. Print obeys the same condition, not a looser one of its own", () => {
+    assert.ok(/disabled=\{!canAct\}/.test(CONTROLS));
+    // There is no second, weaker availability rule anywhere in Reports.
+    for (const src of [PAGE, CONTROLS]) {
+      assert.ok(!/canPrint/.test(src), "one condition, not two");
+      assert.ok(!/canExport/.test(src));
+    }
+  });
+
+  it("100. the print handler fails closed before `body.print-report` is set", () => {
+    const fn = PAGE.slice(PAGE.indexOf("const onPrint"), PAGE.indexOf("return ("));
+    assert.ok(/if \(!canAct\) return;/.test(fn), "the handler re-reads the condition");
+    assert.ok(fn.indexOf("if (!canAct) return;") < fn.indexOf("printReportSheet()"),
+      "and nothing is printed before it");
+    /* The class and the dialog are BOTH behind that call: `printReportSheet` is
+     * the only thing that touches either, and the guard is in front of it. */
+    assert.equal((PAGE.match(/classList\.add\("print-report"\)/g) ?? []).length, 1);
+    assert.equal((PAGE.match(/window\.print\(\)/g) ?? []).length, 1);
+    const trigger = PAGE.slice(PAGE.indexOf("function printReportSheet"), PAGE.indexOf("export default"));
+    assert.ok(trigger.includes('classList.add("print-report")'));
+    assert.ok(trigger.includes("window.print()"));
+  });
+
+  it("101. the rail passes the guarded handler, never the raw trigger", () => {
+    assert.ok(/onPrint=\{onPrint\}/.test(PAGE));
+    assert.ok(!/onPrint=\{printReportSheet\}/.test(PAGE),
+      "the unguarded module function must not be handed to the button");
+  });
+
+  /* ------------------------------------------------------- the other states */
+
+  it("102. a resolved payload leaves both actions usable", () => {
+    assert.equal(canActOnReport(loadedA), true);
+  });
+
+  it("103. no payload at all — the first load — leaves both unavailable", () => {
+    assert.equal(canActOnReport({
+      hasReport: false, isError: false, isFetching: true, isPlaceholderData: false,
+    }), false, "the very first read");
+    assert.equal(canActOnReport({
+      hasReport: false, isError: false, isFetching: false, isPlaceholderData: false,
+    }), false, "and an idle screen with nothing on it");
+  });
+
+  it("104. a failed read leaves both unavailable, even with a previous report held", () => {
+    /* The page renders the error card INSTEAD of the sheet, so there is no
+     * document on screen to act on — whatever `keepPreviousData` still holds. */
+    assert.equal(canActOnReport({
+      hasReport: true, isError: true, isFetching: false, isPlaceholderData: true,
+    }), false);
+    assert.ok(/\{!isLoading && !isError && data && <ReportSheet/.test(PAGE));
+  });
+
+  it("105. an export already running blocks only Export, which is the simplest contract", () => {
+    /* `exporting` is an EXPORT fact and is not folded into the shared condition:
+     * drawing a PDF neither changes nor invalidates the document on screen, so
+     * inventing a coupling that stopped Print would be a rule nobody asked for.
+     * It is the one extra term the export button adds, and nothing else. */
+    assert.ok(/disabled=\{!canAct \|\| exporting\}/.test(CONTROLS), "export adds it");
+    assert.ok(/disabled=\{!canAct\}/.test(CONTROLS), "print does not");
+    const helper = code("src", "components", "reports", "reports-ui.ts");
+    const decision = helper.slice(helper.indexOf("export function canActOnReport"));
+    assert.ok(!decision.includes("exporting"), "the shared condition knows nothing about exporting");
+  });
+
+  /* ---------------------------------------------------------- no new UI */
+
+  it("106. the fix adds no warning, badge, dialog, toast or loading UI", () => {
+    for (const src of [PAGE, CONTROLS]) {
+      for (const banned of [
+        "stale", "Stale", "out of date", "Report is", "confirm", "Confirm",
+        "AlertDialog", "Modal",
+      ]) {
+        assert.ok(!src.includes(banned), `the only visible change is availability (${banned})`);
+      }
+    }
+    // The one toast in Reports is still the export FAILURE, and there is no other.
+    assert.equal((PAGE.match(/toast\(/g) ?? []).length, 1);
+    assert.ok(/The report could not be exported\./.test(PAGE));
+  });
+
+  it("107. keepPreviousData itself is untouched — continuity was never the problem", () => {
+    assert.ok(PAGE.includes("placeholderData: keepPreviousData"));
+    assert.ok(/import \{ useQuery, keepPreviousData \}/.test(PAGE));
+    assert.ok(/aria-busy=\{isFetching \|\| undefined\}/.test(PAGE));
+    // The sheet is still rendered from whatever payload is held.
+    assert.ok(/data && <ReportSheet data=\{data\} \/>/.test(PAGE));
   });
 });

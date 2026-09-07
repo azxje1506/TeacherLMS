@@ -55,7 +55,7 @@ import { ReportSheet } from "@/components/reports/report-sheet";
 import { buildReportPdfDocument } from "@/lib/reports-pdf-document";
 import { ReportPdfError, exportReportPdf } from "@/lib/reports-pdf";
 import {
-  ALL, nextClassValue, nextStudentValue, snapPeriod,
+  ALL, canActOnReport, nextClassValue, nextStudentValue, snapPeriod,
 } from "@/components/reports/reports-ui";
 
 /** The first report offered, and the one the screen opens on. `REPORT_TYPES[0]`
@@ -102,13 +102,21 @@ export default function ReportsPage() {
   const [classId, setClassId] = useState<string>(ALL);
   const [studentId, setStudentId] = useState<string>(ALL);
 
-  const { data, isLoading, isError, refetch, isFetching } = useQuery({
+  const {
+    data, isLoading, isError, refetch, isFetching, isPlaceholderData,
+  } = useQuery({
     queryKey: reportKeys.one(type, period, classId, studentId),
     queryFn: () => fetchReport(type, period, classId, studentId),
     /* THE PREVIEW HOLDS THE LAST GOOD REPORT WHILE THE NEXT ONE LOADS. Changing
      * a filter is a navigation between two documents, not a destruction of the
      * one on screen; without this the sheet would blank on every keystroke of
-     * the rail. `isFetching` drives the quiet in-flight cue instead. */
+     * the rail. `isFetching` drives the quiet in-flight cue instead.
+     *
+     * IT IS DISPLAY CONTINUITY ONLY. The payload it holds belongs to the
+     * PREVIOUS selection, so while it is on screen the rail and the sheet
+     * describe different things — and `isPlaceholderData` is React Query's own
+     * answer to which of the two the document is. `canActOnReport` reads it, so
+     * neither output can act on a report the controls no longer ask for. */
     placeholderData: keepPreviousData,
   });
 
@@ -139,23 +147,39 @@ export default function ReportsPage() {
   /* ---- the two outputs --------------------------------------------------
    *
    * BOTH ACT ON `data` — the payload the sheet is showing this render. There is
-   * no second fetch, no different query and no snapshot taken earlier: changing
-   * a filter and pressing Export immediately exports whatever document is on
-   * screen at that moment, because `data` IS that document. While a refetch is
-   * in flight `keepPreviousData` keeps the previous payload rendered, so the
-   * file matches the page rather than the request; the moment the new payload
-   * lands, both the sheet and the export follow it.
+   * no second fetch, no different query and no snapshot taken earlier, because
+   * `data` IS the document on screen.
+   *
+   * BUT A PREVIOUS PAYLOAD IS NOT AN ACTIONABLE ONE. `keepPreviousData` keeps
+   * selection A's report rendered while selection B loads, which is right for
+   * the screen and wrong for a file: exporting then would hand somebody A's
+   * figures under B's filters, and a document that leaves the building wrong
+   * stays wrong, where the screen corrects itself a moment later. So the actions
+   * wait for the CURRENT selection to resolve. The sheet does not blank, the
+   * `aria-busy` cue does not change, and the only visible difference is that two
+   * buttons are unavailable for as long as the rail and the sheet disagree.
+   *
+   * ONE CONDITION, BOTH ACTIONS, AND THE HANDLERS RE-READ IT. The buttons are
+   * disabled from `canAct` and each handler checks it again before doing
+   * anything, so a programmatic or keyboard call cannot walk past a disabled
+   * button into a stale export or a stale print dialog.
    *
    * NEITHER WRITES. No mutation, no invalidation, no cache entry, no report
    * record. A PDF exists only in the viewer's downloads folder, and a print
    * exists only on paper. */
-  const canAct = !isLoading && !isError && !!data;
+  const canAct = canActOnReport({
+    hasReport: !!data,
+    isError,
+    isFetching,
+    isPlaceholderData,
+  });
 
   const [exporting, setExporting] = useState(false);
   const onExport = async () => {
-    // ONE AT A TIME. A second press while a file is being drawn is ignored
-    // rather than queued: two identical downloads is not what anybody meant.
-    if (!data || exporting) return;
+    // FAIL CLOSED. No payload, a payload belonging to an older selection, or a
+    // file already being drawn — nothing is generated. The last of those is the
+    // double-press guard: two identical downloads is not what anybody meant.
+    if (!canAct || !data || exporting) return;
     setExporting(true);
     try {
       await exportReportPdf(buildReportPdfDocument(data, { t, fmt }));
@@ -168,6 +192,15 @@ export default function ReportsPage() {
     } finally {
       setExporting(false);
     }
+  };
+
+  /* THE SAME GUARD, IN FRONT OF THE SAME CONDITION. `printReportSheet` stays at
+   * module scope closing over nothing, so the check lives here rather than
+   * inside it — and it comes BEFORE `body.print-report` is added, so a blocked
+   * print never rewrites the page and never opens a dialog. */
+  const onPrint = () => {
+    if (!canAct) return;
+    printReportSheet();
   };
 
   return (
@@ -201,7 +234,7 @@ export default function ReportsPage() {
           canAct={canAct}
           exporting={exporting}
           onExport={onExport}
-          onPrint={printReportSheet}
+          onPrint={onPrint}
         />
 
         <div className="rp-preview" aria-busy={isFetching || undefined}>

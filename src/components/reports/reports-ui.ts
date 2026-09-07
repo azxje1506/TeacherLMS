@@ -193,3 +193,51 @@ export function reportQuery(
   if (studentId !== ALL) p.set("studentId", studentId);
   return p.toString();
 }
+
+/* ----------------------------------------------------------------- actions */
+
+/** The React Query facts one action decision is made from.
+ *
+ * NAMED, NOT POSITIONAL. Four booleans in a row is exactly the call a later edit
+ * gets subtly wrong, and the two that matter most here are the two that look
+ * redundant. */
+export interface ReportActionState {
+  /** Is a payload rendered at all? True for a PREVIOUS payload too — which is
+   * precisely why this is never the whole answer. */
+  hasReport: boolean;
+  /** Did the read for the current selection fail? The sheet is replaced by the
+   * error card then, so there is no document to act on. */
+  isError: boolean;
+  /** Is a read in flight — the first one, or any later refetch? */
+  isFetching: boolean;
+  /** Is the rendered payload `keepPreviousData`'s copy of an EARLIER selection
+   * rather than this one's? React Query answers this itself, so the screen never
+   * compares two selections by hand and cannot drift from the cache. */
+  isPlaceholderData: boolean;
+}
+
+/** May Export PDF and Print act right now?
+ *
+ * THE STALE-PAYLOAD RULE, IN ONE PLACE, AND BOTH ACTIONS OBEY IT.
+ *
+ * `keepPreviousData` deliberately keeps the previous report on screen while the
+ * next one loads — that is display continuity, and it stays. But it also makes
+ * `data != null` TRUE while the rail and the sheet describe DIFFERENT
+ * selections: the controls already say B, the document still says A. A file
+ * exported in that window would carry A's figures under B's filters, and unlike
+ * the screen — which resolves a moment later — the file leaves the building
+ * wrong and stays wrong. The same is true of a printed page.
+ *
+ * So a previous payload is DISPLAY CONTINUITY AND NOTHING MORE: visible,
+ * announced busy, and not actionable. Availability returns the moment the
+ * current selection resolves.
+ *
+ * `isPlaceholderData` catches the A→B transition; `!isFetching` additionally
+ * catches a refetch of the SAME key, where the payload is current but is about
+ * to be replaced. Neither implies the other, and the rule wants both. */
+export function canActOnReport(state: ReportActionState): boolean {
+  return state.hasReport
+    && !state.isError
+    && !state.isFetching
+    && !state.isPlaceholderData;
+}

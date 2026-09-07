@@ -58,8 +58,13 @@ export function ReportControls({
   onYear: (year: string) => void;
   onClass: (id: string) => void;
   onStudent: (id: string) => void;
-  /** Is there a derived report to export or print? False before the first
-   * payload lands and while an error is on screen. */
+  /** Is there a report the CURRENT selection can be said to have produced?
+   *
+   * False before the first payload lands, while an error is on screen, and —
+   * the case that matters — while `keepPreviousData` is still showing the
+   * PREVIOUS selection's report because this one has not resolved yet. The rail
+   * itself decides nothing: `canActOnReport` is the single condition and the
+   * page hands down its answer. */
   canAct: boolean;
   /** An export is being drawn. Guards against a second file from a double press. */
   exporting: boolean;
@@ -153,10 +158,18 @@ export function ReportControls({
         * works — Gate 4 shipped this rail with no action block at all for
         * exactly that reason.
         *
-        * DISABLED ONLY WHEN THERE IS GENUINELY NOTHING TO ACT ON: no payload
-        * yet, or an export already in flight. Not while a REFETCH is in flight —
-        * the sheet is still showing a real document then, and that document is
-        * what both actions operate on. */}
+        * DISABLED WHENEVER THERE IS NOTHING THE CURRENT SELECTION CAN ACT ON:
+        * no payload yet, a failed read, an export already in flight — and while
+        * a newer selection is still unresolved. That last case is the one worth
+        * spelling out: `keepPreviousData` leaves the PREVIOUS report on screen
+        * while the next loads, so the sheet and these controls describe
+        * different selections for a moment. The sheet stays, because blanking it
+        * would be worse; the two actions do not, because a document that has
+        * been exported or printed cannot correct itself when the payload lands.
+        *
+        * THE SHARED DISABLED TREATMENT AND NOTHING ELSE. No badge, no warning,
+        * no dialog, no extra loading UI — the only visible change is that two
+        * buttons are briefly unavailable. */}
       <div className="rp-actions">
         <button
           type="button"
