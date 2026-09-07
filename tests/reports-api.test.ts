@@ -343,12 +343,25 @@ describe("Reports · the surface as a whole", () => {
     assert.ok(!/export interface Report\b/.test(types));
   });
 
-  it("40. the Reports page is still the untouched placeholder", () => {
-    const page = readFileSync(
-      path.join(process.cwd(), "src", "app", "(app)", "reports", "page.tsx"), "utf8"
-    );
-    assert.ok(page.includes("ModulePlaceholder"), "Gate 3 implements no UI");
-    assert.ok(!page.includes("useQuery"), "no data is fetched by the page yet");
-    assert.ok(page.length < 400, "the placeholder is unchanged");
+  it("40. the page reads the API and reaches nothing else", () => {
+    /* This assertion used to pin that `/reports` was still the untouched
+     * placeholder, which was the right guarantee for Gate 3 and is a false one
+     * now that Gate 4 has built the screen. What survives the change is the part
+     * that was always the point: whatever the page becomes, it talks to this
+     * one read-only endpoint and to no model, no service and no write. */
+    const page = code("src", "app", "(app)", "reports", "page.tsx");
+    assert.ok(!page.includes("ModulePlaceholder"), "the placeholder was replaced in Gate 4");
+
+    for (const server of [
+      "reports-service", "buildReport", "dbConnect", "mongoose",
+      "BillingModel", "StudentModel", "ClassModel", "LessonModel", "HomeworkModel",
+    ]) {
+      assert.ok(!page.includes(server), `the page must not reach ${server}`);
+    }
+    assert.ok(!page.includes("useMutation"), "Reports writes nothing");
+    // The fetch itself lives in the client api module, and names one endpoint.
+    const api = code("src", "components", "reports", "api.ts");
+    assert.ok(api.includes("/api/reports?"));
+    assert.ok(!/method:\s*"(POST|PATCH|PUT|DELETE)"/.test(api));
   });
 });

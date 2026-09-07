@@ -43,8 +43,8 @@ import {
   REPORT_TITLE, STUDIO_SCOPE, checkReportScope, reportMonthOptions,
   buildAttendanceSummaryBody, buildClassRevenueBody, buildHomeworkSummaryBody,
   buildMonthlyRevenueBody, buildStudentPaymentBody,
-  type ReportBody, type ReportPayload, type ReportScope, type ReportType,
-  type ReportViolation,
+  type ReportBody, type ReportOptions, type ReportPayload, type ReportScope,
+  type ReportType, type ReportViolation,
 } from "./reports";
 import { resolveRoster } from "./attendance";
 import { shiftMonth } from "./reviews";
@@ -170,6 +170,7 @@ export async function buildReport(
   const scope = resolved.scope;
 
   const body = await buildBody(req.type, req.month, scope);
+  const options = await selectorOptions(scope);
 
   return {
     ok: true,
@@ -181,7 +182,38 @@ export async function buildReport(
       months: reportMonthOptions(appMonth),
       appClock: TODAY_ISO,
       scope,
+      options,
     },
+  };
+}
+
+/** What the class and student selectors may offer for this scope.
+ *
+ * THE ROSTER FILTER IS THE SERVER'S. A class's student options are that class's
+ * `studentIds` put through `resolveRoster` — the one roster interpretation this
+ * codebase has — so an id with no Student document is simply absent, in the
+ * class's own order. The client is handed a list; it never resolves a roster,
+ * because it cannot, and approximating one from ids it happens to hold would be
+ * a second interpretation.
+ *
+ * NO STATUS FILTER. Trial, Paused and Archived students are on rosters and are
+ * offered; the owning domains decide what their figures mean. */
+async function selectorOptions(scope: ReportScope): Promise<ReportOptions> {
+  const classes = await ClassModel.find({}).select("id name studentIds -_id")
+    .lean<Pick<Klass, "id" | "name" | "studentIds">[]>();
+
+  const rosterIds = scope.classId
+    ? (classes.find((c) => c.id === scope.classId)?.studentIds ?? [])
+    : classes.flatMap((c) => c.studentIds ?? []);
+  const wanted = [...new Set(rosterIds.filter(Boolean))];
+
+  const docs = wanted.length === 0
+    ? []
+    : await StudentModel.find({ id: { $in: wanted } }).select(clean).lean<Student[]>();
+
+  return {
+    classes: classes.map((c) => ({ id: c.id, name: c.name })),
+    students: resolveRoster(rosterIds, docs).map((s) => ({ id: s.id, name: s.name })),
   };
 }
 

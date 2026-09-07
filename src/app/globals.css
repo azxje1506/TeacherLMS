@@ -1414,6 +1414,188 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 .icon-restore:hover{background:var(--hover) !important;color:var(--green) !important}
 .icon-danger:hover{background:var(--accent-soft) !important;color:var(--accent) !important;border-color:var(--accent-soft) !important}
 
+/* ==========================================================================
+   Reports  (Sprint 10 Gate 4)
+   ==========================================================================
+   Two surfaces, and the split is the one the Reviews composer already draws:
+   the DOCUMENT (`.report-sheet` and its `.rp-*` blocks), which is a white sheet
+   with dark ink under any theme, and the PAGE (`.rp-grid`, `.rp-rail`,
+   `.rp-preview`), which follows the app's own theme.
+
+   `.report-sheet` ITSELF IS NOT REDECLARED HERE. Its light-locked palette, its
+   masthead rule, its footer geometry, its 620px padding fallback and its
+   page-break classes are already defined further up this file, shared, and are
+   reused verbatim. Only the blocks this document needs and Reviews does not — a
+   tile row, a generic table, a bounded scroller — are added below.
+
+   ---- EVERY LAYOUT PROPERTY THAT CHANGES WITH WIDTH IS A CLASS ---------------
+   Gate 4.4D proved an inline `display` beats a media query and leaves apparently
+   correct responsive CSS inert. So the Reports components declare NO inline
+   grid, flex, width, position or overflow: those live here, where a media query
+   can actually win. The inline styles that remain in those files are colour and
+   type only.
+
+   ---- THE APPROVED DIVERGENCE ----------------------------------------------
+   The reference draws ONE layout: a fixed 300px options rail beside the preview,
+   at every width. On a 375px phone that leaves roughly fifty pixels for the
+   document. Below 768px the rail therefore stacks above the preview at full
+   width and loses its sticky, which is the divergence PROJECT_RULES authorises
+   and the only one this file contains. Every other width is the design's own. */
+
+.rp-grid{
+  display:grid;
+  grid-template-columns:300px minmax(0,1fr);
+  gap:var(--gap);
+  align-items:start;
+}
+
+/* The options rail — the comp's own card treatment, sticky beneath the 60px app
+   header the way the reference draws it. */
+.rp-rail{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  padding:18px 20px;
+  box-shadow:var(--sh);
+  position:sticky;
+  top:16px;
+  min-width:0;
+}
+
+/* Month and Year, side by side, as designed. */
+.rp-period{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin-bottom:14px;
+}
+
+.rp-preview{min-width:0}
+
+/* ---- The document ------------------------------------------------------- */
+
+/* The sheet is centred in its column and never wider than the column, so a
+   narrow screen shrinks the document rather than the page. `.report-sheet`
+   already supplies the palette, the border, the radius, the padding and the
+   760px cap. */
+.rp-sheet{width:100%}
+
+/* The summary tile row — the comp's own figures. */
+.rp-stats{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-bottom:24px;
+}
+.rp-stat{
+  flex:1;
+  min-width:130px;
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:12px 14px;
+  background:var(--card-2);
+}
+.rp-stat-label{font-size:11px;color:var(--muted);font-weight:500}
+.rp-stat-value{
+  font-size:17px;font-weight:700;margin-top:4px;
+  font-family:'Geist Mono',monospace;
+  /* A long figure wraps inside its own tile rather than widening the row. */
+  overflow-wrap:anywhere;
+}
+
+/* ---- The generic table --------------------------------------------------
+   THE SCROLLER IS AROUND THE TABLE AND NOWHERE ELSE. A five-column money table
+   cannot fit a 375px column, and the page must never scroll sideways — so the
+   overflow is bounded here, inside the document. No column is dropped and no
+   column count changes: the DTO decides what a report contains, and a screen
+   width is not an argument about that.
+
+   It is `tabIndex={0}` with a region role in the component, so the scroller is
+   reachable and operable from the keyboard rather than being mouse-only. */
+.rp-table-wrap{
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  max-width:100%;
+}
+.rp-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.rp-table th{
+  font-size:11px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.04em;
+  padding:0 10px 8px;border-bottom:1px solid var(--border);
+  white-space:nowrap;
+}
+.rp-table td{
+  padding:9px 10px;border-bottom:1px solid var(--border-2);
+  color:var(--fg-2);white-space:nowrap;
+}
+.rp-table tbody tr:last-child td{border-bottom:none}
+.rp-table td:first-child{color:var(--fg);font-weight:500}
+
+/* The missing-parent line, beneath the student's name in a Student Payment row.
+   The app's own muted secondary treatment — the same one Finance uses for it. */
+.rp-no-parent{
+  display:block;font-size:10.5px;color:var(--muted-2);font-weight:400;
+}
+
+/* A neutral note under the table: a hidden-record count, an incomplete-amounts
+   line, an attendance coverage pair. Never a placeholder row for somebody who is
+   gone. */
+.rp-note{
+  margin-top:14px;font-size:11.5px;color:var(--muted-2);
+}
+
+.rp-empty{padding:48px 20px;text-align:center}
+
+/* Loading placeholders. The document's own muted surface, so the waiting state
+   reads as the sheet it precedes rather than as a different component. */
+.rp-sk{background:var(--hover);border-radius:6px}
+
+/* ---- Page states --------------------------------------------------------
+   Error and empty are DIFFERENT SURFACES. A month holding nothing is a
+   legitimate answer and stays inside the document as the design's own empty
+   block; a read that failed is not a document at all, so it replaces the sheet
+   with the app's existing error card. */
+.rp-state{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--r);box-shadow:var(--sh);
+  padding:60px 24px;text-align:center;
+}
+.rp-state-icon{
+  min-width:52px;width:52px;height:52px;border-radius:14px;
+  background:var(--accent-soft);color:var(--accent);
+  display:flex;align-items:center;justify-content:center;margin:0 auto 14px;
+}
+
+/* ---- Tablet: the design's own composition, narrower ----------------------
+   860–769 changes nothing about Reports. The shell's rail collapses to 64px at
+   860 and gives the content column the difference, and the sheet is capped at
+   760px, so the preview pane gains slack rather than the options rail losing
+   any. Two components with different content have no reason to change shape at
+   the same width. */
+
+/* ---- Phone: the rail stacks above the document --------------------------
+   THE 300px TRACK IS THE PROBLEM, not the rail. It is a hard track: at 375px it
+   takes four fifths of the row and leaves the document about fifty pixels, and
+   `minmax(0,1fr)` obediently shrinks the preview to fit it. So below 768 the
+   grid becomes one column, the rail takes the full width it now has, and its
+   sticky goes with the two-column layout that justified it — a full-width panel
+   pinned under the app header would cover the document a teacher just scrolled
+   to. */
+@media (max-width:767px){
+  .rp-grid{grid-template-columns:minmax(0,1fr)}
+  .rp-rail{position:static;top:auto}
+}
+
+/* ---- 620 and below: the period pair gets two rows ------------------------
+   Two selects sharing a row inside a full-width rail is fine at 620; at 375 each
+   would be about 150px, and a month name plus a chevron does not fit that. They
+   stack, and nothing else about the rail changes. */
+@media (max-width:620px){
+  .rp-period{grid-template-columns:minmax(0,1fr)}
+  .rp-table{font-size:12px}
+  .rp-table th,.rp-table td{padding-left:8px;padding-right:8px}
+}
+
 /* Tailwind theme bridge — expose the design tokens as Tailwind colors/fonts so
    shadcn/ui primitives and utility classes resolve to the SAME palette. */
 @theme inline {

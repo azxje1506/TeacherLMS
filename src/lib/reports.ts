@@ -308,6 +308,33 @@ export interface ReportBody {
   coverage?: ReportCoverage;
 }
 
+/** One choice in a scope selector. Id and display name, and nothing else — no
+ * roster, no status, no parent, no colour.
+ *
+ * ONLY RESOLVABLE ENTITIES BECOME ONE. The student list is the class's roster
+ * put through `resolveRoster`, so an id with no Student document is simply
+ * absent from it: what the selector omits, the report cannot be asked for. */
+export interface ReportOption {
+  id: string;
+  name: string;
+}
+
+/** What the scope selectors may offer for the CURRENT selection.
+ *
+ * SERVER-OWNED, LIKE THE MONTH WINDOW. The contract says choosing a class
+ * filters the student options to that class's currently resolvable roster, in
+ * the class's own order — and resolving a roster means reading Student
+ * documents, which a browser cannot do and must not approximate. So the server
+ * answers it, exactly as it answers which months exist, and the client renders
+ * the list it is given. */
+export interface ReportOptions {
+  /** Every class, in the collection's own order. */
+  classes: ReportOption[];
+  /** The selected class's resolvable roster, or every resolvable roster student
+   * when no class is selected. */
+  students: ReportOption[];
+}
+
 /** The whole document. NOT PERSISTED, and carrying nothing that would suggest it
  * could be: no id, no `generatedAt`, no status, no history, no file URL. */
 export interface ReportPayload extends ReportBody {
@@ -322,6 +349,8 @@ export interface ReportPayload extends ReportBody {
    * metadata and not a record of anything (PROJECT_RULES, Reports). */
   appClock: string;
   scope: ReportScope;
+  /** What the class and student selectors may offer, for this selection. */
+  options: ReportOptions;
 }
 
 /* ======================================================= revenue: two reports
