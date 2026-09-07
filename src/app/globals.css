@@ -695,6 +695,132 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   body.print-review .review-overlay,
   body.print-review .report-body,
   body.print-review .report-scroll{height:auto !important;max-height:none !important;overflow:visible !important}
+
+  /* ---- Reports print  (Sprint 10 Gate 5) ---------------------------------
+     A SECOND PRINT ROUTE, DELIBERATELY, AND AN ISOLATED ONE. Gate 4.4E left
+     print with exactly one route because the second one it found was unused and
+     broken. This is not that block restored: the deleted rule hid the page by
+     `visibility` and repositioned the sheet absolutely, and it was written
+     against `[data-theme]` — which is <html> — so several of its selectors
+     could never have matched. Every rule below is written against the DOM the
+     Reports screen actually renders, and the class goes on <body>, which is
+     what the Reviews block already had to be corrected to.
+
+     `body.print-review` IS NOT TOUCHED, not reused and not extended. The two
+     documents print by different mechanisms because they ARE different: Reviews
+     portals an overlay to <body> and unwraps that one child, while the Reports
+     sheet is nested four levels inside the page grid. Sharing a scope would mean
+     one set of rules trying to describe two DOMs.
+
+     ---- HOW THE NESTED SHEET GETS OUT --------------------------------------
+     The printed chain is
+        body > div#... > .app-shell? > main.app-main > div[data-screen-label]
+             > .rp-grid > .rp-preview > .report-sheet
+     and every one of those may cap a height, clip an overflow or impose the
+     desktop preview column's width. Rather than reposition the sheet out of the
+     chain — the deleted rule's approach, which needs every ancestor to be
+     guessed correctly — the chain is UNWRAPPED: each ancestor is told to display
+     as a plain block at full width with visible overflow, and everything that is
+     not on the path to the document is hidden. The result is a normal document
+     flow from <body> down to the sheet, which is what natural pagination needs. */
+  body.print-report{display:block !important;min-height:0 !important;height:auto !important;background:#fff !important}
+
+  /* Nothing outside the page's own content participates: the sidebar, the app
+     header and any portalled layer (drawer, dialog, toast) are direct children
+     of body or of the shell, and none of them belongs on paper. */
+  body.print-report .app-sidebar,
+  body.print-report .app-header,
+  body.print-report .no-print{display:none !important}
+
+  /* The options rail and every action in it. `.rp-rail` already carries
+     `.no-print` above, and is named here too so the rule survives that class
+     being reorganised. */
+  body.print-report .rp-rail{display:none !important}
+
+  /* Loading and error chrome are screen states, not documents. A print fired
+     while a fetch is in flight prints the report that is on the page, not a
+     skeleton of the next one. */
+  body.print-report .rp-state{display:none !important}
+
+  /* THE CHAIN, UNWRAPPED. Each of these is on the path from the page to the
+     sheet, and each is neutralised rather than removed. */
+  body.print-report .app-main,
+  body.print-report [data-screen-label="Reports"],
+  body.print-report .rp-grid,
+  body.print-report .rp-preview{
+    display:block !important;
+    width:auto !important;max-width:none !important;
+    height:auto !important;max-height:none !important;
+    overflow:visible !important;
+    margin:0 !important;padding:0 !important;
+    position:static !important;
+  }
+  /* The grid's own track is what would otherwise squeeze the document into the
+     desktop preview column; `display:block` above already discards it, and this
+     states the intent so a future edit cannot reinstate a track by adding a
+     `grid` back without noticing. */
+  body.print-report .rp-grid{grid-template-columns:none !important;gap:0 !important}
+
+  /* THE SCREEN'S TABLE SCROLLER MUST NOT CLIP THE PRINTED TABLE. On screen
+     `.rp-table-wrap` is `overflow-x:auto`, which on paper would cut every column
+     past the page edge with no scrollbar to reveal them. Released here, and only
+     here: the screen rule itself is untouched. */
+  body.print-report .rp-table-wrap{overflow:visible !important;max-width:none !important}
+
+  /* The sheet becomes the page. Its own max-width, border, radius and shadow are
+     screen affordances; on paper the margin is `@page`'s. */
+  body.print-report .report-sheet{
+    max-width:none !important;width:100% !important;margin:0 !important;
+    border:none !important;box-shadow:none !important;border-radius:0 !important;
+    padding:0 !important;overflow:visible !important;
+  }
+
+  /* Keep logical blocks whole across page breaks, and repeat nothing that is not
+     content. `.rp-block`, `.rp-head` and `.rp-foot` are the shared document
+     primitives and already carry `break-inside:avoid` from the Reviews-era rule
+     above; the table needs its own treatment, because a long table MUST be
+     allowed to break — just not through a row. */
+  body.print-report .rp-table-wrap{break-inside:auto !important;page-break-inside:auto !important}
+  body.print-report .rp-table tr{break-inside:avoid !important;page-break-inside:avoid !important}
+  /* Where the browser supports it, the column headings repeat on every page a
+     long table spans — the same guarantee the exported PDF makes explicitly. */
+  body.print-report .rp-table thead{display:table-header-group !important}
+  body.print-report .rp-table tbody{display:table-row-group !important}
+
+  /* THE DOCUMENT KEEPS ITS COLOURS ON PAPER. Browsers drop background fills when
+     printing unless the page asks them not to, and the summary tiles ARE
+     backgrounds. Scoped to the sheet and its descendants, never the app: a
+     statement that THIS DOCUMENT's colour carries meaning, not a global demand
+     that the browser ink everything. Both spellings are needed — the prefixed
+     one is what shipping Chrome and Safari still read. */
+  body.print-report .report-sheet,
+  body.print-report .report-sheet *{
+    -webkit-print-color-adjust:exact !important;
+    print-color-adjust:exact !important;
+  }
+
+  /* ---- THE REPORT'S OWN FOOTER, ON PAPER ---------------------------------
+     HIDDEN, matching the Reviews precedent exactly and for the same reason. The
+     browser draws its own URL, date, page number and site title at the page
+     edges; those are user-agent chrome outside the page box that no stylesheet
+     can remove, and only the person printing can switch them off in the print
+     dialog. Printing `.rp-foot` beneath them stacks two footers at the bottom of
+     every sheet.
+
+     THE EXPORTED PDF IS THE OTHER DECISION, and it keeps its footer — it has no
+     browser chrome to collide with, and it draws the footer on every page
+     itself. The two outputs differ here deliberately; that divergence is the one
+     Sprint 8 already made and verified, and Reports does not invent a third
+     answer. */
+  body.print-report .report-sheet .rp-foot{display:none !important}
+
+  /* NOTHING IN THE CHAIN MAY CONSTRAIN THE SHEET. Restating the guarantee is
+     what natural pagination depends on, and a test pins it. */
+  body.print-report,
+  body.print-report .app-main,
+  body.print-report .rp-grid,
+  body.print-report .rp-preview,
+  body.print-report .report-sheet{height:auto !important;max-height:none !important;overflow:visible !important}
 }
 /* REMOVED IN GATE 4.4E: a second `.print-report` strategy that hid the whole
    page by `visibility` and repositioned a deeply nested `.report-sheet`. It had
@@ -1596,6 +1722,37 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   .rp-table th,.rp-table td{padding-left:8px;padding-right:8px}
 }
 
+/* ---- The action block, at the foot of the rail --------------------------
+   The comp's own separated group: a rule above it, a primary button, then the
+   secondary. TWO CONTROLS, NOT THREE — Excel is deferred and is not drawn, so
+   Print takes the full width rather than sitting beside an absence.
+
+   The buttons state their own geometry here rather than inline, for the reason
+   the rest of this section does: at 620px they may need to stack, and a media
+   query cannot beat an inline style. */
+.rp-actions{
+  display:flex;flex-direction:column;gap:8px;
+  border-top:1px solid var(--border-2);
+  padding-top:16px;margin-top:18px;
+}
+.rp-actions button{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  border-radius:9px;font-family:inherit;font-weight:600;cursor:pointer;
+  white-space:nowrap;
+}
+.rp-action-primary{
+  height:40px;border:none;
+  background:var(--primary);color:var(--primary-fg);font-size:13.5px;
+}
+.rp-action-ghost{
+  height:38px;border:1px solid var(--border);
+  background:var(--card);color:var(--fg);font-size:13px;font-weight:500;
+}
+.rp-action-primary:hover:not(:disabled){opacity:.9}
+.rp-action-ghost:hover:not(:disabled){background:var(--hover)}
+/* A genuinely disabled control, not a decorative one: it is only ever disabled
+   when there is no derived report to act on, or an export is already running. */
+.rp-actions button:disabled{opacity:.55;cursor:not-allowed}
 /* Tailwind theme bridge — expose the design tokens as Tailwind colors/fonts so
    shadcn/ui primitives and utility classes resolve to the SAME palette. */
 @theme inline {

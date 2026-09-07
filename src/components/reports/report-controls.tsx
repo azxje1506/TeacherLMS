@@ -41,6 +41,7 @@ const labelStyle: React.CSSProperties = {
 export function ReportControls({
   type, period, classId, studentId, months, options,
   onType, onPeriod, onYear, onClass, onStudent,
+  canAct, exporting, onExport, onPrint,
 }: {
   type: ReportType;
   /** The one canonical period. Month and Year are views of it. */
@@ -57,6 +58,13 @@ export function ReportControls({
   onYear: (year: string) => void;
   onClass: (id: string) => void;
   onStudent: (id: string) => void;
+  /** Is there a derived report to export or print? False before the first
+   * payload lands and while an error is on screen. */
+  canAct: boolean;
+  /** An export is being drawn. Guards against a second file from a double press. */
+  exporting: boolean;
+  onExport: () => void;
+  onPrint: () => void;
 }) {
   const { t, fmt } = useSettings();
   const support = scopeSupport(type);
@@ -132,6 +140,56 @@ export function ReportControls({
           disabled={!support.student}
         />
       </div>
+
+      {/* THE ACTION BLOCK — the design's own separated foot of the rail.
+        *
+        * TWO CONTROLS WHERE THE REFERENCE DRAWS THREE. Excel is deferred to its
+        * own gate and is not drawn, not even disabled: a disabled button
+        * suggests a working feature, which PROJECT_RULES rules out more firmly
+        * than it rules out a gap. Print therefore takes the full width the
+        * reference gives its two-up row, rather than sitting beside an absence.
+        *
+        * BOTH ARE REAL. Neither is a placeholder, and neither is drawn before it
+        * works — Gate 4 shipped this rail with no action block at all for
+        * exactly that reason.
+        *
+        * DISABLED ONLY WHEN THERE IS GENUINELY NOTHING TO ACT ON: no payload
+        * yet, or an export already in flight. Not while a REFETCH is in flight —
+        * the sheet is still showing a real document then, and that document is
+        * what both actions operate on. */}
+      <div className="rp-actions">
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={!canAct || exporting}
+          className="rp-action-primary"
+        >
+          {iconDownload}
+          {t(exporting ? "Exporting…" : "Export PDF")}
+        </button>
+        <button
+          type="button"
+          onClick={onPrint}
+          disabled={!canAct}
+          className="rp-action-ghost"
+        >
+          {iconPrint}
+          {t("Print")}
+        </button>
+      </div>
     </div>
   );
 }
+
+/* The comp's own two glyphs, at its own 15px. */
+const iconDownload = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" />
+  </svg>
+);
+
+const iconPrint = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" />
+  </svg>
+);

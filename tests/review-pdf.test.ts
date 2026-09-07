@@ -83,6 +83,29 @@ function stripComments(css: string): string {
 
 const CSS_RULES = CSS.replace(/\/\*[\s\S]*?\*\//g, " ");
 
+/** The print block with the REPORTS rules removed, leaving only Reviews'.
+ *
+ * WHY THIS EXISTS, ADDED IN SPRINT 10 GATE 5. Several assertions in this file
+ * COUNT things across the whole `@media print` block — how many `display:none`
+ * declarations it holds, how many `.rp-foot` rules, how many times
+ * `print-color-adjust` is stated. Each of those was exact and correct while
+ * Reviews was the block's only tenant, and each was really asserting something
+ * about REVIEWS' print rules; the block was simply the same thing at the time.
+ *
+ * Sprint 10 adds a second, deliberately isolated tenant: `body.print-report`,
+ * authorised in PROJECT_RULES' Reports section and built against the Reports
+ * DOM. Reviews' twenty rules are byte-for-byte unchanged — nothing in this
+ * refactor relaxes a guarantee, and each assertion below still holds Reviews to
+ * exactly the count it always had. What changed is that the subject is now
+ * stated rather than assumed.
+ *
+ * A rule belongs to Reports when EVERY selector in its list is a
+ * `body.print-report` one; the two scopes never share a selector list, and a
+ * test below pins that. */
+function reviewsPrintOnly(block: string): string {
+  return block.replace(/(^|\n)[ \t]*body\.print-report[^{}]*\{[^}]*\}/g, "$1");
+}
+
 /** The ONE `@media` block matching `query` that contains `marker`, brace-matched
  * to its own closing brace. globals.css carries several blocks per breakpoint —
  * three at 1100px — so slicing on the query alone reads whichever came first and
@@ -725,10 +748,23 @@ describe("Gate 4.4E · print", () => {
   });
 
   it("31. print has ONE route, and it is the surface the report already lives on", () => {
-    /* Two unwrap strategies would be two things nobody can see fail. The second
-     * one — `.print-report`, which had no consumer and was never executed — was
-     * removed in this gate rather than wired up. */
-    assert.ok(!CSS_RULES.includes(".print-report"), "the dead second strategy's selector is gone");
+    /* REVIEWS has one route. Two unwrap strategies for ONE document would be two
+     * things nobody can see fail, which is why Gate 4.4E deleted the dead
+     * `.print-report` rule rather than wiring it up.
+     *
+     * SPRINT 10 GATE 5 ADDED A `body.print-report` SCOPE, and that is not the
+     * thing this test was guarding against. The deleted rule was a second,
+     * unused, never-executed strategy for printing the REVIEW — written against
+     * `[data-theme]`, which is <html>, so several of its selectors could not
+     * have matched anything. What exists now is a different document's print
+     * path, authorised in PROJECT_RULES, built against the Reports DOM, and
+     * sharing not one selector with these rules. So the guard is stated for what
+     * it always meant: the broken selector is still gone, and no Reviews rule
+     * reaches into the other scope. */
+    assert.ok(!CSS_RULES.includes("[data-theme].print-report"),
+      "the dead second strategy — which targeted <html> and could never match — is still gone");
+    assert.ok(!reviewsPrintOnly(CSS_RULES).includes("print-report"),
+      "and no REVIEWS rule reaches for the Reports scope");
     /* One class, added and removed in one function — and one `window.print()` in
      * the whole composer, so there is no second way to reach the printer. */
     assert.equal(COMPOSER.split('"print-review"').length - 1, 2, "added once, removed once");
@@ -1433,7 +1469,7 @@ describe("Gate 4.4E remediation · print colour", () => {
       assert.ok(!printBlock.includes(tooBroad), `must not apply it via ${tooBroad}`);
     }
     // And it is stated once, so there is no second scope to reason about.
-    assert.equal(CSS.split("print-color-adjust:exact").length - 1, 2, "standard + prefixed, once each");
+    assert.equal(reviewsPrintOnly(CSS).split("print-color-adjust:exact").length - 1, 2, "standard + prefixed, once each");
   });
 
   it("56. the bar fill is a background the print rules never suppress", () => {
@@ -1955,7 +1991,7 @@ describe("Gate 4.4E final · the print height budget", () => {
     assert.ok(!/display:none/.test(compaction.slice(0, compaction.indexOf(".rp-foot{"))),
       "the budget buys its page back from gaps, never from content");
     /* THE CANARY: three in the whole print block, and each one is named. */
-    assert.equal(stripComments(printBlock).match(/display:none/g)?.length, 3,
+    assert.equal(reviewsPrintOnly(stripComments(printBlock)).match(/display:none/g)?.length, 3,
       "`.no-print` chrome, everything outside the overlay, and the report footer");
     assert.ok(REPORT_VIEW.includes("Parent notes") && REPORT_VIEW.includes("Teacher summary"));
   });
@@ -2023,7 +2059,7 @@ describe("Gate 4.4E final · the print height budget", () => {
      * against a declared minimum height; there is no longer one to measure, and
      * that is the point — the sheet is exactly as tall as its content, so it
      * cannot overflow into a page the content never asked for. */
-    const rules = stripComments(printBlock);
+    const rules = reviewsPrintOnly(stripComments(printBlock));
     assert.deepEqual(rules.match(/min-height:[^;}]*/g), ["min-height:0 !important"],
       "the only min-height in print RELEASES the shell's floor; nothing declares one");
     assert.ok(!rules.includes("100vh"), "and nothing sizes the sheet against a viewport");
@@ -2034,7 +2070,7 @@ describe("Gate 4.4E final · the print height budget", () => {
   it("78a. long reports still paginate — nothing pins the sheet to one page", () => {
     assert.ok(printBlock.includes(".report-sheet .rp-block,.report-sheet .rp-head{break-inside:avoid !important"),
       "blocks are still kept whole across the fold");
-    const rules = stripComments(printBlock);
+    const rules = reviewsPrintOnly(stripComments(printBlock));
     assert.ok(!rules.includes("page-break-inside:auto"));
     assert.ok(!rules.includes("break-inside:auto"));
     /* A MINIMUM height can only add space, never remove it, so it cannot clip a
@@ -2067,7 +2103,7 @@ describe("Gate 4.4E final · the print height budget", () => {
   });
 
   it("79a. THE APP FOOTER IS NOT PRINTED, and nothing survives to place it", () => {
-    const rules = stripComments(printBlock);
+    const rules = reviewsPrintOnly(stripComments(printBlock));
 
     /* ---- THE FINAL CONTRACT, AFTER FOUR ARCHITECTURES ----------------------
      * Each was disproved by real Chrome/Edge verification: a repeated

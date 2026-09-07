@@ -9,13 +9,16 @@
  * on its own. The Dashboard's "Generate report" is a link to this screen and
  * generates nothing itself.
  *
- * NO ACTION BLOCK AT ALL IN THIS GATE, and that is a temporary, deliberate
- * state. Export PDF and Print are authorised and are Gate 5; Excel is deferred
- * and will never be drawn. Drawing any of the three now — even disabled — would
- * be a control that suggests a working feature, which PROJECT_RULES rules out
- * more firmly than it rules out a gap. The rail's own `border-top` separator and
- * bottom padding are the only things that move when Gate 5 adds the block, so
- * nothing here has to be redesigned to receive it.
+ * TWO ACTIONS, WHERE THE REFERENCE DRAWS THREE. Export PDF and Print are real
+ * and work; Excel is deferred to its own gate and is NOT drawn, not even
+ * disabled, because a disabled button suggests a working feature. That is an
+ * authorised divergence, recorded in PROJECT_RULES rather than discovered here.
+ *
+ * BOTH OUTPUTS ARE CLIENT-SIDE AND WRITE NOTHING. The PDF is drawn in the
+ * browser from the payload already on screen and handed straight to the
+ * downloads folder; the print is the browser's own dialog over a scoped
+ * stylesheet. There is no export endpoint, no server-generated file, no stored
+ * artefact and no report record — a report is generated and thrown away.
  *
  * THE SERVER OWNS THE MONTH WINDOW AND THE SCOPE OPTIONS. `data.months` is the
  * period window, `data.options` is what the Class and Student selects may offer,
@@ -43,11 +46,14 @@
 import { useState } from "react";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useSettings } from "@/lib/settings-context";
+import { useToast } from "@/components/ui/toast";
 import { CURRENT_MONTH } from "@/lib/constants";
 import { REPORT_TYPES, type ReportType } from "@/lib/reports";
 import { fetchReport, reportKeys } from "@/components/reports/api";
 import { ReportControls } from "@/components/reports/report-controls";
 import { ReportSheet } from "@/components/reports/report-sheet";
+import { buildReportPdfDocument } from "@/lib/reports-pdf-document";
+import { ReportPdfError, exportReportPdf } from "@/lib/reports-pdf";
 import {
   ALL, nextClassValue, nextStudentValue, snapPeriod,
 } from "@/components/reports/reports-ui";
@@ -57,8 +63,39 @@ import {
  * instead of becoming a second place the list is written down. */
 const DEFAULT_TYPE: ReportType = REPORT_TYPES[0];
 
+/** Print the Reports document, and put the page back afterwards.
+ *
+ * MODULE SCOPE ON PURPOSE. It closes over no component state, so it is stable
+ * across renders and cannot become a stale dependency.
+ *
+ * THE CLASS IS SAFE TO LEAVE BEHIND. Every `.print-report` rule lives inside
+ * `@media print`, so a class that outlives a print — a browser that never fires
+ * `afterprint`, a dialog dismissed in an unusual way — has no effect on screen
+ * at all. That is what lets the cleanup be event-driven rather than a guess at
+ * how long a print takes. It is still cleaned three ways: on `afterprint`, and
+ * synchronously if `window.print()` throws or is unavailable.
+ *
+ * IT WRITES NOTHING. No cache entry, no request, no report record. */
+function printReportSheet(): void {
+  const body = document.body;
+  body.classList.add("print-report");
+  const done = () => {
+    body.classList.remove("print-report");
+    window.removeEventListener("afterprint", done);
+  };
+  window.addEventListener("afterprint", done);
+  try {
+    window.print();
+  } catch {
+    /* A browser that refuses the dialog must not leave the class behind — and
+     * `afterprint` will never fire for a print that never started. */
+    done();
+  }
+}
+
 export default function ReportsPage() {
-  const { t } = useSettings();
+  const { t, fmt } = useSettings();
+  const { toast } = useToast();
 
   const [type, setType] = useState<ReportType>(DEFAULT_TYPE);
   const [period, setPeriod] = useState<string>(CURRENT_MONTH);
@@ -99,6 +136,40 @@ export default function ReportsPage() {
     if (id !== classId) setStudentId(ALL);
   };
 
+  /* ---- the two outputs --------------------------------------------------
+   *
+   * BOTH ACT ON `data` — the payload the sheet is showing this render. There is
+   * no second fetch, no different query and no snapshot taken earlier: changing
+   * a filter and pressing Export immediately exports whatever document is on
+   * screen at that moment, because `data` IS that document. While a refetch is
+   * in flight `keepPreviousData` keeps the previous payload rendered, so the
+   * file matches the page rather than the request; the moment the new payload
+   * lands, both the sheet and the export follow it.
+   *
+   * NEITHER WRITES. No mutation, no invalidation, no cache entry, no report
+   * record. A PDF exists only in the viewer's downloads folder, and a print
+   * exists only on paper. */
+  const canAct = !isLoading && !isError && !!data;
+
+  const [exporting, setExporting] = useState(false);
+  const onExport = async () => {
+    // ONE AT A TIME. A second press while a file is being drawn is ignored
+    // rather than queued: two identical downloads is not what anybody meant.
+    if (!data || exporting) return;
+    setExporting(true);
+    try {
+      await exportReportPdf(buildReportPdfDocument(data, { t, fmt }));
+    } catch (e) {
+      /* A BROKEN EXPORT IS SAID SO, NEVER SHIPPED QUIETLY. The commonest cause
+       * is the Unicode font failing to load, and a PDF drawn without it would
+       * open perfectly while spelling a student's name wrong. Nothing is
+       * persisted by the failure and the button is usable again immediately. */
+      toast(t(e instanceof ReportPdfError ? e.message : "The report could not be exported."), "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div data-screen-label="Reports" style={{ animation: "fadeUp .3s ease both" }}>
       <div style={{ marginBottom: 20 }}>
@@ -127,6 +198,10 @@ export default function ReportsPage() {
           onYear={onYear}
           onClass={onClass}
           onStudent={setStudentId}
+          canAct={canAct}
+          exporting={exporting}
+          onExport={onExport}
+          onPrint={printReportSheet}
         />
 
         <div className="rp-preview" aria-busy={isFetching || undefined}>

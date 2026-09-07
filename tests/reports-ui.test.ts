@@ -644,43 +644,57 @@ describe("Reports · the document sheet", () => {
 
 /* ================================================================= no PDF */
 
-describe("Reports · Gate 4 ships no export and no print", () => {
-  it("69. no PDF machinery is imported or referenced", () => {
+describe("Reports · the two outputs are Reports' own", () => {
+  /* These three assertions pinned, in Gate 4, that no export or print existed
+   * yet. Gate 5 built both, so the guarantee that survives is the one that
+   * always mattered: whatever Reports draws or prints is ITS OWN, and reaches
+   * into Reviews for nothing. */
+
+  it("69. no Reviews PDF machinery is borrowed", () => {
     for (const src of ALL_UI) {
-      for (const banned of ["jspdf", "jsPDF", "renderReviewPdf", "review-pdf", "ReportPdf", "buildReviewPdfDocument"]) {
-        assert.ok(!src.includes(banned), `PDF is Gate 5 (${banned})`);
+      for (const banned of [
+        "renderReviewPdf", "exportReviewPdf", "buildReviewPdfDocument",
+        "ReviewPdfError", "review-pdf", "MonthlyReviewReport",
+      ]) {
+        assert.ok(!src.includes(banned), `Reports must not reuse ${banned}`);
       }
     }
+    // The page reaches for the Reports export, and jsPDF only through it.
+    assert.ok(PAGE.includes("exportReportPdf"));
+    for (const src of ALL_UI) assert.ok(!src.includes("jspdf"), "the library is behind the renderer");
   });
 
-  it("70. nothing prints", () => {
+  it("70. printing uses the Reports scope and never the Reviews one", () => {
+    assert.ok(PAGE.includes('classList.add("print-report")'));
     for (const src of ALL_UI) {
-      assert.ok(!src.includes("window.print"), "Print is Gate 5");
-      assert.ok(!src.includes("print-report"), "the Reports print scope is Gate 5");
-      assert.ok(!src.includes("beforeprint"));
-      assert.ok(!src.includes("afterprint"));
+      assert.ok(!src.includes("print-review"), "Reports never sets the Reviews class");
+      assert.ok(!src.includes("printReportOverlay"), "nor calls the Reviews trigger");
     }
   });
 
-  it("71. no print CSS was added for Reports", () => {
+  it("71. the Reports print CSS is scoped, and Reviews' is untouched", () => {
     const printBlock = mediaBlock("print", CSS);
-    assert.ok(!printBlock.includes("print-report"), "no Reports print scope yet");
-    assert.ok(printBlock.includes("body.print-review"), "the Reviews print path is untouched");
+    assert.ok(printBlock.includes("body.print-report{"), "Reports has its own scope");
+    assert.ok(printBlock.includes("body.print-review{"), "and the Reviews path still exists");
+    // The two never share a selector list.
+    for (const line of printBlock.split("\n")) {
+      assert.ok(!(line.includes("print-review") && line.includes("print-report")),
+        `one selector list must not serve both scopes: ${line.trim()}`);
+    }
   });
 
-  it("72. no file is downloaded", () => {
+  it("72. no file is written anywhere but the viewer's downloads folder", () => {
     for (const src of ALL_UI) {
-      for (const banned of ["createObjectURL", "download", "Blob(", "a.click()"]) {
-        assert.ok(!src.includes(banned), `no download logic in Gate 4 (${banned})`);
+      for (const banned of ["createObjectURL", "Blob(", "a.click()", "writeFile", "/api/reports/export"]) {
+        assert.ok(!src.includes(banned), `the export is jsPDF's own save() (${banned})`);
       }
     }
   });
 
-  it("73. the rail is structurally ready for the action block", () => {
-    // Gate 5 adds the block at the foot of the rail; nothing about the layout
-    // has to change to receive it.
-    assert.ok(CONTROLS.includes('className="rp-rail no-print"'),
-      "the rail already carries the design's own no-print marker");
+  it("73. the actions live at the foot of the rail, so print hides them with it", () => {
+    assert.ok(CONTROLS.includes('className="rp-rail no-print"'));
+    assert.ok(CONTROLS.includes('className="rp-actions"'));
+    assert.ok(CONTROLS.indexOf("rp-actions") > CONTROLS.indexOf("rp-rail"));
   });
 });
 

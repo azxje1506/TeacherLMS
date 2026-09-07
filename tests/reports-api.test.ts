@@ -353,11 +353,15 @@ describe("Reports · the surface as a whole", () => {
     assert.ok(!page.includes("ModulePlaceholder"), "the placeholder was replaced in Gate 4");
 
     for (const server of [
-      "reports-service", "buildReport", "dbConnect", "mongoose",
+      "reports-service", "buildReport(", "dbConnect", "mongoose",
       "BillingModel", "StudentModel", "ClassModel", "LessonModel", "HomeworkModel",
     ]) {
       assert.ok(!page.includes(server), `the page must not reach ${server}`);
     }
+    /* `buildReportPdfDocument` IS reached, and is not a server module: it is the
+     * pure client-side derivation of the PDF from the payload already on
+     * screen. It performs no read and no write. */
+    assert.ok(page.includes("buildReportPdfDocument"));
     assert.ok(!page.includes("useMutation"), "Reports writes nothing");
     // The fetch itself lives in the client api module, and names one endpoint.
     const api = code("src", "components", "reports", "api.ts");
