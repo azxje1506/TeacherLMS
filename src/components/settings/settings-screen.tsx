@@ -42,11 +42,6 @@ import {
   accentSwatchStyle, settingsSegmentStyle, type SettingsSegmentVariant,
 } from "@/components/settings/settings-ui";
 
-/* The comp's card shell, written once. */
-const card: React.CSSProperties = {
-  background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--r)",
-  boxShadow: "var(--sh)", padding: "20px 22px", marginBottom: 16,
-};
 const cardTitle: React.CSSProperties = { fontSize: 15, fontWeight: 600, margin: "0 0 3px" };
 const cardSub: React.CSSProperties = { color: "var(--muted)", fontSize: 12.5, margin: "0 0 16px" };
 const groupLabel: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, color: "var(--fg-2)", marginBottom: 7 };
@@ -62,12 +57,22 @@ function Segment({
   label, active, onClick, variant,
 }: {
   label: string;
-  active: boolean;
+  /** `null` means NOT KNOWN YET — the browser store has not been read, so this
+   * control may not claim to be either pressed or unpressed. It draws the
+   * neutral face and omits `aria-pressed` entirely rather than asserting
+   * `false`, which would give a screen reader a wrong answer for one render. */
+  active: boolean | null;
   onClick: () => void;
   variant?: SettingsSegmentVariant;
 }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} className="ring" style={settingsSegmentStyle(active, variant)}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active ?? undefined}
+      className="ring"
+      style={settingsSegmentStyle(active === true, variant)}
+    >
       {label}
     </button>
   );
@@ -86,7 +91,21 @@ function SegmentRow({ children, tight = false, maxWidth }: { children: React.Rea
 }
 
 export function SettingsScreen({ account }: { account: { name: string; email: string } }) {
-  const { t, fmt, lang, setLang, appearance, setAppearance, regional, setRegional } = useSettings();
+  const { hydrated, t, fmt, lang, setLang, appearance, setAppearance, regional, setRegional } = useSettings();
+
+  /* WHAT A CONTROL MAY SAY, AND WHEN.
+   *
+   * For the one render before the browser store has been read, every value in
+   * this component is a DEFAULT rather than the teacher's own — so a control that
+   * painted `appearance.theme === "light"` as chosen would be stating something
+   * it does not know, and visibly correcting itself a frame later. That
+   * correction is Gate 6 defect C: the colours were always right (ThemeScript
+   * sets them before first paint), but the SELECTION was drawn wrong first.
+   *
+   * `known` turns each boolean into "unknown" for exactly that render. Every
+   * control below goes through it, so no selection can be claimed early and none
+   * can be forgotten once the store is readable. */
+  const known = (isSelected: boolean): boolean | null => (hydrated ? isSelected : null);
 
   return (
     <div data-screen-label="Settings" style={{ animation: "fadeUp .3s ease both", maxWidth: 760 }}>
@@ -96,25 +115,25 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
       </p>
 
       {/* ---------------------------------------------------------- Appearance */}
-      <section style={card}>
+      <section className="set-card">
         <h2 style={cardTitle}>{t("Appearance")}</h2>
         <p style={cardSub}>{t("Theme, accent colour and layout density.")}</p>
 
-        <div style={{ marginBottom: 16 }}>
+        <div className="set-group">
           <div style={groupLabel}>{t("Theme")}</div>
           <SegmentRow maxWidth={260}>
             {THEMES.map((theme) => (
               <Segment
                 key={theme}
                 label={t(THEME_LABEL[theme])}
-                active={appearance.theme === theme}
+                active={known(appearance.theme === theme)}
                 onClick={() => setAppearance({ theme })}
               />
             ))}
           </SegmentRow>
         </div>
 
-        <div style={{ marginBottom: 18 }}>
+        <div className="set-group">
           <div style={groupLabel}>{t("Accent colour")}</div>
           <div className="set-accent-grid">
             {ACCENTS.map((accent) => (
@@ -128,9 +147,9 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   className="ring set-sw"
                   data-sw-accent={accent}
                   aria-label={t(ACCENT_LABEL[accent])}
-                  aria-pressed={appearance.accent === accent}
+                  aria-pressed={known(appearance.accent === accent) ?? undefined}
                   onClick={() => setAppearance({ accent })}
-                  style={accentSwatchStyle(appearance.accent === accent)}
+                  style={accentSwatchStyle(known(appearance.accent === accent) === true)}
                 />
                 <div className="set-accent-label">{t(ACCENT_LABEL[accent])}</div>
               </div>
@@ -147,7 +166,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   key={surface}
                   variant="dense"
                   label={t(SURFACE_LABEL[surface])}
-                  active={appearance.surface === surface}
+                  active={known(appearance.surface === surface)}
                   onClick={() => setAppearance({ surface })}
                 />
               ))}
@@ -161,7 +180,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   key={spacing}
                   variant="dense"
                   label={t(DENSITY_LABEL[spacing])}
-                  active={appearance.spacing === spacing}
+                  active={known(appearance.spacing === spacing)}
                   onClick={() => setAppearance({ spacing })}
                 />
               ))}
@@ -171,11 +190,11 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
       </section>
 
       {/* ---------------------------------------------------- Language & Region */}
-      <section style={card}>
+      <section className="set-card">
         <h2 style={cardTitle}>{t("Language & Region")}</h2>
         <p style={cardSub}>{t("Interface language and regional formats for dates, time, currency and numbers.")}</p>
 
-        <div style={{ marginBottom: 18 }}>
+        <div className="set-group">
           <div style={{ ...groupLabel, marginBottom: 3 }}>{t("Interface language")}</div>
           <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>{t("Applies immediately across the app.")}</div>
           <SegmentRow maxWidth={320}>
@@ -184,7 +203,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
               * dictionary's own list, so this cannot offer a language the
               * translator does not know about. */}
             {LANGS.map(([code, endonym]) => (
-              <Segment key={code} label={endonym} active={lang === code} onClick={() => setLang(code)} />
+              <Segment key={code} label={endonym} active={known(lang === code)} onClick={() => setLang(code)} />
             ))}
           </SegmentRow>
         </div>
@@ -199,7 +218,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   key={df}
                   variant="dense"
                   label={df}
-                  active={regional.dateFormat === df}
+                  active={known(regional.dateFormat === df)}
                   onClick={() => setRegional("dateFormat", df)}
                 />
               ))}
@@ -213,7 +232,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   key={tf}
                   variant="dense"
                   label={t(TIME_FORMAT_LABEL[tf])}
-                  active={regional.timeFormat === tf}
+                  active={known(regional.timeFormat === tf)}
                   onClick={() => setRegional("timeFormat", tf)}
                 />
               ))}
@@ -227,7 +246,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   key={cur}
                   variant="dense"
                   label={cur}
-                  active={regional.currency === cur}
+                  active={known(regional.currency === cur)}
                   onClick={() => setRegional("currency", cur)}
                 />
               ))}
@@ -244,7 +263,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                    * formatter this very option selects, so the button cannot
                    * advertise a grouping it does not produce. */
                   label={createFormat({ ...regional, numberFormat: nf }, lang).number(NUMBER_FORMAT_SAMPLE, 2)}
-                  active={regional.numberFormat === nf}
+                  active={known(regional.numberFormat === nf)}
                   onClick={() => setRegional("numberFormat", nf)}
                 />
               ))}
@@ -257,7 +276,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
       {/* Informational only. Every value here is read: there is no input, no edit
         * control and no handler of any kind, because Sprint 11 changes no account
         * and writes no User document. */}
-      <section style={{ ...card, marginBottom: 0 }}>
+      <section className="set-card">
         <h2 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 14px" }}>{t("Workspace")}</h2>
         <div className="set-pair-workspace">
           <Fact label={t("Account")} value={account.name ? `${account.name} · ${t("Teacher / Admin")}` : EM} />

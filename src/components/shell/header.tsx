@@ -165,8 +165,26 @@ export function Header({
 
       <Tooltip>
         <TooltipTrigger asChild>
+          {/* BOTH ICONS ARE IN THE DOM AND CSS PICKS ONE — the same device this
+            * header already uses for its two search triggers, and for the same
+            * reason: there is then no state in JavaScript to disagree with the
+            * stylesheet, and nothing to correct after hydration.
+            *
+            * IT IS ALSO THE FIX FOR A REAL FLASH. React renders the SERVER
+            * snapshot for the hydrating render, so `appearance.theme` is `light`
+            * for one render whatever is stored — and this button used to pick its
+            * icon from that, showing the light-mode icon and then visibly
+            * swapping to the dark one on a reload with Dark stored (Gate 6,
+            * defect C). The stylesheet reads `<html data-theme>`, which
+            * `ThemeScript` has already written BEFORE first paint, so the right
+            * icon is the first one painted and there is no wrong frame to fix.
+            *
+            * `display:none` takes the other icon out of the accessibility tree as
+            * well as the layout, so exactly one is ever announced, and the
+            * button's own label is constant either way. */}
           <button onClick={() => setAppearance({ theme: isDark ? "light" : "dark" })} aria-label={t("Toggle theme")} className="btn-ghost" style={iconBtn}>
-            {isDark ? <IconSun size={18} /> : <IconMoon size={18} />}
+            <span className="hdr-theme-icon-dark"><IconSun size={18} /></span>
+            <span className="hdr-theme-icon-light"><IconMoon size={18} /></span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t("Toggle theme")}</TooltipContent>

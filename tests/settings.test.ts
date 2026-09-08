@@ -427,14 +427,17 @@ describe("Settings · the page replaced the placeholder", () => {
 
   it("9. the controls are real buttons with their state exposed", () => {
     assert.ok(!/<div[^>]*onClick/.test(SCREEN), "no div pretending to be a button");
-    assert.ok(SCREEN.includes("aria-pressed={active}"), "segments expose selection");
-    assert.ok(SCREEN.includes("aria-pressed={appearance.accent === accent}"), "so do the swatches");
+    assert.ok(SCREEN.includes("aria-pressed={active ?? undefined}"), "segments expose selection, or say nothing yet");
+    assert.ok(SCREEN.includes("aria-pressed={known(appearance.accent === accent) ?? undefined}"), "so do the swatches");
     assert.ok(SCREEN.includes('aria-label={t(ACCENT_LABEL[accent])}'), "a colour-only control is named");
     assert.equal((SCREEN.match(/type="button"/g) ?? []).length, 2, "both button kinds opt out of form submission");
   });
 
   it("10. currency is display-only — nothing here touches stored money", () => {
-    assert.ok(!/RATE_VND|convert|exchange|rate/i.test(SCREEN), "no conversion and no rate configuration");
+    /* Word-bounded. An unanchored `rate` also matches "hyd(rate)d", which is how
+     * this assertion failed the moment the readiness fix landed — the same
+     * over-broad-regex trap the Gate 5 audit caught with a bare `$`. */
+    assert.ok(!/\bRATE_VND|\bconvert|\bexchange\b|\brate\b/i.test(SCREEN), "no conversion and no rate configuration");
     assert.ok(!/Billing|fee|revenue/i.test(SCREEN), "and no Finance concept at all");
     assert.ok(SCREEN.includes('setRegional("currency", cur)'), "it writes the display preference and nothing else");
   });
@@ -483,10 +486,14 @@ describe("Settings · the Workspace card is read-only", () => {
 describe("Settings · the design's own measurements", () => {
   it("1. the content column and the card shell are the comp's", () => {
     assert.ok(SCREEN.includes("maxWidth: 760"), "760px column");
-    assert.ok(SCREEN.includes('padding: "20px 22px"'), "card padding");
-    assert.ok(SCREEN.includes("marginBottom: 16"), "card spacing");
+    /* The card shell moved into `.set-card` so its bottom spacing could follow
+     * the density token (Gate 6.1, defect B). The values are the comp's still,
+     * and are asserted where they now live. */
+    const cardRule = /\.set-card\{[^}]*\}/.exec(SET_CSS)?.[0] ?? "";
+    assert.ok(cardRule.includes("padding:20px 22px"), "card padding");
+    assert.ok(cardRule.includes("margin-bottom:var(--gap)"), "card spacing follows density");
     for (const token of ["var(--card)", "var(--border)", "var(--r)", "var(--sh)"]) {
-      assert.ok(SCREEN.includes(token), `card uses ${token}`);
+      assert.ok(cardRule.includes(token), `card uses ${token}`);
     }
   });
 
@@ -499,9 +506,9 @@ describe("Settings · the design's own measurements", () => {
      * asserted where they now live. See the responsive-ownership suite below for
      * why they had to move at all. */
     assert.ok(SET_CSS.includes("gap:10px;max-width:420px"), "accent swatches");
-    assert.ok(/\.set-pair-appearance\{[^}]*gap:18px;max-width:520px/.test(SET_CSS), "surface + density");
-    assert.ok(/\.set-pair-regional\{[^}]*gap:18px;max-width:560px/.test(SET_CSS), "regional");
-    assert.ok(/\.set-pair-workspace\{[^}]*gap:14px 22px/.test(SET_CSS), "workspace");
+    assert.ok(/\.set-pair-appearance\{[^}]*gap:var\(--gap\);max-width:520px/.test(SET_CSS), "surface + density");
+    assert.ok(/\.set-pair-regional\{[^}]*gap:var\(--gap\);max-width:560px/.test(SET_CSS), "regional");
+    assert.ok(/\.set-pair-workspace\{[^}]*gap:var\(--gap\) 22px/.test(SET_CSS), "workspace row gap follows density, column gap stays fixed");
     assert.ok(/\.set-seg-row\{[^}]*gap:8px\}/.test(SET_CSS) && /\.set-seg-row\.tight\{gap:6px\}/.test(SET_CSS),
       "both of the comp's segment gaps");
   });
@@ -590,17 +597,34 @@ describe("Settings · responsive layout is owned by the stylesheet", () => {
      * grid can ever be is the 760px column less the card's 22px padding either
      * side; three tracks at each stated minimum do not fit in it. */
     const CARD_CONTENT_MAX = 760 - 22 * 2;
+    /* The gap is now `var(--gap)`, so the arithmetic has to hold across the whole
+     * density range rather than at one number: the WIDEST gap must still leave
+     * room for two columns, and the NARROWEST must still not admit a third.
+     * Read out of the palette so a retuned density is caught here too. */
+    const gapOf = (sel: string) => {
+      const m = new RegExp(`${sel}\\{[^}]*--gap:(\\d+)px`).exec(CSS);
+      assert.ok(m, `no --gap in ${sel}`);
+      return Number(m![1]);
+    };
+    const cozy = gapOf(":root"), airy = gapOf('\\[data-spacing="airy"\\]'), tight = gapOf('\\[data-spacing="tight"\\]');
+    assert.ok(tight < cozy && cozy < airy, "the three densities are actually ordered");
+
     const mins: Record<string, number> = {};
-    for (const [, cls, min] of SET_CSS.matchAll(/\.(set-pair-[a-z]+)\{[^}]*minmax\(min\((\d+)px/g) as unknown as Iterable<[string, string, string]>) {
-      mins[cls] = Number(min);
+    for (const m of SET_CSS.matchAll(/\.(set-pair-[a-z]+)\{[^}]*minmax\(min\((\d+)px/g)) {
+      mins[m[1]] = Number(m[2]);
     }
+    assert.equal(Object.keys(mins).length, 3, "all three pair grids were found");
     for (const [cls, min] of Object.entries(mins)) {
       const capMatch = new RegExp(`\\.${cls}\\{[^}]*max-width:(\\d+)px`).exec(SET_CSS);
-      const gapMatch = new RegExp(`\\.${cls}\\{[^}]*gap:(\\d+)px`).exec(SET_CSS);
-      const cap = capMatch ? Number(capMatch[1]) : CARD_CONTENT_MAX;
-      const gap = Number(gapMatch![1]);
-      assert.ok(3 * min + 2 * gap > Math.min(cap, CARD_CONTENT_MAX), `.${cls} can never draw a third column`);
-      assert.ok(2 * min + gap <= Math.min(cap, CARD_CONTENT_MAX), `.${cls} still draws two on a desktop`);
+      const cap = Math.min(capMatch ? Number(capMatch[1]) : CARD_CONTENT_MAX, CARD_CONTENT_MAX);
+      /* The Workspace grid's COLUMN gap is a fixed 22px; only its row gap follows
+       * density, so the column arithmetic uses 22 there. */
+      const fixedCol = /\.set-pair-workspace\{[^}]*gap:var\(--gap\) (\d+)px/.exec(SET_CSS);
+      const isWorkspace = cls === "set-pair-workspace";
+      const widest = isWorkspace ? Number(fixedCol![1]) : airy;
+      const narrowest = isWorkspace ? Number(fixedCol![1]) : tight;
+      assert.ok(2 * min + widest <= cap, `.${cls} still draws two columns at the airiest density`);
+      assert.ok(3 * min + 2 * narrowest > cap, `.${cls} can never draw a third, even at the tightest`);
     }
   });
 
@@ -674,6 +698,170 @@ describe("Settings · responsive layout is owned by the stylesheet", () => {
      * responsive fix silently becomes another's regression. */
     const others = CSS.slice(0, CSS.indexOf("SETTINGS (Sprint 11)"));
     assert.ok(!/\.set-/.test(others), "no Settings class is declared earlier in the file");
+  });
+});
+
+/* ================================ Gate 6.1 — the three human-found defects */
+
+describe("Settings · A. the desktop column is centred in the workspace", () => {
+  it("1. the column centres itself, Settings-scoped", () => {
+    assert.ok(/\[data-screen-label="Settings"\]\{margin-inline:auto\}/.test(SET_CSS),
+      "the Settings column centres in whatever width the shell leaves it");
+  });
+
+  it("2. …and it is still a single 760px column", () => {
+    assert.ok(SCREEN.includes("maxWidth: 760"), "the cap is unchanged");
+    assert.ok(!/margin: *"0 auto"|marginInline/.test(SCREEN), "and centring is not also stated inline");
+  });
+
+  it("3. the cards' own contents are NOT centred", () => {
+    /* The group is centred, not the text inside it — the comp draws left-aligned
+     * cards. `textAlign: "center"` appears once and only on a swatch cell. */
+    assert.equal((SCREEN.match(/textAlign: "center"/g) ?? []).length, 1, "only the swatch cell");
+    assert.ok(!/text-align:center/.test(SET_CSS.replace(/\.set-accent[^}]*\}/g, "")), "and no rule centres card text");
+  });
+
+  it("4. no other module's layout was touched", () => {
+    /* `.app-main` is shared by every screen; centring one module must not be done
+     * by changing the track they all sit in. */
+    assert.ok(!/\.app-main/.test(SET_CSS), "the Settings section does not mention .app-main");
+    const shell = code("src", "components", "shell", "app-shell.tsx");
+    assert.ok(shell.includes("maxWidth: 1400"), "the shared main track is unchanged");
+  });
+});
+
+describe("Settings · B. the page participates in the density system", () => {
+  it("1. card and group rhythm come from the density token", () => {
+    assert.ok(/\.set-card\{[^}]*margin-bottom:var\(--gap\)/.test(SET_CSS), "space between cards");
+    assert.ok(/\.set-group\{margin-bottom:var\(--gap\)\}/.test(SET_CSS), "space between control groups");
+    assert.ok(/\.set-card:last-child\{margin-bottom:0\}/.test(SET_CSS), "and the last card adds no trailing gap");
+  });
+
+  it("2. at the default density it resolves to the banked 16px anchor", () => {
+    /* The contract banks "16px bottom spacing". `--gap` is 16px at `:root`, so
+     * the default page is byte-identical to what Gate 5 verified and only the
+     * other two densities move. */
+    assert.ok(/:root\{[^}]*--gap:16px/.test(CSS), "cozy is the anchor");
+  });
+
+  it("3. …and all three densities are actually distinguishable", () => {
+    assert.ok(/\[data-spacing="airy"\]\{--gap:26px\}/.test(CSS));
+    assert.ok(/\[data-spacing="tight"\]\{--gap:11px\}/.test(CSS));
+  });
+
+  it("4. no density is special-cased, in CSS or in React", () => {
+    /* The token is the whole mechanism: a fourth density would need no change
+     * here at all. A `[data-spacing="airy"] .set-…` rule would be a second
+     * source of truth for what density means. */
+    assert.ok(!/data-spacing/.test(SET_CSS), "no density selector in the Settings rules");
+    for (const file of [SCREEN, UI]) {
+      assert.ok(!/"cozy"|"airy"|"tight"/.test(file.replace(/DENSITIES/g, "")), "no density branch in React");
+    }
+    assert.ok(SCREEN.includes("DENSITIES.map("), "the control is still rendered from the authorised list");
+  });
+
+  it("5. what must NOT scale with density still does not", () => {
+    /* Density buys air, not smaller words or smaller tap targets. */
+    const cardRule = /\.set-card\{[^}]*\}/.exec(SET_CSS)?.[0] ?? "";
+    assert.ok(cardRule.includes("padding:20px 22px"), "card padding is a banked anchor");
+    assert.ok(SET_CSS.includes("gap:10px;max-width:420px"), "the swatch grid keeps the comp's 10px");
+    assert.ok(/\.set-seg-row\{[^}]*gap:8px\}/.test(SET_CSS), "segment spacing is control spacing, not density spacing");
+    assert.equal(settingsSegmentStyle(false).height, 34, "and no control height moves");
+    assert.equal(settingsSegmentStyle(false, "dense").fontSize, 12.5, "nor any type size");
+  });
+});
+
+describe("Settings · C. no default selection is claimed before the store is read", () => {
+  it("1. the store publishes a readiness signal", () => {
+    assert.ok(STORE.includes("hydrated: boolean"), "it is part of the context value");
+    assert.ok(STORE.includes("const hydrated = snapshot !== SERVER_SETTINGS"),
+      "derived from the snapshot's own identity, so it cannot drift from the values");
+  });
+
+  it("2. …and it is derived, not stored — no second piece of state", () => {
+    const provider = STORE.slice(STORE.indexOf("export function SettingsProvider"));
+    assert.ok(!/useState|useReducer/.test(provider), "the provider holds no extra state");
+    assert.equal((STORE.match(/useSyncExternalStore\(/g) ?? []).length, 1, "and there is still exactly one store read");
+  });
+
+  it("3. every Settings control routes its selection through it", () => {
+    assert.ok(SCREEN.includes("const known = (isSelected: boolean): boolean | null => (hydrated ? isSelected : null)"));
+    /* Ten call sites for nine settings: the eight segment groups gate their
+     * `active` once each, and the accent swatch gates twice — once for
+     * `aria-pressed` and once for the border that shows the choice. */
+    assert.equal((SCREEN.match(/active=\{known\(/g) ?? []).length, 8, "eight segment groups");
+    assert.equal((SCREEN.match(/known\(appearance\.accent === accent\)/g) ?? []).length, 2, "and the swatch, twice");
+    assert.equal((SCREEN.match(/known\(/g) ?? []).length, 10, "with nothing else calling it");
+    assert.ok(!/active=\{(appearance|regional|lang)/.test(SCREEN), "no selection bypasses it");
+  });
+
+  it("4. an unknown selection claims nothing, rather than claiming false", () => {
+    assert.ok(SCREEN.includes("aria-pressed={active ?? undefined}"),
+      "aria-pressed is omitted while unknown, not asserted false");
+    assert.ok(SCREEN.includes("settingsSegmentStyle(active === true, variant)"),
+      "and the neutral face is drawn");
+  });
+
+  it("5. the header takes its icon from the pre-paint attribute, not from React", () => {
+    /* This is the same defect at the other end: the header used to pick its icon
+     * from `appearance.theme`, which is the DEFAULT for the hydrating render. */
+    const header = code("src", "components", "shell", "header.tsx");
+    assert.ok(!/isDark \? <Icon/.test(header), "the icon is no longer chosen in JS");
+    assert.ok(header.includes('<span className="hdr-theme-icon-dark">') &&
+      header.includes('<span className="hdr-theme-icon-light">'), "both icons are in the DOM");
+    assert.ok(/\[data-theme="dark"\] \.hdr-theme-icon-dark\{display:flex\}/.test(CSS), "and CSS picks one");
+    assert.ok(/\.hdr-theme-icon-dark\{display:none\}/.test(CSS), "with the other removed from the a11y tree too");
+  });
+
+  it("6. the header still holds no state of its own", () => {
+    const header = code("src", "components", "shell", "header.tsx");
+    assert.ok(header.includes("useSettings()"), "same store");
+    assert.ok(!/useState|localStorage/.test(header), "no independent header state");
+    assert.ok(header.includes('setAppearance({ theme: isDark ? "light" : "dark" })'), "same setter");
+  });
+
+  it("7. the pre-paint path itself is unchanged", () => {
+    /* The CSS never flashed; only React's picture of the selection did. Nothing
+     * about ThemeScript should have moved. */
+    assert.ok(THEME_SCRIPT.includes("dangerouslySetInnerHTML"), "still a blocking inline script");
+    assert.ok(!/import .*settings-context/.test(THEME_SCRIPT), "still importing no runtime module");
+    assert.ok(THEME_SCRIPT.includes("el.dataset.theme=g('etlms.theme','light')"), "still writing the attribute CSS reads");
+  });
+
+  it("8. readiness is store infrastructure, not a per-control storage read", () => {
+    for (const file of [SCREEN, PAGE, UI]) {
+      assert.ok(!/localStorage|sessionStorage/.test(file), "no control reads storage itself");
+    }
+    assert.ok(!/useState|useReducer|useRef\(/.test(SCREEN), "and still no preference mirror");
+  });
+});
+
+/* Readiness, as behaviour rather than as source text. The store is a module, so
+ * the transition can be driven directly: the server snapshot is the shared
+ * defaults object, a client read is always a fresh one. */
+describe("Settings · C. the readiness transition, exercised", () => {
+  it("1. the server snapshot IS the defaults object, by identity", () => {
+    assert.equal(SETTINGS_DEFAULTS, SETTINGS_DEFAULTS, "stable across reads");
+    assert.deepEqual(SETTINGS_DEFAULTS, resolveSettings(() => null), "and equal in value to an empty browser");
+  });
+
+  it("2. a client read is never that same object — which is what makes it detectable", () => {
+    /* `hydrated` is `snapshot !== SERVER_SETTINGS`. If a client read could return
+     * the defaults object itself, the page would stay in its neutral state
+     * forever for a teacher who had changed nothing. */
+    const empty = resolveSettings(() => null);
+    assert.notEqual(empty, SETTINGS_DEFAULTS, "a fresh object even when every value is a default");
+    assert.deepEqual(empty, SETTINGS_DEFAULTS, "with identical contents");
+
+    const stored = resolveSettings(from({ [storageKeys.theme]: "dark" }));
+    assert.notEqual(stored, SETTINGS_DEFAULTS);
+    assert.equal(stored.appearance.theme, "dark");
+  });
+
+  it("3. and the browser reader behaves the same way", () => {
+    const a = readStoredSettings();
+    assert.notEqual(a, SETTINGS_DEFAULTS, "so readiness flips even with nothing stored");
+    assert.deepEqual(a, SETTINGS_DEFAULTS);
   });
 });
 

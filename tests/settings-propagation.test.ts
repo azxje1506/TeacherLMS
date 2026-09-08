@@ -503,7 +503,10 @@ describe("Settings · appearance reaches the app only through existing tokens", 
   });
 
   it("2. …and Sprint 11 added no component override to compensate for them", () => {
-    const settingsSection = CSS.slice(CSS.indexOf("SETTINGS (Sprint 11)"));
+    /* Comment-free: the Settings section's own prose EXPLAINS that it declares no
+     * `[data-spacing="…"]` selector, so scanning the raw text fails on the
+     * explanation rather than on a rule. Same trap this suite hit before. */
+    const settingsSection = CSS.slice(CSS.indexOf("SETTINGS (Sprint 11)")).replace(/\/\*[\s\S]*?\*\//g, " ");
     assert.ok(!/data-surface|data-spacing/.test(settingsSection),
       "no Settings rule special-cases a surface or a density");
   });

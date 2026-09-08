@@ -23,6 +23,18 @@ import type { Appearance, Lang, RegionalConfig } from "./types";
 const DEFAULT_APPEARANCE: Appearance = { theme: "light", accent: "crimson", surface: "soft", spacing: "cozy" };
 
 interface SettingsValue {
+  /** Has the BROWSER's own store been read yet?
+   *
+   * `false` on the server and for the single hydrating render; `true` from the
+   * moment React re-reads the client snapshot. See `SettingsProvider` for why it
+   * is derived rather than stored, and `components/settings/settings-screen.tsx`
+   * for what a control is supposed to do while it is false.
+   *
+   * IT IS NOT "LOADING". Nothing is being fetched and nothing is slow — this is
+   * one render, and the page is fully painted with the right colours throughout
+   * it. It answers a narrower question: may a control claim yet that a
+   * particular option is the teacher's? */
+  hydrated: boolean;
   appearance: Appearance;
   setAppearance: (patch: Partial<Appearance>) => void;
   lang: Lang;
@@ -161,7 +173,30 @@ function commit(next: Settings): void {
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const { appearance, lang, regional } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { appearance, lang, regional } = snapshot;
+
+  /* WHETHER THE STORED PREFERENCES ARE KNOWN YET, derived from the snapshot's
+   * own identity rather than from a second piece of state.
+   *
+   * `getServerSnapshot` returns THE `SERVER_SETTINGS` object; `getSnapshot`
+   * returns whatever `readStored()` built, which is always a fresh object — even
+   * when every stored value happens to equal a default. So the reference test is
+   * exactly "did this render come from the browser or from the server default",
+   * which is precisely the question, and it cannot drift from the values below
+   * because it IS those values.
+   *
+   * WHY ANY OF THIS IS NEEDED. React uses `getServerSnapshot` for the hydrating
+   * render as well as for the server one, then re-reads the client store and
+   * re-renders. That is correct and it is what keeps the markup matching — but it
+   * means every consumer presents DEFAULTS for one render before the persisted
+   * values arrive. The CSS never flashed, because `ThemeScript` writes the stored
+   * theme onto <html> before first paint; what flashed was React's own picture of
+   * the selection: `Light` drawn as the chosen segment, and the header showing
+   * the light-mode icon, each visibly correcting itself a frame later (Gate 6,
+   * defect C). A consumer that wants to avoid claiming a default is the teacher's
+   * choice now has something to ask. */
+  const hydrated = snapshot !== SERVER_SETTINGS;
 
   // Mirror appearance to the document element.
   useEffect(() => {
@@ -198,8 +233,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const fmt = useMemo(() => createFormat(regional, lang), [regional, lang]);
 
   const value = useMemo<SettingsValue>(
-    () => ({ appearance, setAppearance, lang, setLang, regional, setRegional, t, fmt }),
-    [appearance, setAppearance, lang, setLang, regional, setRegional, t, fmt]
+    () => ({ hydrated, appearance, setAppearance, lang, setLang, regional, setRegional, t, fmt }),
+    [hydrated, appearance, setAppearance, lang, setLang, regional, setRegional, t, fmt]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

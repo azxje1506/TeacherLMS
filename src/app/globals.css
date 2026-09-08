@@ -1981,9 +1981,55 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    when there is no derived report to act on, or an export is already running. */
 .rp-actions button:disabled{opacity:.55;cursor:not-allowed}
 
+/* ---- The header's theme icon is chosen by the stylesheet -------------------
+
+   Paired with shell/header.tsx, which now renders BOTH icons. `<html data-theme>`
+   is written by the inline ThemeScript before first paint, so the correct icon is
+   the first one painted — where picking it from React state showed the light-mode
+   icon for the hydrating render and then visibly swapped it (Gate 6, defect C).
+   `display:none` removes the other from the accessibility tree too, so exactly
+   one is ever announced. */
+.hdr-theme-icon-dark{display:none}
+.hdr-theme-icon-light{display:flex}
+[data-theme="dark"] .hdr-theme-icon-dark{display:flex}
+[data-theme="dark"] .hdr-theme-icon-light{display:none}
+
 /* ==========================================================================
    SETTINGS (Sprint 11)
    ========================================================================== */
+
+/* ---- The column, and where it sits ----------------------------------------
+
+   CENTRED IN THE WORKSPACE THE SHELL LEAVES (Gate 6, defect A). `.app-main` is
+   already a centred 1400px track, but this column is a 760px block inside it, so
+   it took the start edge and sat hard against the left on a wide screen.
+   `margin-inline:auto` centres the COLUMN — the cards keep their own
+   left-aligned contents, which is what the comp draws.
+
+   Scoped to this screen: `.app-main` is shared by every module and none of the
+   others is asking for this. */
+[data-screen-label="Settings"]{margin-inline:auto}
+
+/* ---- Density reaches this page through the token, not through a branch -----
+
+   `--gap` is the app's existing density variable — 16px cozy, 26px airy, 11px
+   tight — and these are the rhythms on the page that should breathe with it: the
+   space between cards, the space between control groups inside one, and the two
+   pair grids. At cozy it resolves to exactly the 16px the banked design anchor
+   states, so the default page is unchanged and only the other two densities move.
+
+   WHAT DELIBERATELY DOES NOT SCALE. Card padding (a banked anchor), the swatch
+   grid's 10px (also banked), the segment gaps, control heights and every type
+   size: density is meant to change how much air a layout has, not to shrink a
+   tap target or a word. There is no density selector anywhere in this section and
+   no density branch in React — the token is the whole mechanism, so a fourth
+   density would need no change here at all. */
+.set-card{
+  background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--sh);padding:20px 22px;margin-bottom:var(--gap);
+}
+.set-card:last-child{margin-bottom:0}
+.set-group{margin-bottom:var(--gap)}
 
 /* ---- The layout containers own their own columns --------------------------
 
@@ -2017,15 +2063,15 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    produces a lopsided third track. */
 .set-pair-appearance{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));
-  gap:18px;max-width:520px;
+  gap:var(--gap);max-width:520px;
 }
 .set-pair-regional{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(min(265px,100%),1fr));
-  gap:18px;max-width:560px;
+  gap:var(--gap);max-width:560px;
 }
 .set-pair-workspace{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));
-  gap:14px 22px;
+  gap:var(--gap) 22px;
 }
 
 /* ---- A segmented row ------------------------------------------------------
