@@ -350,7 +350,11 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    it, and the attribute carries only the one fact CSS cannot know. */
 @media (max-width:860px) and (min-width:621px){
   .app-main{padding:20px 18px 40px !important}
-  .app-sidebar:not([data-rail-expanded="1"]){width:64px !important;min-width:64px !important}
+  /* `min-width` is gone from here for the reason the component states at
+     length: it is not transitioned, so as a SECOND width source it clamped the
+     expand direction and the rail snapped open. `width` alone, and the element's
+     own `flex-shrink:0`, hold the rail at 64px just as firmly. */
+  .app-sidebar:not([data-rail-expanded="1"]){width:64px !important}
   .app-sidebar:not([data-rail-expanded="1"]) .sb-label{display:none !important}
   .app-sidebar:not([data-rail-expanded="1"]) nav>div{display:none !important}
   .app-sidebar:not([data-rail-expanded="1"]) .nav-item>span:not(:first-child){display:none !important}
@@ -390,7 +394,14 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
      breakpoints, 1100px and 768px, in its own section below. */
 
   /* The sidebar becomes an overlay: out of flow, so it contributes no layout
-     width at all, and full-labelled because there is room for labels again. */
+     width at all, and full-labelled because there is room for labels again.
+
+     THE `min-width` HERE IS NOT THE ONE GATE 6.3 REMOVED, and it is safe to
+     leave: the drawer is `position:fixed`, so it is not a flex item and nothing
+     can squeeze it; it animates `transform` rather than `width`; and the two
+     values are equal, so the clamp can never bind. What 6.3 removed were the
+     in-flow declarations, where an untransitioned `min-width` sat on the same
+     element as an animating `width` and won. */
   .app-sidebar{
     position:fixed !important;left:0;top:0;
     width:248px !important;min-width:248px !important;

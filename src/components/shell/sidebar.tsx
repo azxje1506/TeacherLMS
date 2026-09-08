@@ -112,7 +112,22 @@ export function Sidebar({
       data-mobile-open={mobileOpen ? "1" : "0"}
       data-rail-expanded={railExpanded ? "1" : "0"}
       style={{
-        width: sbw, minWidth: sbw, background: "var(--sidebar)", borderRight: "1px solid var(--border)",
+        /* WIDTH IS THE ONLY THING THAT DECIDES HOW WIDE THIS IS, and that is the
+         * whole of the Gate 6.3 fix. It used to be `width: sbw, minWidth: sbw`,
+         * and `min-width` is not in the transition below — so it clamped, and it
+         * only BOUND in one direction:
+         *
+         *   collapsing  min-width drops to 64 at once, so the used width is
+         *               max(animating 248→64, 64) — the animating value. Smooth.
+         *   expanding   min-width jumps to 248 at once, so the used width is
+         *               max(animating 64→248, 248) = 248 from the first frame.
+         *               The transition ran and nothing moved. Snap.
+         *
+         * `min-width` was only ever there to stop this flex item being squeezed
+         * by the content column, which `flex-shrink:0` states directly without
+         * taking part in resolving the width. One property, one source, both
+         * directions interpolable. */
+        width: sbw, flexShrink: 0, background: "var(--sidebar)", borderRight: "1px solid var(--border)",
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
         overflow: "hidden",
         /* BOTH TRANSITIONS ARE DECLARED HERE, and that is the fix for a drawer

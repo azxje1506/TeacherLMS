@@ -807,3 +807,113 @@ describe("Shell — the stylesheet is syntactically whole", () => {
     assert.equal(depth, 0, "an unclosed rule or @media block");
   });
 });
+
+/* ================================= Gate 6.3: both directions must interpolate */
+
+describe("Shell — the rail animates in both directions", () => {
+  const RAIL = mediaBlock("(max-width:860px) and (min-width:621px)");
+  /** The component, comment-free. EVERY assertion below reads this and not the
+   * raw file: the prose explaining what Gate 6.3 removed necessarily names
+   * `minWidth`, `transition` and `display:none`, so a scan over the comments
+   * finds the explanation instead of the code. */
+  const SB = codeOf(SIDEBAR);
+  /** The stylesheet's in-flow rules: comments gone, and the phone block — which
+   * legitimately keeps an inert min-width — removed. `RULE_TEXT` is already
+   * comment-free, so the block must be stripped in that same form. */
+  const IN_FLOW_CSS = RULE_TEXT.replace(MOBILE.replace(/\/\*[\s\S]*?\*\//g, ""), " ");
+  const IN_FLOW = [IN_FLOW_CSS, SB];
+
+  it("62. one element owns the width, and it owns both states", () => {
+    assert.ok(SB.includes("const sbw = collapsed ? 64 : 248;"), "both widths, one expression");
+    assert.ok(SB.includes("width: sbw,"), "and the element states it");
+  });
+
+  it("63. THE SECOND WIDTH SOURCE IS GONE", () => {
+    /* THE DEFECT. `minWidth: sbw` sat beside `width: sbw` and was not in the
+     * transition, so it clamped — and it only BOUND while expanding:
+     *   collapse  used width = max(animating 248→64, 64) → animates
+     *   expand    used width = max(animating 64→248, 248) → 248 at once, snap
+     * That is the whole asymmetry the human pass reported. */
+    assert.ok(!/minWidth: sbw/.test(SB), "min-width must not track the animated width");
+    assert.ok(!SB.includes("maxWidth: sbw"), "nor a max-width");
+  });
+
+  it("64. …and what it was doing is stated directly instead", () => {
+    /* `min-width` was only stopping the flex item being squeezed by the content
+     * column. `flex-shrink:0` says that without resolving the width. */
+    assert.ok(SB.includes("flexShrink: 0"), "the shrink guarantee survives the removal");
+    assert.ok(/display: "flex", minHeight: "100vh"/.test(SHELL), "the parent really is a flex row");
+  });
+
+  it("65. no in-flow rule reintroduces a min- or max-width on the sidebar", () => {
+    for (const src of IN_FLOW) {
+      assert.ok(!/\.app-sidebar[^{]*\{[^}]*min-width/.test(src),
+        "an in-flow min-width would clamp the expand direction again");
+      assert.ok(!/\.app-sidebar[^{]*\{[^}]*max-width/.test(src));
+    }
+    // The tablet rail holds itself with width alone.
+    assert.ok(RAIL.includes('.app-sidebar:not([data-rail-expanded="1"]){width:64px !important}'));
+    // Comment-free: the note explaining the removal names `min-width` itself.
+    assert.ok(!codeOf(RAIL).includes("min-width"), "the rail must not clamp either");
+  });
+
+  it("66. the phone drawer's own min-width is inert, not an exception to the rule", () => {
+    /* It is allowed to stay because it cannot bind: fixed position, so not a
+     * flex item; equal to the width; and the drawer animates transform. */
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*position:fixed !important/);
+    const w = MOBILE.match(/\.app-sidebar\{[\s\S]*?width:(\d+)px !important;min-width:(\d+)px !important/);
+    assert.ok(w, "both are declared together");
+    assert.equal(w![1], w![2], "and they are equal, so the clamp can never bind");
+  });
+
+  it("67. desktop and tablet share ONE transition, declared once", () => {
+    assert.ok(SB.includes('transition: "width .18s ease, transform .2s ease"'));
+    // Not a second implementation per breakpoint.
+    assert.equal((SB.match(/transition:/g) ?? []).length, 1, "one declaration in the component");
+    const bare = IN_FLOW_CSS;
+    assert.ok(!/\.app-sidebar[^{]*\{[^}]*transition:[^}]*width/.test(bare),
+      "no stylesheet rule declares a competing width transition");
+  });
+
+  it("68. the width never changes through display, and never through a parent track", () => {
+    /* Anchored on the ELEMENT's own rule. A loose `.app-sidebar[^{]*` also
+     * matches `.app-sidebar .sb-label{display:none}`, which is a LABEL rule and
+     * entirely correct — it is the rail hiding its text, not a width swap. */
+    assert.ok(!/\.app-sidebar(:not\([^)]*\))?\{[^}]*display:none/.test(IN_FLOW_CSS),
+      "a display swap cannot be interpolated");
+    /* The content column follows by `flex:1`, so nothing else states a track
+     * that could jump while the sidebar animates. */
+    assert.ok(SHELL.includes('style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}'));
+    assert.ok(!/grid-template-columns[^;]*248px/.test(RULE_TEXT), "no grid track duplicates the width");
+  });
+
+  it("69. no timer, frame hook or forced reflow drives the motion", () => {
+    for (const banned of ["setTimeout", "requestAnimationFrame", "offsetWidth", "getBoundingClientRect"]) {
+      assert.ok(!SB.includes(banned), `${banned} has no part in a CSS transition`);
+    }
+  });
+
+  it("70. reduced motion still turns it off deliberately, and only there", () => {
+    assert.ok(/\.app-sidebar\{transition:none !important\}/.test(RULE_TEXT));
+    // The switch is inside the reduced-motion query and nowhere else.
+    const rmAt = CSS.indexOf("@media (prefers-reduced-motion:reduce)");
+    assert.ok(CSS.indexOf(".app-sidebar{transition:none !important}") > rmAt,
+      "the only `transition:none` on the sidebar sits inside the reduced-motion query");
+  });
+
+  it("71. the labels reveal with the width rather than forcing it", () => {
+    /* `flex:1` + `overflow:hidden` makes each label's automatic minimum size
+     * zero, so a label cannot push the row wider than the animating rail — it is
+     * clipped and uncovered as the width grows. That is what keeps the motion
+     * smooth instead of the row fighting the transition. */
+    assert.ok(/flex: 1, whiteSpace: "nowrap", overflow: "hidden"/.test(SB));
+    assert.ok(SB.includes('overflow: "hidden"'), "and the rail clips what has not been revealed");
+  });
+
+  it("72. the mobile drawer still moves by transform, untouched by any of this", () => {
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*transform:translateX\(-100%\)/);
+    assert.match(MOBILE, /\.app-sidebar\[data-mobile-open="1"\]\{transform:translateX\(0\)\}/);
+    assert.ok(SB.includes('data-mobile-open={mobileOpen ? "1" : "0"}'));
+    assert.ok(SB.includes('className="sb-close btn-ghost"'), "and keeps its close control");
+  });
+});
