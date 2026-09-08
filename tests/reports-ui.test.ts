@@ -96,6 +96,25 @@ const REPORTS_CSS = (() => {
   return raw.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, " ");
 })();
 
+/** The body of one `@container` block, by its exact condition text. Sibling of
+ * `mediaBlock` below — Gate 6.4 moved the Reports stack from a viewport query to
+ * a container query, because the same viewport can hand this screen two very
+ * different content widths depending on how wide the sidebar currently is. */
+function containerBlock(condition: string, scope: string = REPORTS_CSS): string {
+  const head = `@container ${condition}{`;
+  const start = scope.indexOf(head);
+  assert.notEqual(start, -1, `no @container ${condition} block in this scope`);
+  let depth = 0;
+  for (let i = start + head.length - 1; i < scope.length; i++) {
+    if (scope[i] === "{") depth++;
+    else if (scope[i] === "}") {
+      depth--;
+      if (depth === 0) return scope.slice(start + head.length, i);
+    }
+  }
+  throw new Error(`unterminated @container ${condition}`);
+}
+
 /** The body of one `@media` block within a scope, by its exact condition. */
 function mediaBlock(condition: string, scope: string = REPORTS_CSS): string {
   const head = `@media ${condition}{`;
@@ -743,16 +762,21 @@ describe("Reports · responsive layout can actually win", () => {
     assert.ok(rail.includes("min-width:0"), "it may shrink rather than define a floor");
   });
 
-  it("78. below 768 the grid stacks and the hard track is gone", () => {
-    const phone = mediaBlock("(max-width:767px)");
-    assert.ok(/\.rp-grid\{grid-template-columns:minmax\(0,1fr\)\}/.test(phone),
+  it("78. where there is not room, the grid stacks and the hard track is gone", () => {
+    /* REWRITTEN IN GATE 6.4. This used to read `@media (max-width:767px)`, and
+     * that number was only ever a proxy for "667px of content" — true while the
+     * sidebar was a fixed 64px rail, false the moment Gate 6.2 let it expand to
+     * 248px. The boundary itself has not moved; it is now stated in the terms it
+     * always meant. */
+    const room = containerBlock("rp-page (max-width:667px)");
+    assert.ok(/\.rp-grid\{grid-template-columns:minmax\(0,1fr\)\}/.test(room),
       "one column, and no 300px track");
-    assert.ok(!phone.includes("300px"), "the hard track must not survive here");
+    assert.ok(!room.includes("300px"), "the hard track must not survive here");
   });
 
   it("79. …and the sticky goes with the two-column layout that justified it", () => {
-    const phone = mediaBlock("(max-width:767px)");
-    assert.ok(/\.rp-rail\{position:static/.test(phone));
+    const room = containerBlock("rp-page (max-width:667px)");
+    assert.ok(/\.rp-rail\{position:static/.test(room));
   });
 
   it("80. at 620 and below the period pair stacks", () => {
@@ -840,5 +864,131 @@ describe("Reports · theme and accessibility", () => {
 
   it("91. the waiting state is announced", () => {
     assert.ok(/aria-live="polite"/.test(PAGE));
+  });
+});
+
+/* ====================== Gate 6.4: the stack follows room, not viewport width */
+
+describe("Reports · the layout answers to its own width", () => {
+  /** The one stacked implementation. */
+  const STACK = containerBlock("rp-page (max-width:667px)");
+
+  /* The geometry every case below is computed from. `--gap` is the app's own
+   * spacing token; 16px is the default, and the two alternatives shift the
+   * preview by ±10px without moving which side of the boundary anything falls
+   * on at the widths that matter. */
+  const RAIL = 300, GAP = 16, SIDEBAR = { rail: 64, panel: 248 };
+  const PAD = (vw: number) => (vw <= 620 ? 28 : vw <= 860 ? 36 : 64);
+  /** What the Reports screen actually gets, at a viewport and a sidebar state. */
+  const content = (vw: number, side: number) =>
+    vw <= 620 ? vw - PAD(vw) : vw - side - PAD(vw);
+  const stacks = (vw: number, side: number) => content(vw, side) <= 667;
+  const preview = (vw: number, side: number) => content(vw, side) - RAIL - GAP;
+
+  it("92. the boundary is the shipped one, restated in the terms it always meant", () => {
+    /* The old rule broke at 768/767 with a 64px rail and 18px page padding —
+     * which is 668/667px of content. If this ever stops holding, the container
+     * threshold and the design's approved boundary have drifted apart. */
+    assert.equal(content(768, SIDEBAR.rail), 668, "the last two-column width");
+    assert.equal(content(767, SIDEBAR.rail), 667, "the first stacked width");
+    assert.ok(!stacks(768, SIDEBAR.rail) && stacks(767, SIDEBAR.rail));
+    assert.ok(STACK.length > 0, "and that is the number the stylesheet uses");
+  });
+
+  it("93. every previously approved case is unchanged", () => {
+    // Collapsed rail: exactly the behaviour the 767px viewport rule gave.
+    assert.equal(stacks(860, SIDEBAR.rail), false, "860 rail: two-column");
+    assert.equal(stacks(800, SIDEBAR.rail), false, "800 rail: two-column");
+    assert.equal(stacks(768, SIDEBAR.rail), false, "768 rail: two-column");
+    assert.equal(stacks(767, SIDEBAR.rail), true, "767 rail: stacked");
+    assert.equal(stacks(620, 0), true, "620 drawer: stacked");
+    assert.equal(stacks(375, 0), true, "375 drawer: stacked");
+  });
+
+  it("94. THE DEFECT: an expanded sidebar in the tablet band now stacks", () => {
+    /* The report was that 768–860 with the panel open put the document in a
+     * column too narrow to read. These are the widths that produced it. */
+    for (const vw of [860, 800, 768]) {
+      assert.ok(stacks(vw, SIDEBAR.panel),
+        `${vw} + 248px sidebar leaves ${content(vw, SIDEBAR.panel)}px — must stack`);
+      assert.ok(preview(vw, SIDEBAR.panel) < 300,
+        "…and the two-column preview there would be narrower than the rail beside it");
+    }
+    assert.equal(preview(768, SIDEBAR.panel), 168, "the worst case the human saw");
+  });
+
+  it("95. …while the same widths with the rail collapsed do NOT stack", () => {
+    for (const vw of [860, 800, 768]) {
+      assert.equal(stacks(vw, SIDEBAR.rail), false,
+        `${vw} with a 64px rail still has ${content(vw, SIDEBAR.rail)}px — two-column`);
+      assert.ok(preview(vw, SIDEBAR.rail) >= 352, "and a usable document column");
+    }
+  });
+
+  it("96. desktop stays two-column in both sidebar states", () => {
+    for (const side of [SIDEBAR.rail, SIDEBAR.panel]) {
+      assert.equal(stacks(1100, side), false, `1100 with ${side}px sidebar`);
+      assert.equal(stacks(1440, side), false, `1440 with ${side}px sidebar`);
+    }
+    // …and the in-between band stacks only where the room genuinely runs out.
+    assert.equal(stacks(980, SIDEBAR.panel), false, "980 expanded: just enough");
+    assert.equal(stacks(900, SIDEBAR.panel), true, "900 expanded: not enough");
+    assert.equal(stacks(900, SIDEBAR.rail), false, "900 collapsed: plenty");
+  });
+
+  it("97. there is ONE stacked implementation, and it is the approved one", () => {
+    // Same two declarations the viewport rule carried, and no third rule.
+    assert.ok(/\.rp-grid\{grid-template-columns:minmax\(0,1fr\)\}/.test(STACK));
+    assert.ok(/\.rp-rail\{position:static;top:auto\}/.test(STACK));
+    assert.ok(!/rp-sheet|rp-table|rp-stat|font-size|padding/.test(STACK),
+      "no separate tablet-expanded design — only the stack");
+    // The viewport rule it replaced is gone, so the two cannot drift apart.
+    assert.ok(!/@media \(max-width:767px\)\{[^}]*rp-grid/.test(REPORTS_CSS),
+      "the old proxy rule must not survive alongside the real one");
+  });
+
+  it("98. the container is Reports' own, and is declared for screen only", () => {
+    assert.ok(/\[data-screen-label="Reports"\]\{container-type:inline-size;container-name:rp-page\}/
+      .test(CSS), "scoped to the Reports screen, never the shell");
+    /* `container-type` implies layout containment, which interacts with the
+     * fragmentation that paginates a printed report. Print is verified; scoping
+     * the declaration to `screen` means it cannot reach the printed document. */
+    const screenBlock = mediaBlock("screen", CSS);
+    assert.ok(screenBlock.includes("container-type:inline-size"),
+      "the container is established inside @media screen");
+    assert.ok(!/container-type/.test(mediaBlock("print", CSS)),
+      "and never inside @media print");
+  });
+
+  it("99. no other screen is touched by any of this", () => {
+    /* The container name is Reports' own, and the only rules inside the query
+     * are `.rp-*`. Nothing else in the app can match it. */
+    for (const sel of STACK.split("}").map((r) => r.split("{")[0].trim()).filter(Boolean)) {
+      assert.ok(sel.startsWith(".rp-"), `a non-Reports selector inside the query: ${sel}`);
+    }
+    assert.equal((CSS.match(/container-name:rp-page/g) ?? []).length, 1, "one container, declared once");
+    assert.equal((CSS.match(/@container rp-page/g) ?? []).length, 1, "and queried once");
+  });
+
+  it("100. Reports learns nothing about the sidebar to do this", () => {
+    /* The point of a container query here: no shell state, no attribute, no
+     * width arithmetic, and therefore nothing that can lag behind the sidebar's
+     * own animation or drift from the CSS. */
+    for (const src of ALL_UI) {
+      for (const banned of ["innerWidth", "resize", "matchMedia", "app-sidebar",
+        "railExpanded", "collapsePref", "248", "setTimeout", "requestAnimationFrame"]) {
+        assert.ok(!src.includes(banned), `Reports must not reach for ${banned}`);
+      }
+    }
+    assert.ok(!/data-rail-expanded/.test(REPORTS_CSS),
+      "and the Reports stylesheet does not key off the sidebar's state either");
+  });
+
+  it("101. the stacked state keeps the rest of the Reports contract", () => {
+    // Bounded table scroller, and no page-level horizontal scroll, unchanged.
+    assert.ok(rule(".rp-table-wrap").includes("overflow-x:auto"));
+    assert.ok(rule(".rp-table-wrap").includes("max-width:100%"));
+    assert.ok(!/\.rp-grid\{[^}]*overflow-x/.test(CSS));
+    assert.ok(!/\.rp-preview\{[^}]*overflow-x/.test(CSS));
   });
 });

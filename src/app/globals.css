@@ -1815,15 +1815,49 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    any. Two components with different content have no reason to change shape at
    the same width. */
 
-/* ---- Phone: the rail stacks above the document --------------------------
+/* ---- The rail stacks above the document, on ROOM rather than on viewport ---
    THE 300px TRACK IS THE PROBLEM, not the rail. It is a hard track: at 375px it
    takes four fifths of the row and leaves the document about fifty pixels, and
-   `minmax(0,1fr)` obediently shrinks the preview to fit it. So below 768 the
-   grid becomes one column, the rail takes the full width it now has, and its
-   sticky goes with the two-column layout that justified it — a full-width panel
-   pinned under the app header would cover the document a teacher just scrolled
-   to. */
-@media (max-width:767px){
+   `minmax(0,1fr)` obediently shrinks the preview to fit it. So where there is
+   not room for both, the grid becomes one column, the rail takes the full width
+   it now has, and its sticky goes with the two-column layout that justified it —
+   a full-width panel pinned under the app header would cover the document a
+   teacher just scrolled to.
+
+   ---- WHY THIS IS A CONTAINER QUERY AND NOT `max-width:767px` (Gate 6.4) ----
+   It used to be a viewport query, and that was correct only while the sidebar
+   was a fixed 64px rail at every width below 861. Gate 6.2 made the rail
+   expandable, so the same 768px viewport can now hand this screen either 668px
+   or 484px of content — and at 484px the two-column layout put the document in
+   a 168px column. A viewport number cannot express "is there room", because it
+   does not know how wide the sidebar currently is.
+
+   667px IS THE SHIPPED BOUNDARY, RESTATED — not a new one. The old rule broke
+   at 768/767 with a 64px rail and 18px page padding, which is content of
+   668/667. So this query reproduces every previously approved case exactly
+   (768 collapsed stays two-column, 767 collapsed still stacks, a phone still
+   stacks) and additionally catches every case the viewport number could not see:
+
+     860 + 248px sidebar  ->  576px content  ->  stacks
+     768 + 248px sidebar  ->  484px content  ->  stacks
+     900 + 248px sidebar  ->  588px content  ->  stacks
+     1100 + 248px sidebar ->  788px content  ->  two-column
+
+   It also needs no state, no attribute and no arithmetic: Reports never learns
+   that a sidebar exists, let alone how wide it is, and the layout cannot lag
+   behind the shell because it is not reacting to the shell at all — it is
+   reacting to its own width, in the same layout pass.
+
+   THE CONTAINER IS DECLARED FOR SCREEN ONLY. `container-type` implies layout
+   containment, and layout containment interacts with fragmentation — which is
+   what paginates a printed report. Print already unwraps this element and forces
+   the grid to a block, so it needs nothing from this rule; scoping the
+   declaration to `screen` means the printed document cannot be affected by it
+   at all. Print is verified and stays that way. */
+@media screen{
+  [data-screen-label="Reports"]{container-type:inline-size;container-name:rp-page}
+}
+@container rp-page (max-width:667px){
   .rp-grid{grid-template-columns:minmax(0,1fr)}
   .rp-rail{position:static;top:auto}
 }
