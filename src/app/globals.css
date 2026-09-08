@@ -321,14 +321,27 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 }
 /* Tablet: the sidebar narrows to an icon rail but stays in the layout. Bounded
    below by the mobile breakpoint, where it leaves the layout altogether and gets
-   its labels back — see the 620px block. */
+   its labels back — see the 620px block.
+
+   ---- TWO OF THESE SELECTORS NEVER MATCHED (Gate 6.1) ---------------------
+   `nav button>span` and `nav button` were ported from the design comp, whose
+   nav rows are `<button>`. This app's have been `next/link` — `<a class=
+   "nav-item">` — since the first commit, and the logout `<button>` sits AFTER
+   `</nav>`, so neither selector has ever matched a single element. The rail was
+   therefore 64px wide with `overflow:hidden` while every row label and the
+   logout label were still laid out inside it: clipped text, squeezed icons, and
+   a toggle that appeared to "restore" the menu wrongly because the inline
+   collapsed styles were the only thing ever hiding those labels.
+
+   Retargeted at the DOM this app actually renders. The logout label reuses the
+   existing `.sb-label` hook rather than inventing a second one. */
 @media (max-width:860px) and (min-width:621px){
   .app-main{padding:20px 18px 40px !important}
   .app-sidebar{width:64px !important;min-width:64px !important}
   .app-sidebar .sb-label{display:none !important}
   .app-sidebar nav>div{display:none !important}
-  .app-sidebar nav button>span:not(:first-child){display:none !important}
-  .app-sidebar nav button{justify-content:center}
+  .app-sidebar .nav-item>span:not(:first-child){display:none !important}
+  .app-sidebar .nav-item{justify-content:center !important}
 }
 /* ---- Mobile shell (Sprint 7 Gate 5 Phase 0 remediation) -------------------
    THE PAGE MUST NOT BE WIDER THAN THE PHONE. Two shell elements DEFINED a width
@@ -742,6 +755,15 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
      skeleton of the next one. */
   body.print-report .rp-state{display:none !important}
 
+  /* THE PAGE'S OWN HEADING IS NOT THE DOCUMENT'S (Gate 6.1). "Reports" and
+     "Generate, preview and export…" title the SCREEN; the sheet has its own
+     masthead and states its own title, period and scope. The heading block is a
+     sibling of `.rp-grid` inside the unwrapped ancestor, so it survived the
+     unwrap and printed above the document — human verification found both lines
+     on the page. It is named rather than hidden by shape, and only here: a
+     blanket "hide every h1" would reach every other screen's print. */
+  body.print-report .rp-page-head{display:none !important}
+
   /* THE CHAIN, UNWRAPPED. Each of these is on the path from the page to the
      sheet, and each is neutralised rather than removed. */
   body.print-report .app-main,
@@ -766,6 +788,46 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
      past the page edge with no scrollbar to reveal them. Released here, and only
      here: the screen rule itself is untouched. */
   body.print-report .rp-table-wrap{overflow:visible !important;max-width:none !important}
+
+  /* ---- THE DOCUMENT'S OWN ARRANGEMENT, ON PAPER (Gate 6.1) ----------------
+     Releasing the scroller was not enough, and human verification of the
+     Student Payment report found why: three separate screen affordances were
+     still shaping the printed document, and between them they gave paper a
+     layout that was neither the screen's nor the PDF's.
+
+     1. THE CELLS COULD NOT WRAP. `.rp-table td` is `white-space:nowrap` on
+        screen, which is correct THERE because `.rp-table-wrap` scrolls. On paper
+        there is no scroller to reveal anything, so a six-column money table
+        simply ran off the right edge of the sheet and the last columns were lost
+        to the paper's edge. Wrapping is what replaces the scroller, so the cells
+        are released here — and only here; the screen rule is untouched.
+        `overflow-wrap` covers the one case wrapping cannot help on its own, an
+        unbroken string longer than its column.
+
+     2. THE TILE STRIP WRAPPED AT A DIFFERENT COUNT ON PAPER. `.rp-stat` is
+        `flex:1;min-width:130px`, so how many tiles share a row is decided by the
+        container's width: the 760px sheet gives four, the 186mm page gives five,
+        and the PDF draws three. Three surfaces, three arrangements, from one
+        content model — which is the thing the contract says must not happen. Pinned
+        to THE PDF's three-across here, because A4 is the fixed geometry both
+        outputs share. The basis arithmetic puts exactly three on a row
+        (3 x (33.333% - 2mm) + 2 x 3mm gap = 100%), and `flex-grow` lets a short
+        final row stretch to fill rather than leaving a hole — which is exactly
+        what the renderer's own stats block does.
+
+     3. Nothing here touches a VALUE, a column count or an order. This is the
+        same document, laid out for a sheet of paper. */
+  body.print-report .rp-table{width:100% !important;table-layout:auto !important}
+  body.print-report .rp-table th,
+  body.print-report .rp-table td{
+    white-space:normal !important;
+    overflow-wrap:anywhere;
+  }
+  body.print-report .rp-stats{gap:3mm !important}
+  body.print-report .rp-stat{
+    flex:1 1 calc(33.333% - 2mm) !important;
+    min-width:0 !important;
+  }
 
   /* The sheet becomes the page. Its own max-width, border, radius and shadow are
      screen affordances; on paper the margin is `@page`'s. */
@@ -1597,6 +1659,11 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 }
 
 .rp-preview{min-width:0}
+
+/* The page's own heading block — the screen's title and subtitle, above the
+   grid. It carries the margin that used to be inline, so the element states a
+   class and nothing else and the print scope has something to name. */
+.rp-page-head{margin-bottom:20px}
 
 /* ---- The document ------------------------------------------------------- */
 

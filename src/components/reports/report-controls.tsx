@@ -23,8 +23,9 @@
  * (PROJECT_RULES, Reports and Billing).
  *
  * NO GENERATE BUTTON. The design draws none, and a valid selection derives a
- * preview on its own. NO ACTION BLOCK AT ALL IN THIS GATE — see the note in
- * page.tsx.
+ * preview on its own. The rail's foot carries the two real action controls —
+ * Export PDF and Print — and the note in page.tsx explains why there are two
+ * where the reference draws three.
  */
 
 import { useSettings } from "@/lib/settings-context";

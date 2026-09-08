@@ -38,6 +38,22 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
    * that the sidebar rejoins the layout. */
   const navShown = isMobile && navOpen;
 
+  /* AND THE COLLAPSED FLAG IS ANDED THE OTHER WAY, for the same reason.
+   *
+   * `collapsed` is a statement about the DESKTOP rail — "narrow it to icons" —
+   * and below the breakpoint there is no rail to narrow: the stylesheet has
+   * already taken the sidebar out of flow and made it a 248px overlay that is
+   * full-labelled "because there is room for labels again". But the component
+   * expresses collapsed as INLINE `display:none` on every label, badge and
+   * section heading, and an inline style beats a media query — so a teacher who
+   * collapsed the rail at a wider width and then narrowed the window opened the
+   * overlay to find a 248px panel containing nothing but centred icons.
+   *
+   * Anding it here is the same fix the line above makes, in the same file, for
+   * the same class of bug: a flag that means one thing on a desktop must not
+   * reach the DOM at a width where it means nothing. */
+  const railCollapsed = !isMobile && collapsed;
+
   const { data: counts } = useQuery({ queryKey: ["meta", "counts"], queryFn: fetchCounts });
 
   async function onLogout() {
@@ -49,7 +65,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
   return (
     <div style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar
-        collapsed={collapsed}
+        collapsed={railCollapsed}
         mobileOpen={navShown}
         // Navigating is the end of the errand the nav was opened for, so the tap
         // that navigates is also the one that closes it — no second dismissal.

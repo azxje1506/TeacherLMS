@@ -419,3 +419,127 @@ describe("Shell — overflow is solved, not hidden", () => {
     }
   });
 });
+
+/* ================================================ Gate 6.1: the rail's labels */
+
+describe("Shell — the tablet rail hides labels that actually exist", () => {
+  /* HUMAN VERIFICATION, SPRINT 10 GATE 6. Collapsing and expanding the sidebar
+   * from tablet widths down either emptied the menu or failed to restore it.
+   * Neither cause was in Sprint 10 — `git diff` over the shell is empty for the
+   * whole sprint — and neither was in the Sidebar's own logic. They were:
+   *
+   *   1. Two selectors in the 860px block that have NEVER matched. The design
+   *      comp's nav rows are `<button>`; this app's are `next/link`, so
+   *      `nav button>span` matched nothing, and the logout `<button>` sits after
+   *      `</nav>` so `nav button` did not reach it either. The rail was 64px
+   *      with `overflow:hidden` while every label was still laid out inside it.
+   *   2. The desktop `collapsed` flag reaching the phone overlay, where it is
+   *      meaningless — and expressed as INLINE `display:none`, which no media
+   *      query can override. That is the Gate 4.4D trap, in the shell.
+   *
+   * Both are pinned here against the DOM the component actually renders. */
+
+  const RAIL = mediaBlock("(max-width:860px) and (min-width:621px)");
+
+  it("27. the rail's hide rules name classes the sidebar really renders", () => {
+    // Every class the rail block hides must appear in the component.
+    for (const cls of ["sb-label", "nav-item"]) {
+      assert.ok(RAIL.includes(`.${cls}`), `the rail block must target .${cls}`);
+      assert.ok(SIDEBAR.includes(cls), `.${cls} must exist in the sidebar markup`);
+    }
+  });
+
+  it("28. it no longer targets a `button` that is not there", () => {
+    /* The regression itself. `<nav>` holds `next/link` rows only — the logout
+     * button is outside it — so any `nav button` selector is dead code that
+     * silently leaves labels visible in a 64px rail. */
+    assert.ok(!/nav\s+button/.test(RAIL),
+      "no `nav button` selector: the nav holds links, not buttons");
+    const nav = SIDEBAR.slice(SIDEBAR.indexOf("<nav"), SIDEBAR.indexOf("</nav>"));
+    assert.ok(!nav.includes("<button"), "nothing inside <nav> is a button");
+    assert.ok(SIDEBAR.includes('className="nav-item"'), "the rows are .nav-item");
+  });
+
+  it("29. every label in the rail is reachable by one of those hooks", () => {
+    /* The four things that must disappear at 64px: the brand, the section
+     * headings, each row's text/badge, and the logout label. */
+    assert.ok(RAIL.includes(".app-sidebar .sb-label{display:none"), "brand + logout label");
+    assert.ok(RAIL.includes(".app-sidebar nav>div{display:none"), "section headings");
+    assert.ok(RAIL.includes(".app-sidebar .nav-item>span:not(:first-child){display:none"),
+      "each row's label and badge");
+    // The logout label was the one with no hook at all until 6.1.
+    const foot = SIDEBAR.slice(SIDEBAR.indexOf("</nav>"));
+    assert.ok(/className="sb-label"/.test(foot), "the logout label carries the shared hook");
+  });
+
+  it("30. the icons centre in the rail, through the class that exists", () => {
+    assert.ok(RAIL.includes(".app-sidebar .nav-item{justify-content:center"));
+  });
+});
+
+describe("Shell — a desktop flag never reaches the phone overlay", () => {
+  it("31. `collapsed` is ANDed with the breakpoint, exactly as `navOpen` is", () => {
+    /* Below 620px the stylesheet makes the sidebar a 248px overlay that is
+     * full-labelled. `collapsed` means "narrow the rail to icons", which there
+     * describes nothing — but it is applied as an inline `display:none` on every
+     * label, so it would win over the media query and open an empty menu. */
+    assert.ok(codeOf(SHELL).includes("const railCollapsed = !isMobile && collapsed;"),
+      "the flag is neutralised below the breakpoint");
+    assert.ok(codeOf(SHELL).includes("collapsed={railCollapsed}"),
+      "and the neutralised value is what the sidebar receives");
+    assert.ok(!/collapsed=\{collapsed\}/.test(codeOf(SHELL)),
+      "the raw flag must not be passed down");
+  });
+
+  it("32. it is a derived value, not an effect that clears state on resize", () => {
+    /* Same reasoning the scrim's `navShown` already states: a value ANDed during
+     * render cannot be stale, whereas an effect leaves one render in which the
+     * old flag is still in the DOM. */
+    const around = codeOf(SHELL).slice(codeOf(SHELL).indexOf("const railCollapsed"));
+    assert.ok(!/useEffect/.test(around.slice(0, 400)), "no effect clears it");
+    assert.ok(codeOf(SHELL).includes("const navShown = isMobile && navOpen;"),
+      "the sibling pattern is unchanged");
+  });
+
+  it("33. the collapsed presentation is still inline, so the AND is what protects it", () => {
+    /* If this ever stops being an inline style the AND is belt-and-braces rather
+     * than load-bearing — but while it IS inline, no stylesheet can undo it, and
+     * that is precisely why the flag must not arrive. */
+    assert.ok(/hideCollapsed[^\n]*collapsed \? \{ display: "none" \}/.test(SIDEBAR),
+      "labels are hidden inline when collapsed");
+    assert.ok(/const sbw = collapsed \? 64 : 248;/.test(SIDEBAR));
+  });
+
+  it("34. the toggle still means two different things, and only two", () => {
+    assert.ok(codeOf(SHELL).includes("isMobile ? setNavOpen((o) => !o) : setCollapsed((c) => !c)"));
+  });
+});
+
+describe("Shell — Reports' own CSS stays inside Reports", () => {
+  it("35. no Reports rule names a shell selector on screen", () => {
+    /* Sprint 10 added a large responsive block. Every screen rule in it must be
+     * `.rp-*`; the ONLY place Reports may name a shell element is inside its
+     * print scope, where hiding the sidebar and header is the entire point. */
+    const shellNames = [".app-sidebar", ".app-header", ".app-shell", ".app-main",
+      ".nav-item", ".sb-label", ".app-nav-scrim", ".app-drawer"];
+    for (const block of ["(max-width:767px)", "(max-width:620px)"]) {
+      const body = mediaBlock(block);
+      for (const name of shellNames) {
+        // Reports' phone rules touch only .rp-* — a shell name here would be a leak.
+        const reportsRules = body.split("}").filter((r) => r.includes(".rp-"));
+        for (const rule of reportsRules) {
+          assert.ok(!rule.includes(name),
+            `a Reports rule in ${block} names ${name}: ${rule.trim().slice(0, 80)}`);
+        }
+      }
+    }
+  });
+
+  it("36. the shell's own breakpoints are untouched by Sprint 10", () => {
+    // The three the shell owns still exist and still say what they said.
+    assert.ok(CSS.includes("@media (max-width:860px) and (min-width:621px){"));
+    assert.ok(CSS.includes("@media (max-width:620px){"));
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*position:fixed !important/);
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*width:248px !important/);
+  });
+});

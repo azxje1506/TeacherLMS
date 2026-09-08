@@ -45,10 +45,41 @@ export interface ReportPdfStat {
   value: string;
 }
 
-/** One column of the generic table. `align` is the payload's own. */
+/** What KIND of thing a column holds, for the sole purpose of deciding how much
+ * page width it needs.
+ *
+ * PRESENTATION ONLY, AND DERIVED — never authored. It is read off the cell kinds
+ * the payload already carries, so it states nothing the DTO did not already say
+ * and adds no vocabulary to the read model. Reports still owns no layout
+ * decision on the server: this is the renderer working out how to fit what it
+ * was given. */
+export type ReportPdfColumnRole = "text" | "money" | "term" | "figure";
+
+/** One column of the generic table. `align` is the payload's own; `role` is the
+ * renderer's own. */
 export interface ReportPdfColumn {
   label: string;
   align: "left" | "right";
+  role: ReportPdfColumnRole;
+}
+
+/** The role of the column at `index`, from the values actually in it.
+ *
+ * PRECEDENCE, NOT COUNTING. One free-text cell makes the column a name column —
+ * a person's name is the thing that needs room, and a column holding even one is
+ * sized for it. Money outranks a term for the same reason: `13,100,000đ` is
+ * wider than `Paid`, and a column mixing them must fit the wider. `none` — the
+ * `No data` a Reports column may hold anywhere — never decides a role on its
+ * own, because it is the narrowest thing in any column. */
+export function columnRole(
+  rows: readonly { cells: readonly { kind: string }[] }[],
+  index: number
+): ReportPdfColumnRole {
+  const kinds = new Set(rows.map((r) => r.cells[index]?.kind).filter(Boolean));
+  if (kinds.has("text")) return "text";
+  if (kinds.has("money")) return "money";
+  if (kinds.has("term")) return "term";
+  return "figure";
 }
 
 /** One row. `sub` is the secondary line under the FIRST cell — the Student
@@ -179,7 +210,9 @@ export function buildReportPdfDocument(
     if (payload.rows.length > 0) {
       blocks.push({
         kind: "table",
-        columns: payload.columns.map((c) => ({ label: t(c.label), align: c.align })),
+        columns: payload.columns.map((c, i) => ({
+          label: t(c.label), align: c.align, role: columnRole(payload.rows, i),
+        })),
         rows: payload.rows.map((row) => ({
           cells: row.cells.map((cell) => renderValue(cell, fmt, t)),
           // Exactly the sheet's condition: an explicit `false`, never a missing

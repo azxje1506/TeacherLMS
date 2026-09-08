@@ -45,7 +45,7 @@
  * screen.
  */
 
-import type { ReportPdfBlock, ReportPdfDocument } from "./reports-pdf-document";
+import type { ReportPdfBlock, ReportPdfColumnRole, ReportPdfDocument } from "./reports-pdf-document";
 
 /* ------------------------------------------------------------------ the page */
 
@@ -249,25 +249,45 @@ function write(doc: ReportJsPdf, text: string | string[], x: number, y: number, 
 
 /* ------------------------------------------------------------- column widths */
 
+/** How much width each kind of column needs, relative to the others.
+ *
+ * THESE ARE CONTENT MEASUREMENTS, NOT PREFERENCES. At the table's 6.5–7.5pt the
+ * longest thing each role has to hold is roughly:
+ *
+ *   text    a student's name plus its `No linked parent` line       widest
+ *   money   `13,100,000đ` — eleven glyphs and a currency mark       wide
+ *   term    `Partially Paid`, the longest status the app renders    moderate
+ *   figure  a count or `65%`, plus its own column heading           narrow
+ *
+ * The previous split was by ALIGNMENT — left got two shares, right got one —
+ * which is a proxy that fails on exactly the report that needs it most. On
+ * Student Payment it gave the three money columns 20.7mm each, under what
+ * `13,100,000đ` occupies, so every amount wrapped onto a second line; while
+ * `Status`, holding one short word, was handed 41.3mm. The table was correct and
+ * unreadable, which is what the human pass reported. */
+const COLUMN_SHARE: Record<ReportPdfColumnRole, number> = {
+  text: 26,
+  money: 17,
+  term: 16,
+  figure: 11,
+};
+
 /** Portrait-safe column widths, in millimetres, summing EXACTLY to the content
  * column.
  *
  * NO COLUMN IS EVER DROPPED (PROJECT_RULES, Reports: the DTO decides what a
- * report contains, and a page width is not an argument about that). Instead the
- * available width is shared: a left-aligned column is text — a person's or
- * class's name — and gets a double share, while a right-aligned column is a
- * figure and gets a single one. Text that still does not fit WRAPS; nothing is
- * clipped and nothing is truncated with an ellipsis.
+ * report contains, and a page width is not an argument about that), nothing is
+ * clipped and nothing is truncated with an ellipsis — text that still does not
+ * fit WRAPS.
  *
- * The shares are integers and the remainder goes to the first column, so the
- * widths always add up to `CONTENT_W` exactly and a table can never be one
- * hairline wider than the page. */
+ * The remainder goes to the first column, so the widths always add up to
+ * `CONTENT_W` exactly and a table can never be one hairline wider than the page. */
 export function columnWidths(
-  aligns: readonly ("left" | "right")[],
+  roles: readonly ReportPdfColumnRole[],
   total: number = CONTENT_W
 ): number[] {
-  if (aligns.length === 0) return [];
-  const shares = aligns.map((a) => (a === "left" ? 2 : 1));
+  if (roles.length === 0) return [];
+  const shares = roles.map((r) => COLUMN_SHARE[r]);
   const sum = shares.reduce((s, w) => s + w, 0);
   const widths = shares.map((w) => Math.floor((total * w) / sum * 100) / 100);
   const used = widths.reduce((s, w) => s + w, 0);
@@ -307,8 +327,14 @@ function drawMasthead(doc: ReportJsPdf, sheet: Sheet, b: Extract<ReportPdfBlock,
   ink(doc, INK.muted2);
   write(doc, `${b.generatedLabel} ${b.generatedOn}`, PAGE.w - PAGE.margin, top + 10, { align: "right" });
 
-  // The masthead's own 2px rule, as the sheet draws it.
-  doc.setDrawColor(INK.fg[0], INK.fg[1], INK.fg[2]);
+  /* The masthead's own 2px rule, as the sheet draws it — IN THE DOCUMENT
+   * ACCENT, which is what `.report-sheet .rp-head{border-bottom:2px solid
+   * var(--accent)}` paints on screen. It was drawn in `INK.fg` here, so the
+   * file's one piece of colour came out near-black while the preview's was red;
+   * human verification caught exactly that. `INK.accent` is the light default
+   * `--accent:#d14242`, the same constant and the same reasoning the Reviews
+   * export already uses for its own masthead rule. */
+  doc.setDrawColor(INK.accent[0], INK.accent[1], INK.accent[2]);
   doc.setLineWidth(0.5);
   doc.line(PAGE.margin, top + 14, PAGE.w - PAGE.margin, top + 14);
   sheet.gap(RHYTHM.section);
@@ -326,7 +352,14 @@ function drawStats(doc: ReportJsPdf, sheet: Sheet, b: Extract<ReportPdfBlock, { 
   for (const row of rows) {
     const h = 13;
     const top = sheet.need(h + gap);
-    const w = (CONTENT_W - gap * (perRow - 1)) / perRow;
+    /* EVERY ROW FILLS THE CONTENT WIDTH, which is what the screen does and what
+     * this did not. `.rp-stat` is `flex:1` inside a `flex-wrap` strip, so a row
+     * holding fewer tiles than the one above it does not leave a gap — its tiles
+     * grow to take the slack. Dividing by the fixed `perRow` instead left a
+     * five-tile report with two 60mm cards and 63mm of white beside them, which
+     * is the "cards do not fill" the human pass reported. Dividing by THIS row's
+     * own length reproduces the flex behaviour exactly. */
+    const w = (CONTENT_W - gap * (row.length - 1)) / row.length;
     row.forEach((stat, i) => {
       const x = PAGE.margin + i * (w + gap);
       doc.setFillColor(INK.card2[0], INK.card2[1], INK.card2[2]);
@@ -357,7 +390,7 @@ function drawStats(doc: ReportJsPdf, sheet: Sheet, b: Extract<ReportPdfBlock, { 
  * never split across the fold and a continued table is never a set of unlabelled
  * numbers. */
 function drawTable(doc: ReportJsPdf, sheet: Sheet, b: Extract<ReportPdfBlock, { kind: "table" }>) {
-  const widths = columnWidths(b.columns.map((c) => c.align));
+  const widths = columnWidths(b.columns.map((c) => c.role));
 
   const header = () => {
     const top = sheet.need(TABLE.headerH);

@@ -205,7 +205,15 @@ export default function ReportsPage() {
 
   return (
     <div data-screen-label="Reports" style={{ animation: "fadeUp .3s ease both" }}>
-      <div style={{ marginBottom: 20 }}>
+      {/* THE PAGE HEADING IS SCREEN CHROME, AND PRINT MUST DROP IT. It is a
+        * SIBLING of `.rp-grid`, not a descendant, so the print scope's unwrap of
+        * the ancestor chain made it visible along with everything else on the
+        * page — and it had no class, so no rule could name it. Human
+        * verification found "Báo cáo" and its subtitle printed above the
+        * document's own masthead. `rp-page-head` is that missing hook; the rule
+        * that hides it lives in the Reports print scope and nowhere else, so the
+        * screen and a plain Ctrl+P from any other page are both unchanged. */}
+      <div className="rp-page-head">
         <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", margin: 0 }}>
           {t("Reports")}
         </h1>

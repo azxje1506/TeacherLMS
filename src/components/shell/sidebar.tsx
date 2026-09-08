@@ -125,7 +125,10 @@ export function Sidebar({
           style={{ width: "100%", display: "flex", alignItems: "center", gap: 11, padding: "9px 10px", border: "none", background: "transparent", color: "var(--muted)", borderRadius: 9, fontSize: 13.5, fontFamily: "inherit", cursor: "pointer", justifyContent: collapsed ? "center" : "flex-start" }}
         >
           <span style={{ minWidth: 18, display: "flex" }}><IconLogout size={18} /></span>
-          <span style={hideCollapsed}>{t("Log out")}</span>
+          {/* `sb-label` is the shell's existing hook for text that goes away
+            * when the rail is narrow. The tablet block hides it there; without
+            * the class this label was laid out inside a 64px rail and clipped. */}
+          <span className="sb-label" style={hideCollapsed}>{t("Log out")}</span>
         </button>
       </div>
     </aside>

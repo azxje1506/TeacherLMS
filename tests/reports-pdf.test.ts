@@ -30,7 +30,7 @@ import { describe, it } from "node:test";
 
 import {
   REPORT_BRAND, buildReportPdfDocument, reportPdfFilename,
-  type ReportPdfBlock, type ReportPdfDocument,
+  type ReportPdfBlock, type ReportPdfColumnRole, type ReportPdfDocument,
 } from "../src/lib/reports-pdf-document";
 import { columnWidths, renderReportPdf, reportPdfSafeText, type ReportJsPdf } from "../src/lib/reports-pdf";
 import { canActOnReport, renderSummaryValue, renderValue } from "../src/components/reports/reports-ui";
@@ -603,13 +603,14 @@ describe("Reports PDF · page setup and the walk", () => {
 
 describe("Reports PDF · portrait column widths", () => {
   const CONTENT = 210 - 24;
+  const roles = (t: ReturnType<typeof firstOf<"table">>) => t!.columns.map((c) => c.role);
 
   it("43. widths always sum to the content column exactly", () => {
     for (const cols of [
-      ["left", "right"],
-      ["left", "left", "right", "right", "right", "left"],
-      ["left"], ["right", "right", "right"],
-    ] as ("left" | "right")[][]) {
+      ["text", "money"],
+      ["text", "text", "money", "money", "money", "term"],
+      ["text"], ["money", "money", "figure"], ["figure", "figure"],
+    ] as ReportPdfColumnRole[][]) {
       const w = columnWidths(cols);
       assert.equal(w.length, cols.length, "every column gets a width");
       assert.ok(Math.abs(w.reduce((a, b) => a + b, 0) - CONTENT) < 0.01,
@@ -619,16 +620,15 @@ describe("Reports PDF · portrait column widths", () => {
 
   it("44. no column is ever dropped, even at the widest authorised report", () => {
     // Student Payment is the widest: six columns.
-    const p = paymentPayload();
-    const table = firstOf(buildReportPdfDocument(p, intl), "table")!;
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
     assert.equal(table.columns.length, 6);
-    const w = columnWidths(table.columns.map((c) => c.align));
+    const w = columnWidths(roles(table));
     assert.equal(w.length, 6);
     assert.ok(w.every((x) => x > 4), "every column keeps a usable width");
   });
 
-  it("45. text columns get the larger share", () => {
-    const w = columnWidths(["left", "right"]);
+  it("45. a name column gets more room than a figure column", () => {
+    const w = columnWidths(["text", "figure"]);
     assert.ok(w[0] > w[1], "a name needs more room than a figure");
   });
 
@@ -642,6 +642,73 @@ describe("Reports PDF · portrait column widths", () => {
     assert.ok(!s.texts().some((t) => t.includes("…")), "nothing is ellipsised");
     assert.ok(PDF.includes("splitTextToSize"), "the renderer wraps");
     assert.ok(!/slice\(0, ?\d+\)/.test(PDF), "no string is cut to fit");
+  });
+
+  /* ---- Gate 6.1: the Student Payment table was correct and unreadable ---- */
+
+  it("47.1. a column's role is read off the values in it, not authored", () => {
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
+    assert.deepEqual(roles(table),
+      ["text", "text", "money", "money", "money", "term"],
+      "Student, Class, three amounts, Status");
+    // Nothing about a role reaches the read model.
+    const model = code("src", "lib", "reports.ts");
+    for (const banned of ["role", "columnRole", "width", "COLUMN_SHARE"]) {
+      assert.ok(!new RegExp(`\b${banned}\b`).test(model),
+        `layout must not appear in the read model (${banned})`);
+    }
+  });
+
+  it("47.2. `No data` in a money column does not make it a narrow column", () => {
+    /* The second row's Collected and Outstanding are both `none`. A column that
+     * holds one amount is a money column, however many blanks sit under it. */
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
+    assert.equal(table.columns[3].role, "money");
+    assert.equal(table.columns[4].role, "money");
+  });
+
+  it("47.3. every money column fits a full VND amount without wrapping", () => {
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
+    const w = columnWidths(roles(table));
+    /* `13,100,000đ` is the widest amount this report renders. At the table's
+     * 7pt in Roboto the average advance is close to 0.45em — 1.1mm — so eleven
+     * glyphs plus the two 1.6mm cell paddings need roughly 15.4mm. The old
+     * alignment split gave these columns 20.67mm, which the LABELS then
+     * exceeded; the point of the assertion is the margin, not the exact glyph. */
+    for (const i of [2, 3, 4]) {
+      assert.ok(w[i] >= 24, `money column ${i} is ${w[i]}mm — too narrow for a VND amount`);
+    }
+  });
+
+  it("47.4. the name column is the widest, and the status column is not", () => {
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
+    const w = columnWidths(roles(table));
+    const [student, klass, fee, collected, outstanding, status] = w;
+    assert.ok(student > fee, "a student's name outranks an amount");
+    assert.ok(student > status, "…and a one-word status");
+    /* The remainder goes to the FIRST column by design, so the two text
+     * columns differ by hundredths of a millimetre rather than being equal. */
+    assert.ok(Math.abs(student - klass) < 0.1, "two text columns share equally");
+    assert.equal(fee, collected); assert.equal(collected, outstanding);
+    // The old split handed Status 41.3mm — twice what it needs.
+    assert.ok(status < 30, `status column is ${status}mm; it holds one word`);
+  });
+
+  it("47.5. the six-column map is deterministic", () => {
+    const a = columnWidths(["text", "text", "money", "money", "money", "term"]);
+    const b = columnWidths(["text", "text", "money", "money", "money", "term"]);
+    assert.deepEqual(a, b, "same roles in, same widths out");
+    assert.ok(a.every((x) => x > 0));
+  });
+
+  it("47.6. alignment still decides where a value sits, never how wide it is", () => {
+    // Both are carried, and they answer different questions.
+    const table = firstOf(buildReportPdfDocument(paymentPayload(), intl), "table")!;
+    assert.equal(table.columns[2].align, "right", "an amount is still right-aligned");
+    assert.equal(table.columns[2].role, "money");
+    assert.ok(!/columnWidths\(b\.columns\.map\(\(c\) => c\.align\)\)/.test(PDF),
+      "width is no longer taken from alignment");
+    assert.ok(/columnWidths\(b\.columns\.map\(\(c\) => c\.role\)\)/.test(PDF));
   });
 });
 
@@ -1231,5 +1298,252 @@ describe("Reports · a stale keepPreviousData payload is never actionable", () =
     assert.ok(/aria-busy=\{isFetching \|\| undefined\}/.test(PAGE));
     // The sheet is still rendered from whatever payload is held.
     assert.ok(/data && <ReportSheet data=\{data\} \/>/.test(PAGE));
+  });
+});
+
+/* ================================ Gate 6.1: what the human pass sent back */
+
+describe("Reports PDF · the document's one piece of colour", () => {
+  /** Every `setDrawColor` the renderer makes, in order. */
+  const draws = (d: ReportPdfDocument) => {
+    const s = stub();
+    renderReportPdf(s.doc, d);
+    return s.calls.filter((c) => c.op === "setDrawColor").map((c) => c.args as number[]);
+  };
+
+  it("108. the masthead rule is drawn in the document accent, never in ink", () => {
+    /* The screen paints it `border-bottom:2px solid var(--accent)`; the export
+     * drew it in `INK.fg`, so the file's only colour came out near-black. Human
+     * verification reported exactly that. */
+    const first = draws(buildReportPdfDocument(paymentPayload(), intl))[0];
+    assert.deepEqual(first, [209, 66, 66], "the masthead rule is #d14242");
+    assert.notDeepEqual(first, [24, 24, 27], "…and is not the near-black text ink");
+  });
+
+  it("109. …and that value is the light default `--accent`, not an invented red", () => {
+    assert.ok(/--accent:#d14242/.test(CSS_RAW), "the token the sheet resolves on screen");
+    assert.ok(/accent: \[209, 66, 66\]/.test(PDF), "the renderer's own copy of it");
+    // The Reviews export reached the same value for the same reason; Reports
+    // follows that precedent rather than inventing a second answer.
+    const reviewPdf = read("src", "lib", "review-pdf.ts");
+    assert.ok(/accent: \[209, 66, 66\]/.test(reviewPdf), "the established precedent");
+  });
+
+  it("110. every report type gets the accent rule, not only Student Payment", () => {
+    for (const build of [payload, paymentPayload]) {
+      assert.deepEqual(draws(buildReportPdfDocument(build(), intl))[0], [209, 66, 66]);
+    }
+  });
+
+  it("111. the rule keeps the sheet's 2px weight", () => {
+    const s = stub();
+    renderReportPdf(s.doc, buildReportPdfDocument(payload(), intl));
+    const i = s.calls.findIndex((c) => c.op === "line");
+    const widthBefore = s.calls.slice(0, i).filter((c) => c.op === "setLineWidth").pop();
+    assert.deepEqual(widthBefore!.args, [0.5], "2px at 96dpi is 0.53mm; the sheet's weight");
+    assert.ok(/border-bottom:2px solid var\(--accent\)/.test(CSS_RAW));
+  });
+});
+
+describe("Reports PDF · the metric cards fill their row", () => {
+  /** Every rounded card the renderer draws: [x, y, w, h, rx, ry, style]. */
+  const cards = (d: ReportPdfDocument) => {
+    const s = stub();
+    renderReportPdf(s.doc, d);
+    return s.calls.filter((c) => c.op === "roundedRect").map((c) => c.args as number[]);
+  };
+  const CONTENT = 210 - 24;
+  const GAP = 3;
+
+  it("112. a full row of three spans the content width", () => {
+    const three = cards(buildReportPdfDocument(payload({
+      summary: [0, 1, 2].map((i) => ({ label: `L${i}`, value: { kind: "count", value: i } as ReportValue })),
+    }), intl));
+    assert.equal(three.length, 3);
+    const total = three.reduce((s, c) => s + c[2], 0) + GAP * 2;
+    assert.ok(Math.abs(total - CONTENT) < 0.01, `three tiles span ${total}mm`);
+  });
+
+  it("113. A SHORT FINAL ROW STRETCHES rather than leaving a hole", () => {
+    /* THE DEFECT. With a fixed three-column divisor a five-stat report drew two
+     * 60mm cards on the second row and left 63mm of white beside them — the
+     * "cards do not fill" the human pass reported. `.rp-stat` is `flex:1`, so on
+     * screen those two grow to take the slack; the export now does the same. */
+    const five = cards(buildReportPdfDocument(payload({
+      summary: [0, 1, 2, 3, 4].map((i) => ({ label: `L${i}`, value: { kind: "count", value: i } as ReportValue })),
+    }), intl));
+    assert.equal(five.length, 5);
+    const row2 = five.slice(3);
+    assert.equal(row2.length, 2);
+    const spanned = row2.reduce((s, c) => s + c[2], 0) + GAP;
+    assert.ok(Math.abs(spanned - CONTENT) < 0.01,
+      `the final row spans ${spanned}mm, not the full ${CONTENT}mm`);
+    assert.ok(row2[0][2] > five[0][2], "a stretched tile is wider than a full row's tile");
+  });
+
+  it("114. a lone final tile takes the whole width, as `flex:1` does on screen", () => {
+    const four = cards(buildReportPdfDocument(payload({
+      summary: [0, 1, 2, 3].map((i) => ({ label: `L${i}`, value: { kind: "count", value: i } as ReportValue })),
+    }), intl));
+    assert.equal(four.length, 4);
+    assert.ok(Math.abs(four[3][2] - CONTENT) < 0.01, "the fourth tile fills the row");
+  });
+
+  it("115. Student Payment's six tiles make two full rows", () => {
+    const six = cards(buildReportPdfDocument(paymentPayload(), intl));
+    assert.equal(six.length, 6);
+    for (const row of [six.slice(0, 3), six.slice(3)]) {
+      const total = row.reduce((s, c) => s + c[2], 0) + GAP * 2;
+      assert.ok(Math.abs(total - CONTENT) < 0.01);
+    }
+  });
+
+  it("116. the cards keep their fill AND their border", () => {
+    /* `FD` is fill-then-draw. A card reduced to a stroked outline would lose the
+     * tinted panel the screen gives it, which is half of what makes it a card. */
+    const style = cards(buildReportPdfDocument(paymentPayload(), intl))[0][6];
+    assert.equal(style, "FD", "filled and stroked, not stroked alone");
+    assert.ok(/setFillColor\(INK\.card2/.test(PDF), "the sheet's own --card-2");
+    assert.ok(/card2: \[250, 250, 250\]/.test(PDF));
+    assert.ok(/\.rp-stat\{[^}]*background:var\(--card-2\)/.test(CSS_RAW.replace(/\s*\n\s*/g, "")),
+      "which is what the screen tile is filled with");
+  });
+
+  it("117. every card keeps the same height, whatever its row", () => {
+    const six = cards(buildReportPdfDocument(paymentPayload(), intl));
+    assert.equal(new Set(six.map((c) => c[3])).size, 1, "one height for every tile");
+  });
+
+  it("118. no card value changed — the fix is width only", () => {
+    const s = stub();
+    renderReportPdf(s.doc, buildReportPdfDocument(paymentPayload(), intl));
+    const texts = s.texts();
+    for (const stat of firstOf(buildReportPdfDocument(paymentPayload(), intl), "stats")!.stats) {
+      assert.ok(texts.includes(stat.value), `${stat.label} still prints ${stat.value}`);
+    }
+  });
+});
+
+describe("Reports Print · the page's chrome is not the document", () => {
+  it("119. the Reports page heading is excluded from Print", () => {
+    /* HUMAN VERIFICATION found "Báo cáo" and its subtitle printed above the
+     * document's own masthead. The heading is a SIBLING of `.rp-grid`, so the
+     * unwrap of the ancestor chain revealed it, and it had no class for any rule
+     * to name. */
+    assert.ok(printBlock.includes("body.print-report .rp-page-head{display:none !important}"),
+      "the heading block is hidden in the Reports print scope");
+    assert.ok(PAGE.includes('className="rp-page-head"'), "and the page gives it that hook");
+  });
+
+  it("120. the hook is a real class with a screen rule behind it", () => {
+    assert.ok(/\.rp-page-head\{margin-bottom:20px\}/.test(CSS),
+      "it owns the margin that used to be inline");
+    assert.ok(!/rp-page-head[^>]*style=/.test(PAGE), "the element states a class and nothing else");
+  });
+
+  it("121. the heading is hidden by NAME, never by shape", () => {
+    /* A blanket `h1{display:none}` would reach every other screen's print. */
+    assert.ok(!/body\.print-report\s+h1\s*\{/.test(printBlock));
+    assert.ok(!/^\s*h1,?\s*h2\s*\{display:none/m.test(printBlock));
+  });
+
+  it("122. the screen is unchanged — the rule lives only in the print scope", () => {
+    const outside = CSS.replace(printBlock, "");
+    assert.ok(!outside.includes("rp-page-head{display:none"),
+      "nothing hides the heading on screen");
+  });
+
+  it("123. the document's own masthead still prints", () => {
+    // The page title goes; the REPORT's title, which is a different string from
+    // a different source, stays.
+    assert.ok(!printBlock.includes("body.print-report .rp-head{display:none"));
+    assert.ok(read("src","components","reports","report-sheet.tsx").includes("rp-head"), "the document keeps its masthead");
+  });
+});
+
+describe("Reports Print · the document keeps its arrangement on paper", () => {
+  it("124. table cells may wrap on paper, because there is no scroller there", () => {
+    /* On screen `.rp-table td` is `white-space:nowrap` and `.rp-table-wrap`
+     * scrolls. On paper nothing scrolls, so a six-column money table ran off the
+     * right edge and the last columns were lost. Wrapping replaces the scroller. */
+    assert.ok(/body\.print-report \.rp-table th,\s*body\.print-report \.rp-table td\{[^}]*white-space:normal !important/
+      .test(printBlock.replace(/\s*\n\s*/g, " ")), "cells wrap in print");
+    /* Anchored on the SCREEN rule. A bare `indexOf(".rp-table td{")` finds the
+     * print rule first, because `body.print-report .rp-table td{` contains it. */
+    const at = CSS.indexOf("\n.rp-table td{");
+    const screenCell = CSS.slice(at, at + 200);
+    assert.ok(/white-space:nowrap/.test(screenCell),
+      "and the SCREEN rule is untouched");
+  });
+
+  it("125. an unbreakable string cannot push the table past the page", () => {
+    assert.ok(/overflow-wrap:anywhere/.test(printBlock));
+  });
+
+  it("126. the table takes the full printable width", () => {
+    assert.ok(/body\.print-report \.rp-table\{width:100% !important/.test(printBlock));
+  });
+
+  it("127. the tile strip prints three across, the arrangement the PDF draws", () => {
+    /* Three surfaces were producing three arrangements from one content model:
+     * the 760px sheet wrapped four to a row, the 186mm page five, and the export
+     * three. Print is pinned to the export's, because A4 is the geometry they
+     * share. */
+    assert.ok(/body\.print-report \.rp-stat\{[^}]*flex:1 1 calc\(33\.333% - 2mm\) !important/
+      .test(printBlock.replace(/\s*\n\s*/g, "")), "exactly three per row");
+    assert.ok(/body\.print-report \.rp-stats\{gap:3mm !important\}/.test(printBlock));
+    // The renderer's own row size, stated once in each place and agreeing.
+    assert.ok(/const perRow = 3;/.test(PDF));
+  });
+
+  it("128. a short final row still stretches, exactly as the export does", () => {
+    // `flex-grow:1` is the first digit of the shorthand.
+    assert.ok(/flex:1 1 calc/.test(printBlock.replace(/\s*\n\s*/g, "")),
+      "grow is 1, so a short row fills");
+    assert.ok(/min-width:0 !important/.test(printBlock),
+      "and the screen's 130px floor cannot force a fourth tile down");
+  });
+
+  it("129. print rewrites the document's LAYOUT and never its content", () => {
+    /* The boundary this whole section depends on: the print scope may say how
+     * wide a column is, and may not say what is in it. */
+    for (const rule of printBlock.split("}")) {
+      if (!rule.includes("body.print-report")) continue;
+      assert.ok(!/(^|[;{s])contents*:/.test(rule),
+        `print must not generate content: ${rule.trim().slice(0, 70)}`);
+      for (const banned of ["counter-increment", "counter-reset"]) {
+        assert.ok(!rule.includes(banned), banned);
+      }
+    }
+  });
+
+  it("130. only page chrome is hidden on paper, never a piece of the document", () => {
+    /* A WHITELIST, because a substring check is a trap here: ".rp-state" contains
+     * ".rp-stat". These seven are the only things Reports print may remove, and
+     * every one of them is screen chrome or the deliberately-hidden footer. */
+    const allowed = [".app-sidebar", ".app-header", ".no-print", ".rp-rail",
+      ".rp-state", ".rp-page-head",
+      // `.rp-foot` is the one DOCUMENT element print drops, and deliberately:
+      // the browser draws its own footer chrome, and two would stack. The PDF
+      // keeps its footer for exactly the opposite reason. `.report-sheet` is
+      // its ancestor in that selector, never a target.
+      ".rp-foot", ".report-sheet"];
+    for (const rule of printBlock.split("}")) {
+      if (!rule.includes("body.print-report") || !rule.includes("display:none")) continue;
+      // The scope itself is a class too; strip it before harvesting targets.
+      const named = rule.replace(/body\.print-report/g, " ").match(/\.[a-z-]+/g) ?? [];
+      for (const n of named) {
+        assert.ok(allowed.includes(n), `print hides ${n}, which is not page chrome`);
+      }
+    }
+  });
+
+  it("131. the Reviews print scope is untouched by every rule above", () => {
+    for (const line of printBlock.split("\n")) {
+      assert.ok(!(line.includes("print-review") && line.includes("print-report")),
+        `one selector list must not serve both scopes: ${line.trim()}`);
+    }
+    // The Reviews block still exists and still owns its own document rules.
+    assert.ok(printBlock.includes("body.print-review .report-sheet{padding:0 !important"));
   });
 });
