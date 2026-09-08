@@ -162,11 +162,25 @@ describe("Settings · language propagates as presentation only", () => {
     assert.equal(paymentPayload().month, "2026-07", "the DTO still carries the canonical key");
   });
 
-  it("6. no Notifications string was added in either direction", () => {
-    for (const key of ["Mark all read", "You're all caught up.", "Notifications"]) {
-      // These predate Sprint 11 in the imported dictionary; what matters is that
-      // no NEW one was introduced and nothing reads them.
-      assert.ok(!/notifDismissed|notifRead/.test(code("src", "components", "settings", "settings-screen.tsx")), key);
+  it("6. the Notifications card's own copy was never ported", () => {
+    /* THE ONE STRING THAT WOULD PROVE THE CARD WAS BUILT. The reference design's
+     * Notifications card carries a subtitle that exists nowhere else, and the
+     * Gate 1 audit found it was the single Settings string absent from the
+     * dictionary — every other one had been imported years earlier. Its continued
+     * absence is therefore positive evidence that nobody translated the card,
+     * which is a different fact from "the screen does not render it" (asserted in
+     * tests/settings.test.ts) and not a restatement of it.
+     *
+     * The earlier version of this test looped over three keys and asserted the
+     * same unrelated thing three times without using the loop variable. */
+    const cardSubtitle = "Unpaid tuition, upcoming makeups and reviews appear in the bell menu. Read state is remembered on this device.";
+    assert.ok(!(cardSubtitle in DICT), "the Notifications card subtitle is still untranslated");
+    /* And the keys that DO predate Sprint 11 are still orphans: present in the
+     * dictionary the design shipped, read by no Settings surface. */
+    for (const key of ["Mark all read", "You're all caught up."]) {
+      assert.ok(key in DICT, `${key} is inherited design vocabulary`);
+      assert.ok(!code("src", "components", "settings", "settings-screen.tsx").includes(key),
+        `${key} is not rendered by Settings`);
     }
   });
 });

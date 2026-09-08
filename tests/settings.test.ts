@@ -303,13 +303,20 @@ describe("Settings · the option set is pinned from both directions", () => {
   });
 
   it("3. there is no tenth setting", () => {
-    /* The contract authorises nine. A control for anything else would have to
-     * come from a list, and these are the only lists. */
-    assert.equal(
-      [THEMES, ACCENTS, SURFACES, DENSITIES, DATE_FORMATS, TIME_FORMATS, CURRENCIES, NUMBER_FORMATS].length + 1,
-      9,
-      "eight arrays plus the language list the dictionary owns"
-    );
+    /* The contract authorises nine, and a control for a tenth would have to be
+     * rendered from a list — so the check is on what lists EXIST, read out of
+     * lib/constants itself. An earlier version of this test asserted
+     * `[eight literals].length + 1 === 9`, which is `8 + 1 === 9`: a tautology
+     * over the test's own array that a ninth exported option list would have
+     * sailed straight past. */
+    const declared = [...code("src", "lib", "constants.ts")
+      .matchAll(/export const (\w+) = \[[^\]]*\] as const satisfies/g)].map((m) => m[1]);
+    assert.deepEqual(declared.sort(), [
+      "ACCENTS", "CURRENCIES", "DATE_FORMATS", "DENSITIES",
+      "NUMBER_FORMATS", "SURFACES", "THEMES", "TIME_FORMATS",
+    ], "exactly eight authorised option lists, and no ninth");
+    /* The ninth setting is the language, whose list the dictionary owns rather
+     * than constants — which is why it is not among the eight. */
     assert.deepEqual(LANGS.map(([c]) => c), ["vi", "en"]);
   });
 
