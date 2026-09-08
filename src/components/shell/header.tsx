@@ -49,9 +49,12 @@ function initials(name: string) {
 }
 
 export function Header({
-  onToggleSidebar, onOpenSearch, user,
+  onToggleSidebar, navExpanded, onOpenSearch, user,
 }: {
   onToggleSidebar: () => void;
+  /** Is the thing this button controls currently showing? The rail expanded on a
+   * desktop, the drawer open on a phone — one control, so one state. */
+  navExpanded?: boolean;
   /** Open the application's search surface.
    *
    * NOT SUPPLIED YET, and deliberately so. This application has no global search
@@ -105,7 +108,7 @@ export function Header({
     >
       <Tooltip>
         <TooltipTrigger asChild>
-          <button onClick={onToggleSidebar} aria-label={t("Toggle sidebar")} className="btn-ghost" style={{ ...iconBtn, minWidth: 34, width: 34, height: 34 }}>
+          <button onClick={onToggleSidebar} aria-label={t("Toggle sidebar")} aria-expanded={navExpanded} className="btn-ghost" style={{ ...iconBtn, minWidth: 34, width: 34, height: 34 }}>
             <IconSidebar size={17} />
           </button>
         </TooltipTrigger>

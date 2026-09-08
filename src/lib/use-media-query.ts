@@ -53,3 +53,10 @@ export function useMediaQuery(query: string): boolean {
  * globals.css — the project's existing narrow breakpoint, already used there to
  * collapse the header and the dashboard grids. */
 export const MOBILE_QUERY = "(max-width: 620px)";
+
+/** The band where the sidebar is still in the layout but defaults to an icon
+ * rail. Mirrors `@media (max-width:860px) and (min-width:621px)` in globals.css,
+ * stated here for the same reason `MOBILE_QUERY` is: the shell decides what the
+ * toggle DEFAULTS to at this width, the stylesheet draws it, and the two must
+ * not drift. */
+export const TABLET_QUERY = "(max-width: 860px) and (min-width: 621px)";

@@ -10,7 +10,7 @@ import { useSettings } from "@/lib/settings-context";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   IconDashboard, IconStudents, IconParents, IconClasses, IconLessons, IconAttendance,
-  IconHomework, IconReviews, IconFinance, IconReports, IconCalendar, IconSettings, IconLogout,
+  IconHomework, IconReviews, IconFinance, IconReports, IconCalendar, IconSettings, IconLogout, IconX,
 } from "@/components/icons";
 
 interface NavItem {
@@ -21,17 +21,27 @@ interface NavItem {
 }
 
 export function Sidebar({
-  collapsed, mobileOpen = false, onNavigate, counts, onLogout,
+  collapsed, mobileOpen = false, railExpanded = false, onNavigate, onCloseNav, counts, onLogout,
 }: {
   collapsed: boolean;
   /** Below the mobile breakpoint the sidebar leaves the layout entirely and
    * slides over the page instead; this is whether it is currently slid in.
    * Ignored on desktop, where the stylesheet never takes it out of flow. */
   mobileOpen?: boolean;
+  /** Has the teacher explicitly asked for the full panel?
+   *
+   * PUBLISHED FOR THE STYLESHEET, which owns the tablet DEFAULT and therefore
+   * cannot be told about it in JavaScript without a frame of the wrong layout
+   * before hydration. This says only "the default has been overruled"; the
+   * stylesheet keeps deciding what the default was. */
+  railExpanded?: boolean;
   /** Called when a nav row is chosen, so the mobile overlay can close itself.
    * Absent on desktop, where the sidebar is part of the page and never covers
    * what the teacher is about to look at. */
   onNavigate?: () => void;
+  /** Dismiss the mobile drawer. The drawer's own control calls this; the scrim
+   * and Escape are the other two ways, and none of them is the only one. */
+  onCloseNav?: () => void;
   counts: { students: number; classes: number };
   onLogout: () => void;
 }) {
@@ -100,15 +110,44 @@ export function Sidebar({
     <aside
       className="app-sidebar"
       data-mobile-open={mobileOpen ? "1" : "0"}
+      data-rail-expanded={railExpanded ? "1" : "0"}
       style={{
         width: sbw, minWidth: sbw, background: "var(--sidebar)", borderRight: "1px solid var(--border)",
         display: "flex", flexDirection: "column", position: "sticky", top: 0, height: "100vh",
-        overflow: "hidden", transition: "width .18s ease",
+        overflow: "hidden",
+        /* BOTH TRANSITIONS ARE DECLARED HERE, and that is the fix for a drawer
+         * that jumped instead of sliding. The phone block sets
+         * `transform:translateX(-100%)` and asked for `transition:transform .2s`
+         * WITHOUT `!important` — so this inline declaration, which named only
+         * `width`, beat it and the transform had no transition at all. Naming
+         * both means nothing has to win: the rail animates its width, the drawer
+         * animates its transform, and `prefers-reduced-motion` still switches
+         * the lot off with the `!important` it already carries. */
+        transition: "width .18s ease, transform .2s ease",
       }}
     >
       <div style={{ height: 60, display: "flex", alignItems: "center", gap: 10, padding: "0 18px", borderBottom: "1px solid var(--border)" }}>
         <div style={{ minWidth: 30, width: 30, height: 30, borderRadius: 8, background: "var(--primary)", color: "var(--primary-fg)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15 }}>E</div>
         <span className="sb-label" style={{ ...hideCollapsed, fontWeight: 600, fontSize: 14.5, letterSpacing: "-.01em", whiteSpace: "nowrap", overflow: "hidden" }}>English Tutor</span>
+
+        {/* THE DRAWER'S OWN CLOSE, and it is only drawn when there is a drawer
+          * to close. `mobileOpen` is already ANDed with the phone breakpoint in
+          * the shell, so this cannot appear beside the desktop rail — and it is
+          * deliberately not a second copy of the header's toggle: that control
+          * means "collapse the rail", this one means "put the overlay away".
+          *
+          * It is the FIRST of three dismissals, not the only one. Before it the
+          * scrim was the only way out, which is invisible to a keyboard. */}
+        {mobileOpen && (
+          <button
+            type="button"
+            onClick={onCloseNav}
+            className="sb-close btn-ghost"
+            aria-label={t("Close menu")}
+          >
+            <IconX size={17} />
+          </button>
+        )}
       </div>
 
       <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "12px 12px 8px" }}>

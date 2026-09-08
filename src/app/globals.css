@@ -334,14 +334,27 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    collapsed styles were the only thing ever hiding those labels.
 
    Retargeted at the DOM this app actually renders. The logout label reuses the
-   existing `.sb-label` hook rather than inventing a second one. */
+   existing `.sb-label` hook rather than inventing a second one.
+
+   ---- THE RAIL IS THE DEFAULT HERE, NOT A LAW (Gate 6.2) ------------------
+   These rules used to be unconditional `!important`, which pinned the sidebar
+   to 64px whatever the component said — so the header's toggle flipped a flag
+   nothing could act on and the button did visibly nothing at 768px. They are
+   now gated on `[data-rail-expanded]`, which the shell sets only when the
+   teacher has explicitly asked for the full panel.
+
+   WHY A DATA ATTRIBUTE RATHER THAN JUST LETTING THE COMPONENT DECIDE. The
+   server has no viewport, so a JS-only rule would render 248px into the HTML
+   and correct it after hydration — a visible flash of the wrong sidebar on
+   every tablet load. Keeping the default in CSS means the server already sends
+   it, and the attribute carries only the one fact CSS cannot know. */
 @media (max-width:860px) and (min-width:621px){
   .app-main{padding:20px 18px 40px !important}
-  .app-sidebar{width:64px !important;min-width:64px !important}
-  .app-sidebar .sb-label{display:none !important}
-  .app-sidebar nav>div{display:none !important}
-  .app-sidebar .nav-item>span:not(:first-child){display:none !important}
-  .app-sidebar .nav-item{justify-content:center !important}
+  .app-sidebar:not([data-rail-expanded="1"]){width:64px !important;min-width:64px !important}
+  .app-sidebar:not([data-rail-expanded="1"]) .sb-label{display:none !important}
+  .app-sidebar:not([data-rail-expanded="1"]) nav>div{display:none !important}
+  .app-sidebar:not([data-rail-expanded="1"]) .nav-item>span:not(:first-child){display:none !important}
+  .app-sidebar:not([data-rail-expanded="1"]) .nav-item{justify-content:center !important}
 }
 /* ---- Mobile shell (Sprint 7 Gate 5 Phase 0 remediation) -------------------
    THE PAGE MUST NOT BE WIDER THAN THE PHONE. Two shell elements DEFINED a width
@@ -382,9 +395,20 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
     position:fixed !important;left:0;top:0;
     width:248px !important;min-width:248px !important;
     height:100dvh !important;z-index:90;
-    transform:translateX(-100%);transition:transform .2s ease;
+    /* THE TRANSITION IS NOT DECLARED HERE, deliberately. It used to be, without
+       `!important`, and the component's own inline `transition:width .18s ease`
+       beat it — so the drawer had no transform transition at all and jumped
+       into place instead of sliding. The inline declaration now names both
+       properties, which is the only way an inline style and a media query
+       cannot disagree. Restating it here would recreate exactly the dead rule
+       Gate 6.1 removed two of. */
+    transform:translateX(-100%);
+    box-shadow:0 0 0 1px rgba(9,9,11,.04),12px 0 28px -12px rgba(9,9,11,.28);
   }
   .app-sidebar[data-mobile-open="1"]{transform:translateX(0)}
+  /* The drawer is out of flow, so nothing below it may claim the row's height;
+     `100dvh` above already gives it the full viewport. */
+  .app-sidebar nav{overflow-y:auto}
   .app-nav-scrim{position:fixed;inset:0;z-index:89;background:rgba(9,9,11,.42);animation:overlayFade .2s ease both}
 
   .app-main{padding:16px 14px 40px !important}
@@ -558,6 +582,20 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   .hdr-quickadd{padding:0 11px !important}
   .hdr-quickadd-label{display:none !important}
 }
+/* The mobile drawer's own close control. Pushed to the end of the brand row so
+   it sits where a drawer's close always sits, at the same 34px the header's own
+   icon buttons use, and borrowing `.btn-ghost` for its hover and focus ring
+   rather than inventing a second treatment. It is rendered only while the
+   drawer is open, so it needs no breakpoint of its own. */
+.sb-close{
+  margin-left:auto;flex:none;
+  width:34px;height:34px;min-width:34px;
+  display:flex;align-items:center;justify-content:center;
+  border:none;border-radius:9px;background:transparent;
+  color:var(--muted);cursor:pointer;
+}
+.sb-close:hover{background:var(--hover);color:var(--fg)}
+
 @media (prefers-reduced-motion:reduce){
   .app-sidebar{transition:none !important}
 }

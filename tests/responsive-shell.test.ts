@@ -35,7 +35,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { MOBILE_QUERY } from "../src/lib/use-media-query";
+import { MOBILE_QUERY, TABLET_QUERY } from "../src/lib/use-media-query";
 
 const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), ...parts), "utf8");
 
@@ -77,6 +77,21 @@ const RULE_TEXT = CSS.replace(/\/\*[\s\S]*?\*\//g, "");
 
 /** Source with its comments removed, so an assertion about the CODE is never
  * satisfied, or defeated, by the prose explaining it. */
+/** Every `useEffect(...)` body in a source file. Lets an assertion say "no
+ * effect does X" instead of "the file contains no effect", which stops being a
+ * statement about anything the moment one legitimate effect is added. */
+function effectBodies(src: string): string[] {
+  const out: string[] = [];
+  for (let i = src.indexOf("useEffect("); i !== -1; i = src.indexOf("useEffect(", i + 1)) {
+    let depth = 0;
+    for (let j = i + 9; j < src.length; j++) {
+      if (src[j] === "(") depth++;
+      else if (src[j] === ")") { depth--; if (depth === 0) { out.push(src.slice(i, j + 1)); break; } }
+    }
+  }
+  return out;
+}
+
 const codeOf = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/^\s*\/\/.*$/gm, "");
 
 /** Every rule that applies at every viewport: the stylesheet with its @media
@@ -166,11 +181,19 @@ describe("Shell — the sidebar costs no layout width on a phone", () => {
      * it is passed down, so widening the window closes the overlay in the same
      * render that returns the sidebar to the layout. */
     assert.ok(SHELL.includes("mobileOpen={navShown}"));
-    assert.ok(!SHELL.includes("useEffect"), "the shell needs no effect to hold this together");
+    assert.ok(SHELL.includes("const navShown = isMobile && navOpen;"), "ANDed, not cleared");
+    /* Narrowed in Gate 6.2, not weakened. The shell now has ONE effect — the
+     * Escape listener — so "contains no useEffect" would no longer say anything
+     * about the open flag. What must stay true is that no effect writes the nav
+     * or collapse state in response to a breakpoint change. */
+    for (const body of effectBodies(SHELL)) {
+      assert.ok(!/setCollapsePref\(/.test(body), "no effect may rewrite the collapse preference");
+      assert.ok(!/isMobile|isTablet/.test(body), "no effect may watch the breakpoint");
+    }
   });
 
   it("10. the toggle means 'overlay' on a phone and 'rail' on a desktop", () => {
-    assert.ok(SHELL.includes("isMobile ? setNavOpen((o) => !o) : setCollapsed((c) => !c)"));
+    assert.ok(SHELL.includes("isMobile ? setNavOpen((o) => !o) : setCollapsePref(!railCollapsed)"));
   });
 });
 
@@ -463,9 +486,10 @@ describe("Shell — the tablet rail hides labels that actually exist", () => {
   it("29. every label in the rail is reachable by one of those hooks", () => {
     /* The four things that must disappear at 64px: the brand, the section
      * headings, each row's text/badge, and the logout label. */
-    assert.ok(RAIL.includes(".app-sidebar .sb-label{display:none"), "brand + logout label");
-    assert.ok(RAIL.includes(".app-sidebar nav>div{display:none"), "section headings");
-    assert.ok(RAIL.includes(".app-sidebar .nav-item>span:not(:first-child){display:none"),
+    const G = '.app-sidebar:not([data-rail-expanded="1"])';
+    assert.ok(RAIL.includes(G + " .sb-label{display:none"), "brand + logout label");
+    assert.ok(RAIL.includes(G + " nav>div{display:none"), "section headings");
+    assert.ok(RAIL.includes(G + " .nav-item>span:not(:first-child){display:none"),
       "each row's label and badge");
     // The logout label was the one with no hook at all until 6.1.
     const foot = SIDEBAR.slice(SIDEBAR.indexOf("</nav>"));
@@ -473,7 +497,7 @@ describe("Shell — the tablet rail hides labels that actually exist", () => {
   });
 
   it("30. the icons centre in the rail, through the class that exists", () => {
-    assert.ok(RAIL.includes(".app-sidebar .nav-item{justify-content:center"));
+    assert.ok(RAIL.includes('.app-sidebar:not([data-rail-expanded="1"]) .nav-item{justify-content:center'));
   });
 });
 
@@ -483,22 +507,27 @@ describe("Shell — a desktop flag never reaches the phone overlay", () => {
      * full-labelled. `collapsed` means "narrow the rail to icons", which there
      * describes nothing — but it is applied as an inline `display:none` on every
      * label, so it would win over the media query and open an empty menu. */
-    assert.ok(codeOf(SHELL).includes("const railCollapsed = !isMobile && collapsed;"),
+    assert.ok(codeOf(SHELL).includes("const railCollapsed = !isMobile && (collapsePref ?? isTablet);"),
       "the flag is neutralised below the breakpoint");
     assert.ok(codeOf(SHELL).includes("collapsed={railCollapsed}"),
       "and the neutralised value is what the sidebar receives");
-    assert.ok(!/collapsed=\{collapsed\}/.test(codeOf(SHELL)),
-      "the raw flag must not be passed down");
+    assert.ok(!/collapsed=\{collapsePref\}/.test(codeOf(SHELL)),
+      "the raw preference must not be passed down");
   });
 
   it("32. it is a derived value, not an effect that clears state on resize", () => {
     /* Same reasoning the scrim's `navShown` already states: a value ANDed during
      * render cannot be stale, whereas an effect leaves one render in which the
      * old flag is still in the DOM. */
-    const around = codeOf(SHELL).slice(codeOf(SHELL).indexOf("const railCollapsed"));
-    assert.ok(!/useEffect/.test(around.slice(0, 400)), "no effect clears it");
+    /* Narrowed the same way test 9 is: the guarantee is that no EFFECT rewrites
+     * the preference on a resize, not that the file contains no effect at all. */
+    for (const body of effectBodies(SHELL)) {
+      assert.ok(!/setCollapsePref\(/.test(body), "no effect writes the preference");
+    }
     assert.ok(codeOf(SHELL).includes("const navShown = isMobile && navOpen;"),
       "the sibling pattern is unchanged");
+    assert.ok(codeOf(SHELL).includes("const railExpanded = collapsePref === false;"),
+      "and the stylesheet's override flag is derived too");
   });
 
   it("33. the collapsed presentation is still inline, so the AND is what protects it", () => {
@@ -511,7 +540,16 @@ describe("Shell — a desktop flag never reaches the phone overlay", () => {
   });
 
   it("34. the toggle still means two different things, and only two", () => {
-    assert.ok(codeOf(SHELL).includes("isMobile ? setNavOpen((o) => !o) : setCollapsed((c) => !c)"));
+    assert.ok(codeOf(SHELL).includes("isMobile ? setNavOpen((o) => !o) : setCollapsePref(!railCollapsed)"));
+    /* AND IT SETTLES AGAINST WHAT IS SHOWN, not against what is stored. That is
+     * what makes the FIRST press work at tablet, where the shown state is the
+     * breakpoint's default and the stored preference is still `null` — the
+     * updater form `(c) => !c` would have flipped null to true and collapsed an
+     * already-collapsed rail, which is the no-op the human pass reported. */
+    assert.ok(!/setCollapsePref\(\(c\) => !c\)/.test(codeOf(SHELL)),
+      "the preference is not toggled against itself");
+    assert.ok(codeOf(SHELL).includes("const [collapsePref, setCollapsePref] = useState<boolean | null>(null);"),
+      "null is the third VALUE — follow the default — not a third presentation");
   });
 });
 
@@ -541,5 +579,231 @@ describe("Shell — Reports' own CSS stays inside Reports", () => {
     assert.ok(CSS.includes("@media (max-width:620px){"));
     assert.match(MOBILE, /\.app-sidebar\{[^}]*position:fixed !important/);
     assert.match(MOBILE, /\.app-sidebar\{[^}]*width:248px !important/);
+  });
+});
+
+/* ============================== Gate 6.2: the toggle, the drawer, the motion */
+
+describe("Shell — the tablet toggle is no longer a no-op", () => {
+  const RAIL = mediaBlock("(max-width:860px) and (min-width:621px)");
+
+  it("37. the rail is the tablet DEFAULT, and the default can be overruled", () => {
+    /* Every rail rule is gated on the override attribute. Unconditional
+     * `!important` here is what made the button do nothing: the component
+     * changed its state, and the stylesheet went on pinning 64px regardless. */
+    for (const line of RAIL.split("\n")) {
+      if (!line.includes(".app-sidebar")) continue;
+      assert.ok(line.includes('[data-rail-expanded="1"]'),
+        `an ungated rail rule would pin the sidebar again: ${line.trim()}`);
+    }
+  });
+
+  it("38. the component publishes the one fact the stylesheet cannot know", () => {
+    assert.ok(SIDEBAR.includes('data-rail-expanded={railExpanded ? "1" : "0"}'));
+    assert.ok(codeOf(SHELL).includes("const railExpanded = collapsePref === false;"),
+      "only an EXPLICIT expand overrules the default");
+  });
+
+  it("39. the default still comes from CSS, so a tablet cannot flash the wrong width", () => {
+    /* The server has no viewport. If the rail were JS-only the HTML would ship
+     * 248px and hydration would correct it — a visible jump on every load. */
+    assert.ok(RAIL.includes("width:64px !important"), "the default is still stated in CSS");
+    assert.ok(!/useEffect[\s\S]{0,200}railExpanded/.test(codeOf(SHELL)),
+      "and it is not applied by an effect after mount");
+  });
+
+  it("40. the breakpoint the shell reads is the one the stylesheet uses", () => {
+    const q = TABLET_QUERY.match(/max-width:\s*(\d+)px[\s\S]*min-width:\s*(\d+)px/);
+    assert.ok(q, "TABLET_QUERY states both edges");
+    assert.ok(CSS.includes(`@media (max-width:${q![1]}px) and (min-width:${q![2]}px){`),
+      "the hook and the stylesheet must not drift");
+  });
+
+  it("41. expanding at tablet gives the real panel, not a third size", () => {
+    // The component knows exactly two widths, and the tablet override picks one.
+    assert.ok(SIDEBAR.includes("const sbw = collapsed ? 64 : 248;"));
+    const widths = (SIDEBAR.match(/\b(64|248)\b/g) ?? []).length;
+    assert.ok(widths >= 2, "the two designed widths");
+    assert.ok(!/\b(120|160|200)\b/.test(SIDEBAR), "no invented intermediate rail");
+  });
+
+  it("42. the toggle is never a control that does nothing", () => {
+    /* Either it acts, or it is not drawn. This build chose "it acts" at every
+     * width, so the button is unconditional and the state behind it is real. */
+    assert.ok(HEADER.includes("onClick={onToggleSidebar}"));
+    assert.ok(!/hdr-toggle[^{]*\{[^}]*display:none/.test(CSS),
+      "the control is not hidden at any width — it works instead");
+  });
+});
+
+describe("Shell — the mobile drawer slides", () => {
+  it("43. the drawer moves by transform, not by appearing", () => {
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*transform:translateX\(-100%\)/);
+    assert.match(MOBILE, /\.app-sidebar\[data-mobile-open="1"\]\{transform:translateX\(0\)\}/);
+    // A display swap cannot be transitioned, and would destroy the animation.
+    assert.ok(!/\.app-sidebar\{[^}]*display:none/.test(MOBILE),
+      "the drawer is moved off-canvas, never removed");
+  });
+
+  it("44. THE TRANSITION IS DECLARED WHERE IT CANNOT LOSE", () => {
+    /* THE DEFECT. The phone block asked for `transition:transform .2s ease`
+     * without `!important`, and the component's inline `transition:width .18s
+     * ease` beat it — so the transform had no transition and the drawer jumped.
+     * Naming both properties inline is what removes the contest. */
+    assert.ok(SIDEBAR.includes('transition: "width .18s ease, transform .2s ease"'),
+      "the inline declaration names transform as well as width");
+    /* Comment-free: the prose that explains the removal names `transition` too,
+     * and a scan over the raw block would find the explanation instead. */
+    const phoneRules = MOBILE.replace(/\/\*[\s\S]*?\*\//g, " ");
+    assert.ok(!/\.app-sidebar\{[^}]*transition:/.test(phoneRules),
+      "and the phone block no longer restates a rule it would lose");
+  });
+
+  it("45. reduced motion still switches the whole thing off", () => {
+    /* There are TWO reduced-motion blocks — a global one that shortens every
+     * duration, and the sidebar's own. `mediaBlock` returns the first, so this
+     * asserts against the whole stylesheet instead. */
+    assert.ok(/\.app-sidebar\{transition:none !important\}/.test(RULE_TEXT),
+      "`!important` is what lets it beat the inline declaration");
+    assert.ok(/transition-duration:\.01ms !important/.test(RULE_TEXT),
+      "and the global reduced-motion rule still covers everything else");
+  });
+
+  it("46. the scrim sits under the drawer, and the drawer over the page", () => {
+    const z = (re: RegExp) => Number(MOBILE.match(re)![1]);
+    const drawer = z(/\.app-sidebar\{[^}]*z-index:(\d+)/);
+    const scrim = z(/\.app-nav-scrim\{[^}]*z-index:(\d+)/);
+    assert.ok(drawer > scrim, `drawer ${drawer} must sit above scrim ${scrim}`);
+  });
+
+  it("47. the drawer is full width-and-height, and full-labelled", () => {
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*width:248px !important/);
+    assert.match(MOBILE, /\.app-sidebar\{[^}]*height:100dvh !important/);
+    /* Labels are inline-hidden by `collapsed`, which the shell already ANDs
+     * away below the breakpoint — so nothing in the phone block needs to undo
+     * it, and this is the assertion that says so. */
+    assert.ok(codeOf(SHELL).includes("const railCollapsed = !isMobile && (collapsePref ?? isTablet);"));
+  });
+});
+
+describe("Shell — the drawer has its own way out", () => {
+  it("48. there is a close control inside the drawer", () => {
+    assert.ok(SIDEBAR.includes('className="sb-close btn-ghost"'));
+    assert.ok(SIDEBAR.includes("onClick={onCloseNav}"));
+    assert.ok(SIDEBAR.includes("<IconX"), "an obvious close glyph");
+  });
+
+  it("49. it is a real button with an accessible name", () => {
+    const block = SIDEBAR.slice(SIDEBAR.indexOf("sb-close") - 300, SIDEBAR.indexOf("sb-close") + 300);
+    assert.ok(/<button/.test(block), "a button, not a clickable div");
+    assert.ok(/type="button"/.test(block), "and not a submit");
+    assert.ok(/aria-label=\{t\("Close menu"\)\}/.test(SIDEBAR), "named, and translated");
+    const dict = JSON.parse(read("src", "lib", "i18n-vi.json")) as Record<string, string>;
+    assert.ok(dict["Close menu"], "the name is in the dictionary");
+  });
+
+  it("50. it is drawn only when there is a drawer to close", () => {
+    assert.ok(/\{mobileOpen && \(/.test(SIDEBAR),
+      "never beside the desktop rail, where it would duplicate the header toggle");
+  });
+
+  it("51. the scrim is no longer the only dismissal", () => {
+    // Three ways out: the button, the scrim, Escape.
+    assert.ok(SIDEBAR.includes("onClick={onCloseNav}"), "1 — the drawer's own control");
+    assert.ok(SHELL.includes('className="app-nav-scrim"'), "2 — the scrim");
+    assert.ok(SHELL.includes('if (e.key === "Escape") setNavOpen(false)'), "3 — Escape");
+  });
+
+  it("52. Escape is bound only while the drawer is open, and is cleaned up", () => {
+    const [effect] = effectBodies(SHELL).filter((b) => b.includes("Escape"));
+    assert.ok(effect, "the listener lives in an effect");
+    assert.ok(effect.includes("if (!navShown) return;"), "not bound while closed");
+    assert.ok(effect.includes("removeEventListener"), "and removed on close");
+  });
+
+  it("53. the toggle reports the state it controls", () => {
+    assert.ok(HEADER.includes("aria-expanded={navExpanded}"));
+    assert.ok(codeOf(SHELL).includes("navExpanded={isMobile ? navShown : !railCollapsed}"),
+      "the drawer's open state on a phone, the rail's on everything else");
+    assert.ok(HEADER.includes('aria-label={t("Toggle sidebar")}'), "the name is unchanged");
+  });
+});
+
+describe("Shell — crossing the breakpoints leaves nothing broken", () => {
+  it("54. a rail collapsed on a desktop never reaches the phone drawer", () => {
+    // The 6.1 guarantee, restated against the new derivation.
+    assert.ok(codeOf(SHELL).includes("!isMobile && (collapsePref ?? isTablet)"));
+    assert.ok(codeOf(SHELL).includes("collapsed={railCollapsed}"));
+  });
+
+  it("55. and an expand asked for on a tablet never survives INTO the phone drawer", () => {
+    /* `railExpanded` only reaches the stylesheet, and the tablet block that
+     * reads it stops at 621px — so the attribute is inert on a phone. */
+    const phone = mediaBlock("(max-width:620px)");
+    assert.ok(!phone.includes("data-rail-expanded"), "the phone block ignores it");
+  });
+
+  it("56. no effect resets state when the viewport changes", () => {
+    for (const body of effectBodies(SHELL)) {
+      assert.ok(!/setNavOpen\(true\)/.test(body), "nothing opens the nav by itself");
+      assert.ok(!/setCollapsePref\(/.test(body), "nothing rewrites the preference");
+    }
+  });
+
+  it("57. the preference outranks the default at every width, in one expression", () => {
+    /* One place decides, so tablet and desktop cannot disagree about what the
+     * teacher asked for. */
+    const hits = (codeOf(SHELL).match(/collapsePref/g) ?? []).length;
+    assert.ok(hits >= 3 && hits <= 8, `collapsePref is read in ${hits} places, not scattered`);
+    assert.ok(!/collapsePref[\s\S]{0,40}useState<boolean>\(/.test(codeOf(SHELL)),
+      "null must remain expressible — it is what 'follow the default' means");
+  });
+});
+
+describe("Shell — Reports is untouched by any of this", () => {
+  it("58. no Gate 6.2 rule names a Reports selector", () => {
+    for (const block of ["(max-width:860px) and (min-width:621px)", "(max-width:620px)"]) {
+      const body = mediaBlock(block);
+      for (const rule of body.split("}")) {
+        if (!/\.app-sidebar|\.sb-close|\.app-nav-scrim/.test(rule)) continue;
+        assert.ok(!rule.includes(".rp-"), `a shell rule names a Reports class: ${rule.trim().slice(0, 70)}`);
+      }
+    }
+  });
+
+  it("59. the Reports print scope still hides the sidebar, unchanged", () => {
+    assert.ok(CSS.includes("body.print-report .app-sidebar"),
+      "print still removes the shell, whatever the drawer does on screen");
+  });
+});
+
+describe("Shell — the stylesheet is syntactically whole", () => {
+  /* GATE 6.2 ADDED THIS BECAUSE THE SUITE COULD NOT SEE THE BUG IT WROTE. Every
+   * assertion in this file reads globals.css as TEXT, so a comment reopened
+   * after its own `*​/` — which is exactly what one edit here produced — passes
+   * all 2000-odd of them and fails only in `npm run build`, minutes later, as a
+   * postcss "Unknown word". These two checks are the cheapest possible parse. */
+
+  it("60. every comment is opened and closed exactly once", () => {
+    const opens = (CSS.match(/\/\*/g) ?? []).length;
+    const closes = (CSS.match(/\*\//g) ?? []).length;
+    assert.equal(opens, closes, `${opens} comment openers, ${closes} closers`);
+    // …and none nests, which CSS does not support and postcss reads as content.
+    let depth = 0;
+    for (let i = 0; i < CSS.length - 1; i++) {
+      if (CSS[i] === "/" && CSS[i + 1] === "*") { depth++; assert.ok(depth <= 1, `nested comment at ${i}`); i++; }
+      else if (CSS[i] === "*" && CSS[i + 1] === "/") { depth--; assert.ok(depth >= 0, `stray closer at ${i}`); i++; }
+    }
+    assert.equal(depth, 0, "the file ends inside a comment");
+  });
+
+  it("61. braces balance once the comments are gone", () => {
+    const bare = CSS.replace(/\/\*[\s\S]*?\*\//g, " ");
+    let depth = 0;
+    for (const ch of bare) {
+      if (ch === "{") depth++;
+      else if (ch === "}") { depth--; assert.ok(depth >= 0, "a rule closes that never opened"); }
+    }
+    assert.equal(depth, 0, "an unclosed rule or @media block");
   });
 });
