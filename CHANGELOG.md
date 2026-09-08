@@ -1,5 +1,93 @@
 # Changelog
 
+## Unreleased — Settings (Sprint 11) — **contract banked, not implemented**
+
+### Gate 1 — audit passed
+- **The Settings state layer already existed before Sprint 11, and is production-used.**
+  `SettingsProvider`, `createFormat`, the 761-key Vietnamese dictionary, the
+  `[data-theme|data-accent|data-surface|data-spacing]` token sets and the
+  `etlms.*` `localStorage` keys are read by **48 call sites** across every
+  module. The Settings nav item already existed at `/settings`. What did **not**
+  exist was the page: `/settings` rendered a four-line `ModulePlaceholder`.
+- **No Settings backend exists or is needed.** No Settings API route, server
+  action, Mongoose model, Zod schema, collection, index or cookie — verified, not
+  assumed. Sprint 11 adds none of them.
+- **Audit baseline, recorded so later gates are judged against what was there:**
+  `main` at `b98b25a`, clean tree, `main == origin/main`, lint 0 errors,
+  **2235/2235 tests passing**, production build green, `/settings` a placeholder.
+- Three of the four appearance dimensions — accent, surface and density — were
+  **fully styled but unreachable by any control**, as was the language switch.
+  The header's theme toggle was the only preference a teacher could actually
+  change.
+
+### Contract — banked before any implementation
+- **The Settings contract is agreed before any code**, as Billing's was in
+  Sprint 9 and Reports' in Sprint 10, and is now written into
+  `PROJECT_RULES.md` as a `## Settings` section. **No Settings implementation
+  exists.**
+- **Nine authorised settings and no others:** theme, accent, surface, density,
+  interface language, date format, time format, currency and number format. A
+  setting is authorised only where something in the shipped product already
+  reads it — which is why no attendance, homework, finance, reports or class
+  default appears here, and why Settings is not a home for arbitrary
+  configuration.
+- **Notifications are deferred in full.** The reference design carries a
+  Notifications card and a bell dropdown, but the application has no notification
+  source, builder, model, menu, unread count or read state, and the reserved
+  `etlms.notifDismissed` / `etlms.notifRead` keys are read by nothing. Sprint 11
+  builds no notification system and **draws no Notifications card at all — not
+  even an inert one**. A "Mark all read" acting on nothing is a promise the app
+  cannot keep. The unused keys stay untouched; Notifications gets its own sprint.
+- **Currency is display-only and does not redefine Finance's source currency.**
+  Stored tuition, fees, billing and every derived revenue figure stay **integer
+  VND** in the database and in all arithmetic. `USD` changes rendering only,
+  through the existing fixed demo conversion rate; no stored value is converted,
+  rewritten or migrated, and no Finance logic, API or schema changes. Data-entry
+  labels such as `Monthly fee (VND/month)` correctly keep saying VND.
+- **Stored-value hardening is authorised and belongs to Settings.** Preferences
+  read out of the browser are validated against the authorised enumerations and
+  fall back to the existing defaults when invalid — no new key, no storage
+  migration, no schema migration, no API, and no behavioural change for values
+  that were already valid.
+- **`vi` remains the default language and `English` becomes reachable**, using
+  the existing source-string fallback. No second dictionary is added.
+- **Device-local persistence, and no Save button.** The existing `localStorage`
+  keys and the existing `SettingsProvider` setters are the whole persistence
+  model. No database write, server action, Settings API route, Settings model,
+  User preference field, cookie change, JWT change or auth-flow change — which
+  also means **no production DDL and no new dependency**.
+- **One source of truth.** Every control reads its selected state from
+  `useSettings()`; the page keeps no `useState` copy of a preference and touches
+  `localStorage` directly nowhere. The header theme toggle and the Settings theme
+  control therefore stay synchronised by construction rather than by an effect.
+- **The Workspace card is read-only** — account name, email, current currency and
+  the application day. No name or email editing, avatar, roles, password change,
+  auth-provider settings or session management. Identity reaches the client
+  component from a server-owned boundary; client code does not fetch the session
+  a second time.
+- **One page, no tabs:** heading, Appearance, Language & Region, Workspace. No
+  navigation change and no sidebar change — the nav item already exists.
+- **Design fidelity anchors banked** from the reference design: `760px` content
+  column; card padding `20px 22px` with `16px` bottom spacing on the existing
+  `--card`/`--border`/`--r`/`--sh` shell; `24px`/`600`/`-.02em` heading; accent
+  swatches four across at `10px` gap; the Surface+Density and regional sub-grids
+  targeting `520px` and `560px`.
+- **Mobile must not overflow horizontally**, and the responsive rules must not be
+  ones that lose to an inline `grid-template-columns` — a dead-rule failure this
+  repository has already shipped more than once, across Sprint 10 gates 6.1, 6.2
+  and 7.2.
+- **Presentation may change downstream; meaning may not.** Stored monetary
+  values, Finance calculations, Reports selection and arithmetic, Reviews data,
+  Attendance and Homework semantics, the Classes model, Student/Parent data and
+  application-clock semantics are all preserved. No configurable timezone, no
+  configurable app clock, no report-branding setting, no school/organisation
+  setting, no module defaults.
+- **One test reversal is authorised in advance.** `tests/reports-ui.test.ts`
+  asserts the Settings route still contains `ModulePlaceholder`. The gate that
+  replaces the page must invert that assertion in the same commit; that failure
+  is expected and is **not** a regression.
+- **Not implemented, not deployed.** This entry records a contract only.
+
 ## Unreleased — Reports (Sprint 10) — **shipped, Production verified, CLOSED**
 
 ### Contract — banked before any implementation

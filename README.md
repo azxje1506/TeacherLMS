@@ -402,8 +402,30 @@ into the mobile drawer, a no-op tablet expansion toggle and an asymmetric expand
 animation. They were fixed here because Reports verification is what exposed
 them.
 
-**In progress (incremental):** Students, Parents, Classes, Lessons,
-Calendar and Settings screens — each ported
+**In contract (Sprint 11 — Settings).** The Gate 1 audit has **passed** and the
+contract is banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) as its `## Settings`
+section. **No implementation has started.** The audit's headline finding is that
+the Settings *state* has existed and been production-used since the earliest
+sprints — `SettingsProvider`, the bound formatter, the translation layer, the
+appearance CSS tokens and the `etlms.*` `localStorage` keys are read by 48 call
+sites across every module — while `/settings` itself still renders the module
+placeholder, leaving accent, surface, density and the language switch fully
+styled but unreachable by any control.
+
+Sprint 11's scope is therefore narrow: the production Settings UI over that
+existing store, plus validation of stored preference values against their
+authorised enumerations. Nine settings are authorised — theme, accent, surface,
+density, interface language, date format, time format, currency and number
+format — and no others. Persistence stays device-local in the existing keys, so
+there is **no Settings API, model, collection, schema change, migration or new
+dependency**, and no change to authentication. Currency remains a **display**
+preference only: stored tuition and every Finance calculation stay integer VND.
+**Notifications are explicitly deferred** — the app has no notification source or
+bell menu, so Sprint 11 draws no Notifications card at all rather than an inert
+one. Settings is **not implemented and not deployed.**
+
+**In progress (incremental):** Students, Parents, Classes, Lessons and
+Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
 states, API routes and validation.
 
