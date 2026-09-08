@@ -46,7 +46,16 @@ export function settingsSegmentStyle(
 ): React.CSSProperties {
   const dense = variant === "dense";
   return {
-    flex: 1, minWidth: 0, height: 34, padding: dense ? "0 8px" : "0 13px", borderRadius: 9,
+    /* `1 1 auto`, NOT `1 1 0`, and `min-width:max-content` rather than 0 — the
+     * two halves of one decision. `.set-seg-row` wraps, and a flex item whose
+     * basis is zero has a hypothetical size of zero, so it never triggers a wrap
+     * and the label spills out of its own button instead. Sizing from the
+     * content means the row knows when an option no longer fits and moves it to
+     * the next line, and it means no segment is ever drawn narrower than the
+     * text inside it. Segments still share the slack equally, so a roomy row
+     * still reads as one evenly-divided control. */
+    flex: "1 1 auto", minWidth: "max-content",
+    height: 34, padding: dense ? "0 8px" : "0 13px", borderRadius: 9,
     border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
     background: active ? "var(--accent-soft)" : "var(--card)",
     color: active ? "var(--accent)" : "var(--muted)",
@@ -65,6 +74,10 @@ export function settingsSegmentStyle(
  * keeps a constant width in both states so picking one never nudges the grid. */
 export function accentSwatchStyle(active: boolean): React.CSSProperties {
   return {
+    /* `width:100%` and no minimum: the swatch takes whatever its grid track
+     * gives it, so the track — which the stylesheet owns and collapses to two
+     * across on a small phone — is the only thing deciding how wide it is. A
+     * floor here would be a second opinion that could overflow the card. */
     width: "100%", height: 34, borderRadius: 9, padding: 0,
     border: `2px solid ${active ? "var(--fg)" : "var(--border)"}`,
     cursor: "pointer", display: "block", outline: "none",

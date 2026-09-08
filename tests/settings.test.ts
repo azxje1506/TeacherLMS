@@ -57,6 +57,19 @@ const CSS = read("src", "app", "globals.css");
 const THEME_SCRIPT = read("src", "components", "theme-script.tsx");
 const DICT = JSON.parse(read("src", "lib", "i18n-vi.json")) as Record<string, string>;
 
+/** Just the Settings section of the stylesheet, comment-free.
+ *
+ * SCOPED DELIBERATELY, exactly as tests/reports-ui.test.ts scopes its own: the
+ * file carries other `@media (max-width:620px)` blocks and other grid rules, and
+ * a whole-file scan would happily pass on somebody else's. Comment-free because
+ * the section's own prose quotes the rules it is explaining. */
+const SET_CSS = (() => {
+  const from = CSS.indexOf("SETTINGS (Sprint 11)");
+  assert.notEqual(from, -1, "the Settings stylesheet section exists");
+  const to = CSS.indexOf("Tailwind theme bridge", from);
+  return CSS.slice(from, to === -1 ? undefined : to).replace(/\/\*[\s\S]*?\*\//g, " ");
+})();
+
 /** A reader over a plain map, which is all `resolveSettings` ever needed. */
 const from = (map: Record<string, string>) => (key: string) => map[key] ?? null;
 
@@ -474,10 +487,16 @@ describe("Settings · the design's own measurements", () => {
     assert.ok(SCREEN.includes('fontSize: 24, fontWeight: 600, letterSpacing: "-.02em"'));
   });
 
-  it("3. the sub-grids are the comp's", () => {
-    assert.ok(SCREEN.includes('gridTemplateColumns: "repeat(4,1fr)", gap: 10, maxWidth: 420'), "accent swatches");
-    assert.ok(SCREEN.includes('gridTemplateColumns: "1fr 1fr", gap: 18, maxWidth: 520'), "surface + density");
-    assert.ok(SCREEN.includes('gridTemplateColumns: "1fr 1fr", gap: 18, maxWidth: 560'), "regional");
+  it("3. the sub-grids keep the comp's measurements — in the stylesheet", () => {
+    /* Gate 4 moved these off the elements; the VALUES are unchanged, so they are
+     * asserted where they now live. See the responsive-ownership suite below for
+     * why they had to move at all. */
+    assert.ok(SET_CSS.includes("gap:10px;max-width:420px"), "accent swatches");
+    assert.ok(/\.set-pair-appearance\{[^}]*gap:18px;max-width:520px/.test(SET_CSS), "surface + density");
+    assert.ok(/\.set-pair-regional\{[^}]*gap:18px;max-width:560px/.test(SET_CSS), "regional");
+    assert.ok(/\.set-pair-workspace\{[^}]*gap:14px 22px/.test(SET_CSS), "workspace");
+    assert.ok(/\.set-seg-row\{[^}]*gap:8px\}/.test(SET_CSS) && /\.set-seg-row\.tight\{gap:6px\}/.test(SET_CSS),
+      "both of the comp's segment gaps");
   });
 
   it("4. a segment is the comp's own control, and only its two states differ", () => {
@@ -510,6 +529,144 @@ describe("Settings · the design's own measurements", () => {
     for (const file of [SCREEN, UI]) {
       assert.ok(!/#[0-9a-f]{3,8}\b/i.test(file), "components use tokens, never hex");
     }
+  });
+});
+
+/* ============================================== responsive ownership (Gate 4) */
+
+describe("Settings · responsive layout is owned by the stylesheet", () => {
+  /** The four containers whose column count has to be able to change. */
+  const GRIDS = ["set-pair-appearance", "set-pair-regional", "set-pair-workspace", "set-accent-grid"];
+
+  it("1. no responsive layout property is left inline on the screen", () => {
+    /* THE WHOLE POINT OF THIS GATE. An inline `grid-template-columns` outranks a
+     * media query, so a collapse rule written against one is a rule that never
+     * fires — the dead-rule failure this repository shipped three times in
+     * Sprint 10. If any of these come back, the responsive rules below become
+     * decoration. */
+    assert.ok(!/gridTemplateColumns/.test(SCREEN), "no inline grid-template-columns");
+    assert.ok(!/display: "grid"/.test(SCREEN), "no inline display:grid");
+    assert.ok(!/display: "flex"/.test(SCREEN), "no inline display:flex");
+    assert.ok(!/flexWrap/.test(SCREEN), "and no inline wrap rule");
+  });
+
+  it("2. …and each container is a class the stylesheet declares", () => {
+    for (const cls of GRIDS) {
+      assert.ok(SCREEN.includes(`"${cls}"`), `the screen uses .${cls}`);
+      assert.ok(new RegExp(`\\.${cls}\\{`).test(SET_CSS), `the stylesheet declares .${cls}`);
+    }
+    assert.ok(SCREEN.includes('"set-seg-row"') && /\.set-seg-row\{/.test(SET_CSS), "and the segment row");
+  });
+
+  it("3. nothing in the Settings section needs !important", () => {
+    /* There is no inline declaration left to outrank, so the presence of one
+     * here would mean an inline style had crept back. */
+    assert.ok(!/!important/.test(SET_CSS), "no !important anywhere in the Settings rules");
+  });
+
+  it("4. the three pair grids collapse on ROOM, not on a viewport guess", () => {
+    /* Sprint 10 Gate 6.4's lesson: a viewport breakpoint is only ever a proxy
+     * for how much room the shell actually left. `auto-fit` measures the room
+     * itself, so the same rule covers a phone, a tablet with the rail out, and a
+     * desktop under `airy` density — no breakpoint can be wrong because there is
+     * none. */
+    for (const cls of ["set-pair-appearance", "set-pair-regional", "set-pair-workspace"]) {
+      const rule = new RegExp(`\\.${cls}\\{[^}]*grid-template-columns:repeat\\(auto-fit,minmax\\(min\\((\\d+)px,100%\\),1fr\\)\\)`);
+      const m = rule.exec(SET_CSS);
+      assert.ok(m, `.${cls} folds on available room`);
+      assert.ok(Number(m![1]) >= 200, `.${cls}'s minimum is a real control width, not a token`);
+    }
+  });
+
+  it("5. …and can only ever be two columns or one", () => {
+    /* A third track would be a lopsided layout nobody designed. The widest the
+     * grid can ever be is the 760px column less the card's 22px padding either
+     * side; three tracks at each stated minimum do not fit in it. */
+    const CARD_CONTENT_MAX = 760 - 22 * 2;
+    const mins: Record<string, number> = {};
+    for (const [, cls, min] of SET_CSS.matchAll(/\.(set-pair-[a-z]+)\{[^}]*minmax\(min\((\d+)px/g) as unknown as Iterable<[string, string, string]>) {
+      mins[cls] = Number(min);
+    }
+    for (const [cls, min] of Object.entries(mins)) {
+      const capMatch = new RegExp(`\\.${cls}\\{[^}]*max-width:(\\d+)px`).exec(SET_CSS);
+      const gapMatch = new RegExp(`\\.${cls}\\{[^}]*gap:(\\d+)px`).exec(SET_CSS);
+      const cap = capMatch ? Number(capMatch[1]) : CARD_CONTENT_MAX;
+      const gap = Number(gapMatch![1]);
+      assert.ok(3 * min + 2 * gap > Math.min(cap, CARD_CONTENT_MAX), `.${cls} can never draw a third column`);
+      assert.ok(2 * min + gap <= Math.min(cap, CARD_CONTENT_MAX), `.${cls} still draws two on a desktop`);
+    }
+  });
+
+  it("6. a segmented row wraps rather than overflowing", () => {
+    assert.ok(/\.set-seg-row\{[^}]*flex-wrap:wrap/.test(SET_CSS), "the row may wrap");
+    const seg = settingsSegmentStyle(false, "dense");
+    assert.equal(seg.flex, "1 1 auto", "a content basis, so the wrap can be triggered at all");
+    assert.equal(seg.minWidth, "max-content", "and no option is drawn narrower than its own label");
+    assert.equal(seg.whiteSpace, "nowrap", "a label is never broken mid-token");
+  });
+
+  it("7. both states of a segment stay the same height when a row wraps", () => {
+    assert.equal(settingsSegmentStyle(true).height, settingsSegmentStyle(false).height);
+    assert.equal(settingsSegmentStyle(true, "dense").height, settingsSegmentStyle(false, "dense").height);
+    assert.equal(settingsSegmentStyle(true, "dense").height, settingsSegmentStyle(true).height,
+      "and both variants agree, so a wrapped mixed row is level");
+  });
+
+  it("8. the accent grid is four across, and two when the card is too narrow", () => {
+    assert.ok(/\.set-accent-grid\{[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/.test(SET_CSS), "four by default");
+    const narrow = /@container set-page \(max-width:(\d+)px\)\{\s*\.set-accent-grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.exec(SET_CSS);
+    assert.ok(narrow, "two across when four labelled swatches no longer fit");
+    assert.ok(Number(narrow![1]) < 620, "and it folds well inside the shell's own narrow breakpoint");
+  });
+
+  it("8b. …measured against the card, not the viewport", () => {
+    /* TWO REASONS THIS IS A CONTAINER QUERY. `tests/finance-ui.test.ts` asserts
+     * that every `@media (max-width:Npx)` in the stylesheet uses a width the
+     * shell already changes shape at — a fourth breakpoint invented for one grid
+     * is a guard to respect, not a test to loosen. And the viewport is the wrong
+     * measure anyway: this card's width moves with the sidebar rail and the
+     * density token, so only the container knows when four labels stop fitting.
+     * `auto-fit` cannot express it either — any track minimum that permits four
+     * columns also permits three on the way down. */
+    assert.ok(/\[data-screen-label="Settings"\]\{container-type:inline-size;container-name:set-page\}/.test(SET_CSS),
+      "the Settings column is a query container");
+    const media = [...SET_CSS.matchAll(/@media \(max-width:(\d+)px\)/g)].map((m) => m[1]);
+    assert.deepEqual(media, [], "and Settings introduces no viewport breakpoint at all");
+  });
+
+  it("8c. the container declaration cannot reach a printed page", () => {
+    /* `container-type` implies layout containment, which interacts with the
+     * fragmentation that paginates print — the caution Reports already takes. */
+    const at = SET_CSS.indexOf("container-type:inline-size");
+    const before = SET_CSS.slice(Math.max(0, at - 120), at);
+    assert.ok(before.includes("@media screen"), "the container is declared for screen only");
+  });
+
+  it("9. no fixed width anywhere can force a horizontal scrollbar", () => {
+    /* `max-width` only ever makes a box narrower than its container; `width` and
+     * `min-width` in pixels are what push a card sideways. */
+    assert.ok(!/[^-]width: \d+,/.test(SCREEN.replace(/maxWidth: \d+/g, "")), "no inline pixel width");
+    assert.ok(!/min-width:\d+px/.test(SET_CSS), "and no pixel floor in the Settings rules");
+    assert.ok(!/width:\d+px/.test(SET_CSS.replace(/max-width:\d+px/g, "")), "nor a fixed width");
+  });
+
+  it("10. the swatch takes its width from its track, not from itself", () => {
+    const sw = accentSwatchStyle(false);
+    assert.equal(sw.width, "100%");
+    assert.equal(sw.minWidth, undefined, "no floor to overflow the collapsed grid");
+  });
+
+  it("11. the label under a swatch may take two lines rather than be cut", () => {
+    assert.ok(/\.set-accent-label\{/.test(SET_CSS), "the label is stylesheet-owned");
+    assert.ok(!/text-overflow:ellipsis|white-space:nowrap/.test(
+      /\.set-accent-label\{[^}]*\}/.exec(SET_CSS)?.[0] ?? ""), "and is never clipped");
+  });
+
+  it("12. Settings adds no rule outside its own section", () => {
+    /* A Settings selector loose in another module's block is how one screen's
+     * responsive fix silently becomes another's regression. */
+    const others = CSS.slice(0, CSS.indexOf("SETTINGS (Sprint 11)"));
+    assert.ok(!/\.set-/.test(others), "no Settings class is declared earlier in the file");
   });
 });
 

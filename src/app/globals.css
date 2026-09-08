@@ -1985,7 +1985,108 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    SETTINGS (Sprint 11)
    ========================================================================== */
 
+/* ---- The layout containers own their own columns --------------------------
+
+   WHY THESE ARE CLASSES AND NOT INLINE STYLES, when the rest of this design is
+   ported inline. An inline `grid-template-columns` beats a media query, so a
+   collapse rule written against an inline grid is a rule that never fires — this
+   repository shipped exactly that dead rule three times in Sprint 10 (gates 6.1,
+   6.2 and 7.2) before the pattern was recognised. Every property below is one a
+   narrower width has to be able to change, so none of them is stated on the
+   element. Nothing here needs `!important`, because there is no inline
+   declaration left to outrank.
+
+   AND THEY COLLAPSE ON ROOM, NOT ON VIEWPORT. `auto-fit` + `minmax` is the whole
+   mechanism for the three pair grids: a column that cannot have its stated
+   minimum is not drawn, so the grid folds to one column exactly when the space
+   runs out — whatever combination of viewport, sidebar rail and density produced
+   it. That is the Sprint 10 Gate 6.4 lesson (Reports stacks on its container,
+   not on `max-width:767px`) applied without needing a container query here,
+   because column count is the only thing that changes.
+
+   `min(Npx,100%)` rather than a bare `Npx`: below the minimum itself the track
+   would otherwise stay N wide and push the card sideways.
+
+   THE MINIMUMS ARE MEASURED, NOT CHOSEN. Each is the width the widest control in
+   that group actually needs:
+     230px  Surface — three dense segments, `Elevated` the longest word.
+     265px  Regional — three dense `DD/MM/YYYY` segments plus two 6px gaps.
+     300px  Workspace — an account line reading "Name · Giáo viên / Quản trị viên".
+   Each grid can therefore only ever be two columns or one: three would need more
+   room than the 760px column can give (716px inside the card), so no width
+   produces a lopsided third track. */
+.set-pair-appearance{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));
+  gap:18px;max-width:520px;
+}
+.set-pair-regional{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(265px,100%),1fr));
+  gap:18px;max-width:560px;
+}
+.set-pair-workspace{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));
+  gap:14px 22px;
+}
+
+/* ---- A segmented row ------------------------------------------------------
+
+   WRAPS, AND THAT IS THE OVERFLOW FLOOR. The grids above keep a group roomy at
+   almost every width, but a 320px phone still leaves about 248px inside the
+   card, and three `DD/MM/YYYY` segments need roughly 261px. Without wrapping,
+   those 13 pixels are a horizontal scrollbar on the whole page; with it the
+   third option takes a second line and stays readable.
+
+   `flex:1 1 auto` rather than `1 1 0`: a zero basis makes every item's
+   hypothetical size zero, so a wrapped row would never actually wrap and the
+   text would spill out of the buttons instead. The basis has to be the content
+   for the wrap to know when it is needed — which is also why the segment itself
+   carries `min-width:max-content`. */
+.set-seg-row{display:flex;flex-wrap:wrap;gap:8px}
+/* The regional grid's own tighter gap, straight from the comp. */
+.set-seg-row.tight{gap:6px}
+
 /* ---- The accent swatches --------------------------------------------------
+
+   FOUR ACROSS, OR TWO — NEVER THREE, which is the one thing `auto-fit` cannot
+   express here: for a track minimum m, a width that fits three columns always
+   also fits four only if m <= -10px, so any auto-fit swatch grid necessarily
+   passes through a 3+1 arrangement on its way down. Four labelled swatches are
+   drawn as long as they fit and go 2x2 when they do not, so the row is always
+   balanced.
+
+   THE THRESHOLD IS THE LABEL, NOT THE COLOUR. A 54px swatch is still an obvious
+   colour sample; `Ngọc lục bảo` under it is not. Four labels need about 70px
+   each plus three 10px gaps — 310px inside the card, so about 354px of the
+   column once the card's 22px padding either side is taken off.
+
+   AND IT IS A CONTAINER QUERY, NOT A VIEWPORT ONE. Two reasons, and the first is
+   a rule this repository already holds itself to: `tests/finance-ui.test.ts`
+   asserts that no `@media (max-width:Npx)` in this file uses a width the shell
+   does not already change shape at, so a fourth breakpoint invented for one grid
+   would have been a real regression rather than a test to loosen. The second is
+   that it would also have been WRONG — the viewport is a poor proxy for this
+   card's width, which moves with the sidebar rail and the density token. At a
+   620px viewport the column still has some 548px and four across is
+   comfortable; at 700px with the rail in the layout it has about 508px. The
+   container measures the thing that actually matters, exactly as Reports'
+   `rp-page` does since Sprint 10 Gate 6.4.
+
+   Scoped to `screen` for the same reason Reports scopes its own: `container-type`
+   implies layout containment, and layout containment interacts with the
+   fragmentation that paginates a printed page. Settings has no print path today
+   and this keeps it that way by construction. */
+@media screen{
+  [data-screen-label="Settings"]{container-type:inline-size;container-name:set-page}
+}
+.set-accent-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;max-width:420px}
+@container set-page (max-width:360px){
+  .set-accent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+/* A swatch label may take two lines rather than be cut in half — the Vietnamese
+   accent names are the longest strings on this card. */
+.set-accent-label{font-size:11.5px;color:var(--muted);margin-top:5px;line-height:1.3}
+
+/* ---- The swatch fills -----------------------------------------------------
 
    WHY THESE ARE LITERAL COLOURS, when nothing else in this file's component
    layer is. Every other painted surface in the app asks for `var(--accent)` and

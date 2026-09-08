@@ -73,10 +73,16 @@ function Segment({
   );
 }
 
-/** A row of segments. `gap` is the comp's own: 8 in the roomy groups, 6 in the
- * regional grid. */
-function SegmentRow({ children, gap = 8, maxWidth }: { children: React.ReactNode; gap?: number; maxWidth?: number }) {
-  return <div style={{ display: "flex", gap, maxWidth }}>{children}</div>;
+/** A row of segments.
+ *
+ * The row's layout — flex, wrapping and both of the comp's gaps (8 in the roomy
+ * groups, 6 in the regional grid, via `tight`) — lives in `.set-seg-row`, not
+ * here. A wrap rule stated inline is a wrap rule no narrower width could ever
+ * change. `maxWidth` stays a prop because it is a cap the comp gives each group
+ * individually, and a cap can only ever make a row narrower than its container,
+ * never wider — so nothing has to override it. */
+function SegmentRow({ children, tight = false, maxWidth }: { children: React.ReactNode; tight?: boolean; maxWidth?: number }) {
+  return <div className={tight ? "set-seg-row tight" : "set-seg-row"} style={{ maxWidth }}>{children}</div>;
 }
 
 export function SettingsScreen({ account }: { account: { name: string; email: string } }) {
@@ -110,7 +116,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
 
         <div style={{ marginBottom: 18 }}>
           <div style={groupLabel}>{t("Accent colour")}</div>
-          <div className="set-accent-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, maxWidth: 420 }}>
+          <div className="set-accent-grid">
             {ACCENTS.map((accent) => (
               <div key={accent} style={{ textAlign: "center" }}>
                 {/* The swatch carries its own accent as a data attribute so the
@@ -126,13 +132,13 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
                   onClick={() => setAppearance({ accent })}
                   style={accentSwatchStyle(appearance.accent === accent)}
                 />
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 5 }}>{t(ACCENT_LABEL[accent])}</div>
+                <div className="set-accent-label">{t(ACCENT_LABEL[accent])}</div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="set-pair" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, maxWidth: 520 }}>
+        <div className="set-pair-appearance">
           <div>
             <div style={groupLabel}>{t("Surface")}</div>
             <SegmentRow>
@@ -184,10 +190,10 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
         </div>
 
         <div style={{ ...groupLabel, marginBottom: 10 }}>{t("Regional preferences")}</div>
-        <div className="set-pair" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18, maxWidth: 560 }}>
+        <div className="set-pair-regional">
           <div>
             <div style={subLabel}>{t("Date format")}</div>
-            <SegmentRow gap={6}>
+            <SegmentRow tight>
               {DATE_FORMATS.map((df) => (
                 <Segment
                   key={df}
@@ -201,7 +207,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
           </div>
           <div>
             <div style={subLabel}>{t("Time format")}</div>
-            <SegmentRow gap={6}>
+            <SegmentRow tight>
               {TIME_FORMATS.map((tf) => (
                 <Segment
                   key={tf}
@@ -215,7 +221,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
           </div>
           <div>
             <div style={subLabel}>{t("Currency")}</div>
-            <SegmentRow gap={6}>
+            <SegmentRow tight>
               {CURRENCIES.map((cur) => (
                 <Segment
                   key={cur}
@@ -229,7 +235,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
           </div>
           <div>
             <div style={subLabel}>{t("Number format")}</div>
-            <SegmentRow gap={6}>
+            <SegmentRow tight>
               {NUMBER_FORMATS.map((nf) => (
                 <Segment
                   key={nf}
@@ -253,7 +259,7 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
         * and writes no User document. */}
       <section style={{ ...card, marginBottom: 0 }}>
         <h2 style={{ fontSize: 15, fontWeight: 600, margin: "0 0 14px" }}>{t("Workspace")}</h2>
-        <div className="set-pair" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 22px" }}>
+        <div className="set-pair-workspace">
           <Fact label={t("Account")} value={account.name ? `${account.name} · ${t("Teacher / Admin")}` : EM} />
           <Fact label={t("Email")} value={account.email || EM} />
           <Fact label={t("Currency")} value={regional.currency} />
