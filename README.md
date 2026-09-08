@@ -356,8 +356,7 @@ production data or a missing design, not an open defect:
   **Finance figures a report would show** are no longer waiting: Reports shipped
   in Sprint 10 (below). Finance's own **Excel export** remains deferred.
 
-**Sprint 10 — Reports: shipped and in Production; closure pending the final
-desktop check (Gates 7.1-7.2).** The contract was
+**Sprint 10 — Reports: shipped, Production verified, closed.** The contract was
 banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) before implementation, and the
 module was then built against it: a Reports read model, `GET /api/reports`, the
 Reports workspace with its live preview, Export PDF and Print.
@@ -386,23 +385,15 @@ The Reports layout responds to the width actually available to the screen rather
 than to the viewport, via a screen-only container query, so one viewport width
 stacks or does not according to how much room the shell currently leaves it.
 
-**One post-merge defect, fixed (Gate 7.1).** Production verification found the
-desktop gap between the options rail and the report preview visually too large.
-The cause was not the gap token — it was the shared `.report-sheet` rule
-centring the 760px document inside a preview track that takes all remaining
-width, so half the spare room sat between the rail and the document and grew
-with the monitor, reaching roughly nine times the intended spacing on a wide
-screen. The Reports sheet is now start-aligned in its track, which makes that
-distance the gap and nothing else at every desktop width.
-
-**And its follow-on (Gate 7.2).** Start-aligning the sheet fixed the spacing but
-left every spare pixel on one side, so an ultra-wide monitor showed the whole
-workspace pinned left with a void to its right. The preview track is now bounded
-at the document's own 760px, which makes the rail, the gap and the document add
-up to a real workspace width, and the grid centres that pair as one thing —
-spare room falls outside it rather than between its parts, and the screen's
-heading takes the same bound so it stays over the rail. Closure is recorded as
-final only once both fixes are confirmed on Production.
+**Two defects found by Production verification, both fixed.** The desktop
+distance between the options rail and the report preview had drifted — not the
+gap token, but the shared sheet rule centring a 760px document inside a preview
+track that took all remaining width, so the separation grew with the monitor.
+Start-aligning the sheet fixed that and exposed the second: with the spare room
+then all on one side, an ultra-wide screen left the whole workspace pinned left.
+The preview track is now bounded at the document's own width, so the rail, the
+gap and the document form one workspace that the grid centres as a group. Both
+were confirmed on Production at 1280, 1440 and 1600+.
 
 **Responsive shell fixes carried by this sprint.** Human verification of Reports
 surfaced four responsive sidebar defects that **pre-date Sprint 10 and were not

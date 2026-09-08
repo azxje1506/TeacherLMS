@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Reports (Sprint 10) — **shipped and in Production; closure pending the Gate 7.1-7.2 desktop re-check**
+## Unreleased — Reports (Sprint 10) — **shipped, Production verified, CLOSED**
 
 ### Contract — banked before any implementation
 - **Gate 1 discovery passed.** At that point `/reports` was a four-line module
@@ -187,12 +187,26 @@
   so PDF and Print are untouched; the 667px stacking threshold, the stacked rule,
   the rail width and the sidebar are all unchanged. Five executable lines.
 
+### Final Production verification
+- **Desktop workspace, human-verified on Production: 1280 PASS, 1440 PASS,
+  1600+ PASS.** That closes the two post-merge fixes above.
+- The final layout keeps the rail-to-report distance at `gap:var(--gap)` at every
+  desktop width, centres the **whole** Reports workspace on an ultra-wide screen
+  rather than centring the report sheet independently inside its track, preserves
+  the tablet and mobile behaviour unchanged (the 667px container threshold and the
+  stacked rule are byte-for-byte what Gate 6.4 shipped), and leaves **PDF and
+  Print untouched** — every alignment rule is screen-scoped, and the Reports
+  JavaScript bundles served by Production are byte-identical across both fixes.
+- Everything verified earlier still stands: Reports smoke, responsive Reports and
+  sidebar coordination, the mobile drawer, **Student Payment PDF**, **Student
+  Payment Print**, the stale Export/Print guard, the three production integrity
+  probes and the engineering baseline.
+
 ### Closure
 - **Excel** remains deferred to its own export gate and did **not** ship; CSV
   stays out of scope; `Performance Summary` did **not** ship and the Monthly
-  Progress Report stays Reviews-owned.
-- **Sprint 10 closure is final once the Gate 7.1 and 7.2 desktop fixes are
-  confirmed on Production.** Everything else in this entry is verified.
+  Progress Report stays Reviews-owned. Reports are generated and never stored.
+- **Sprint 10 — Reports is closed.**
 
 ## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
 - Billing contract, agreed before any code: the natural key is
