@@ -131,6 +131,32 @@ function mediaBlock(condition: string, scope: string = REPORTS_CSS): string {
   throw new Error(`unterminated @media ${condition}`);
 }
 
+/** EVERY `@media` block matching a condition, in file order.
+ *
+ * `mediaBlock` returns the FIRST match, which was unambiguous while the Reports
+ * section held one `@media screen`. Gate 7.1 added a second (the sheet's inline
+ * margin), so a test that means "the screen block establishing the container"
+ * has to say which one it means rather than trusting position. */
+function mediaBlocks(condition: string, scope: string = REPORTS_CSS): string[] {
+  const head = `@media ${condition}{`;
+  const out: string[] = [];
+  for (let from = 0; ; ) {
+    const start = scope.indexOf(head, from);
+    if (start === -1) break;
+    let depth = 0;
+    for (let i = start + head.length - 1; i < scope.length; i++) {
+      if (scope[i] === "{") depth++;
+      else if (scope[i] === "}") {
+        depth--;
+        if (depth === 0) { out.push(scope.slice(start + head.length, i)); from = i; break; }
+      }
+    }
+    if (from < start) throw new Error(`unterminated @media ${condition}`);
+  }
+  assert.notEqual(out.length, 0, `no @media ${condition} block in this scope`);
+  return out;
+}
+
 /** One CSS rule's declarations, by selector. */
 function rule(selector: string, scope: string = CSS): string {
   const i = scope.indexOf(`\n${selector}{`);
@@ -953,8 +979,10 @@ describe("Reports · the layout answers to its own width", () => {
     /* `container-type` implies layout containment, which interacts with the
      * fragmentation that paginates a printed report. Print is verified; scoping
      * the declaration to `screen` means it cannot reach the printed document. */
-    const screenBlock = mediaBlock("screen", CSS);
-    assert.ok(screenBlock.includes("container-type:inline-size"),
+    /* NOT `the first screen block` — Gate 7.1 added a second one earlier in the
+     * section. What matters is that the declaration lives inside SOME screen
+     * block, which is what keeps it away from print. */
+    assert.ok(mediaBlocks("screen", CSS).some((b) => b.includes("container-type:inline-size")),
       "the container is established inside @media screen");
     assert.ok(!/container-type/.test(mediaBlock("print", CSS)),
       "and never inside @media print");
@@ -990,5 +1018,87 @@ describe("Reports · the layout answers to its own width", () => {
     assert.ok(rule(".rp-table-wrap").includes("max-width:100%"));
     assert.ok(!/\.rp-grid\{[^}]*overflow-x/.test(CSS));
     assert.ok(!/\.rp-preview\{[^}]*overflow-x/.test(CSS));
+  });
+});
+
+/* ============================================ Gate 7.1: desktop spacing ==
+ * The rail and the document are one workspace. What separated them on a wide
+ * monitor was not the gap — it was `.report-sheet`'s `margin:0 auto` centring a
+ * 760px document inside a track that takes ALL the remaining width, so half the
+ * spare room sat between the rail and the sheet and grew with the viewport:
+ *
+ *   viewport   preview track   gutter   rail -> sheet
+ *   1100        656             0        16px   (the gap, correct)
+ *   1280        836            38        54px
+ *   1440        996           118       134px
+ *   1600+      1020           130       146px   (plateau, at .app-main's cap)
+ */
+describe("Reports · the document starts at the rail on desktop", () => {
+  it("102. the sheet is start-aligned, not centred, in its track", () => {
+    const screenRules = mediaBlocks("screen").join("\n");
+    assert.match(screenRules, /\.rp-sheet\{[^}]*margin-inline:0 auto/,
+      "the sheet takes the inline start of its column, leaving the spare room outside");
+  });
+
+  it("103. it overrides only the inline margin of the shared rule", () => {
+    /* `.report-sheet` is Reviews' sheet too, and there `margin:0 auto` is right:
+     * it sits alone in its pane. So the base rule is not touched, and the
+     * override names `margin-inline` alone — the shared `margin:0` keeps owning
+     * the vertical, which the print scope depends on. */
+    assert.ok(rule(".report-sheet").includes("margin:0 auto"),
+      "the shared rule still centres the Reviews sheet");
+    const sheet = mediaBlocks("screen").join("\n").match(/\.rp-sheet\{([^}]*)\}/)?.[1];
+    assert.ok(sheet, "there is a screen-scoped .rp-sheet override to inspect");
+    assert.ok(!/margin:/.test(sheet), "no shorthand — it would reset the vertical margin too");
+    assert.ok(!/margin-top|margin-bottom|margin-block/.test(sheet), "and nothing vertical");
+  });
+
+  it("104. the gap token is untouched — it was never the problem", () => {
+    /* 16px at every desktop width was always correct; the gutter was the defect.
+     * A hardcoded number here would also break the density setting, which moves
+     * `--gap` to 26px (airy) or 11px (tight). */
+    const grid = rule(".rp-grid");
+    assert.ok(grid.includes("gap:var(--gap)"), "still the token, still not a literal");
+    assert.ok(grid.includes("grid-template-columns:300px minmax(0,1fr)"), "the rail width is unchanged");
+  });
+
+  it("105. the 760px cap and the column's own bound survive", () => {
+    /* Start-aligning must not become "let the document grow". A sheet that
+     * stretched to a 1020px track would change every line length the PDF and
+     * the printed page were verified at. */
+    assert.ok(rule(".report-sheet").includes("max-width:760px"), "the document stays bounded");
+    assert.ok(rule(".rp-sheet").includes("width:100%"), "and still shrinks with a narrow column");
+    assert.ok(rule(".rp-preview").includes("min-width:0"), "the track can still be squeezed");
+  });
+
+  it("106. print cannot see any of it", () => {
+    /* The same argument Gate 6.4 made for the container declaration: the printed
+     * document is human-verified, so a layout change is scoped to screen and
+     * cannot reach it. Print additionally resets the margin itself. */
+    for (const block of mediaBlocks("print", CSS)) {
+      assert.ok(!/margin-inline/.test(block), "no inline-margin rule inside @media print");
+    }
+    assert.ok(mediaBlock("print", CSS).includes("margin:0 !important"),
+      "and print still resets the sheet's margin outright");
+  });
+
+  it("107. tablet and mobile are untouched by construction", () => {
+    /* The stacked layout cannot move: it exists only at a container width of at
+     * most 667px, which is already below the 760px cap, so the sheet is
+     * full-width there and there is no free space for `auto` or `0` to
+     * distribute differently. The proof required here is that the fix added
+     * nothing to the stacking query and did not move its threshold. */
+    const stack = containerBlock("rp-page (max-width:667px)");
+    assert.ok(!/margin/.test(stack), "the stacking rule gained no margin declaration");
+    assert.equal(stack.replace(/\s+/g, ""),
+      ".rp-grid{grid-template-columns:minmax(0,1fr)}.rp-rail{position:static;top:auto}",
+      "the stacked layout is byte-for-byte what Gate 6.4 shipped");
+    assert.equal((CSS.match(/max-width:667px/g) ?? []).length, 1, "one threshold, still 667");
+  });
+
+  it("108. the sidebar is still not consulted", () => {
+    // Gate 6.4's invariant, re-asserted because this gate also touched layout.
+    assert.ok(!/data-rail-expanded/.test(REPORTS_CSS));
+    assert.equal((CSS.match(/container-name:rp-page/g) ?? []).length, 1);
   });
 });

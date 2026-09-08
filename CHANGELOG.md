@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Reports (Sprint 10) — **shipped, Production verified, CLOSED**
+## Unreleased — Reports (Sprint 10) — **shipped and in Production; closure pending the Gate 7.1 desktop re-check**
 
 ### Contract — banked before any implementation
 - **Gate 1 discovery passed.** At that point `/reports` was a four-line module
@@ -143,10 +143,32 @@
   does say `null`, and those rows carry it. No misleading denominator copy is
   attached.
 
+### Post-merge fix — Gate 7.1
+- **Desktop rail-to-preview spacing was visually too large on Production.** Found
+  after the merge, during Production verification.
+- **The gap token was never the cause.** `.rp-grid` uses `gap:var(--gap)` — 16px —
+  and still does. The defect was the shared `.report-sheet` rule's `margin:0 auto`
+  centring a 760px document inside a preview track that takes ALL the remaining
+  width: the gutter is half the spare room, so it grew with the viewport —
+  16px of separation at 1100, 54px at 1280, 134px at 1440, and a 146px plateau
+  once `.app-main`'s own 1400px cap stopped the track growing.
+- **Fix: the Reports sheet is start-aligned in its track**
+  (`.rp-sheet{margin-inline:0 auto}`), so the rail-to-document distance is the
+  gap and nothing else at every desktop width, and the spare room falls outside
+  the document where a page normally leaves it. Three executable lines.
+- **Nothing else moved.** `margin-inline` only, so the shared rule keeps owning
+  the vertical margin and the **Reviews** composer sheet stays centred. Scoped to
+  `@media screen`, so the verified **PDF and Print** output cannot be reached.
+  The 667px container threshold, the stacking rule, the 300px rail, the 760px cap
+  and the sidebar behaviour are all untouched — and the fix is inert when stacked,
+  because a track of at most 667px is already below the 760px cap.
+
 ### Closure
-- **Sprint 10 — Reports is closed.** Excel remains deferred to its own export
-  gate and did **not** ship; CSV stays out of scope; `Performance Summary` did
-  **not** ship and the Monthly Progress Report stays Reviews-owned.
+- **Excel** remains deferred to its own export gate and did **not** ship; CSV
+  stays out of scope; `Performance Summary` did **not** ship and the Monthly
+  Progress Report stays Reviews-owned.
+- **Sprint 10 closure is final once the Gate 7.1 desktop spacing fix is confirmed
+  on Production.** Everything else in this entry is verified.
 
 ## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
 - Billing contract, agreed before any code: the natural key is

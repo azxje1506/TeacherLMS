@@ -1716,11 +1716,44 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 
 /* ---- The document ------------------------------------------------------- */
 
-/* The sheet is centred in its column and never wider than the column, so a
-   narrow screen shrinks the document rather than the page. `.report-sheet`
-   already supplies the palette, the border, the radius, the padding and the
-   760px cap. */
+/* The sheet is never wider than its column, so a narrow screen shrinks the
+   document rather than the page. `.report-sheet` already supplies the palette,
+   the border, the radius, the padding and the 760px cap.
+
+   ---- IT STARTS AT THE RAIL, IT IS NOT CENTRED (Gate 7.1) ------------------
+   `.report-sheet` is shared with the Reviews composer and carries `margin:0
+   auto`, which is right there — that sheet sits alone in its pane. Here it is
+   the second column of a two-column workspace, and centring a 760px document
+   inside a track that takes ALL the remaining width put a growing empty gutter
+   between the rail and the document it belongs to:
+
+     viewport   content   preview track   gutter   rail -> sheet
+     1100        972       656            0        16px   (the gap, correct)
+     1280       1152       836           38        54px
+     1440       1312       996          118       134px
+     1600+      1336      1020          130       146px   (plateau)
+
+   The gap token was never the problem — it is 16px and stays 16px. The gutter
+   is half of whatever the track has spare, so the rail and the document drifted
+   apart as the monitor got wider until `.app-main`'s own 1400px cap stopped it
+   at roughly nine times the intended spacing. Starting the sheet at the inline
+   start of its track makes the rail-to-document distance the gap and nothing
+   else, at every desktop width, and moves the spare room to the outer edge
+   where a document normally leaves it.
+
+   `margin-inline` ONLY, so the `margin:0` block of the shared rule still owns
+   the vertical. SCREEN ONLY, because the print scope resets this element's
+   margin with `!important` and the printed document is verified — the same
+   reason Gate 6.4 scoped its container declaration to screen.
+
+   IT IS INERT WHEN STACKED, so tablet and mobile cannot move: stacking happens
+   only when the container is at most 667px, and a track that narrow is already
+   below the 760px cap, so the sheet is full-width there and both `auto` and
+   `0` resolve to no free space to distribute. */
 .rp-sheet{width:100%}
+@media screen{
+  .rp-sheet{margin-inline:0 auto}
+}
 
 /* The summary tile row — the comp's own figures. */
 .rp-stats{

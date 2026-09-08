@@ -356,7 +356,8 @@ production data or a missing design, not an open defect:
   **Finance figures a report would show** are no longer waiting: Reports shipped
   in Sprint 10 (below). Finance's own **Excel export** remains deferred.
 
-**Sprint 10 — Reports: shipped, production verified, closed.** The contract was
+**Sprint 10 — Reports: shipped and in Production; closure pending one final
+desktop check (Gate 7.1).** The contract was
 banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) before implementation, and the
 module was then built against it: a Reports read model, `GET /api/reports`, the
 Reports workspace with its live preview, Export PDF and Print.
@@ -384,6 +385,16 @@ still resolving, so neither can emit a document belonging to the previous one.
 The Reports layout responds to the width actually available to the screen rather
 than to the viewport, via a screen-only container query, so one viewport width
 stacks or does not according to how much room the shell currently leaves it.
+
+**One post-merge defect, fixed (Gate 7.1).** Production verification found the
+desktop gap between the options rail and the report preview visually too large.
+The cause was not the gap token — it was the shared `.report-sheet` rule
+centring the 760px document inside a preview track that takes all remaining
+width, so half the spare room sat between the rail and the document and grew
+with the monitor, reaching roughly nine times the intended spacing on a wide
+screen. The Reports sheet is now start-aligned in its track, which makes that
+distance the gap and nothing else at every desktop width. Closure is recorded as
+final only once that fix is confirmed on Production.
 
 **Responsive shell fixes carried by this sprint.** Human verification of Reports
 surfaced four responsive sidebar defects that **pre-date Sprint 10 and were not
