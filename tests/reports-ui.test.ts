@@ -173,10 +173,22 @@ describe("Reports · the page replaced the placeholder", () => {
     assert.ok(PAGE.includes('data-screen-label="Reports"'));
   });
 
-  it("2. …and the placeholder component still serves the module that needs it", () => {
+  /* REVERSED BY SPRINT 11, DELIBERATELY. This assertion used to read
+   * `settings.includes("ModulePlaceholder")` — at the time Reports shipped,
+   * Settings was the one module still on the placeholder, so "Reports replaced
+   * its own placeholder and left the other one alone" was a real statement about
+   * this change.
+   *
+   * Sprint 11 replaced that page, which is authorised in PROJECT_RULES' Settings
+   * section and was banked in the Gate 2 contract before any code was written.
+   * The assertion is inverted here rather than deleted, because what this test
+   * has always been checking is that Reports did not go and edit a screen that
+   * was not Reports — and that is still worth saying. */
+  it("2. …and Settings has since replaced its own (Sprint 11)", () => {
     const settings = read("src", "app", "(app)", "settings", "page.tsx");
-    assert.ok(settings.includes("ModulePlaceholder"), "Settings is untouched");
-    assert.ok(existsSync(path.join(process.cwd(), "src", "components", "module-placeholder.tsx")));
+    assert.ok(!settings.includes("ModulePlaceholder"), "Settings is no longer a placeholder");
+    assert.ok(existsSync(path.join(process.cwd(), "src", "components", "module-placeholder.tsx")),
+      "the component itself stays — removing it is not Sprint 11's to do");
   });
 
   it("3. carries the design's own title and subtitle", () => {

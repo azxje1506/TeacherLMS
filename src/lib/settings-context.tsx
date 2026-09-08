@@ -4,16 +4,23 @@
  * surface / density), interface language and regional formats. Persists to the
  * same localStorage keys the imported design used (etlms.*) and mirrors the
  * appearance onto <html data-theme|data-accent|data-surface|data-spacing> so the
- * ported CSS variables resolve exactly as in the design comp. */
+ * ported CSS variables resolve exactly as in the design comp.
+ *
+ * WHAT COMES OUT OF THE BROWSER IS VALIDATED, NOT TRUSTED (Sprint 11). Every
+ * stored value is checked against the authorised list in lib/constants; an
+ * unrecognised one is treated exactly as a missing one and the default is used.
+ * See `pick` below for why a cast was not enough. */
 
 import React, { createContext, useContext, useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { storageKeys } from "./constants";
+import {
+  ACCENTS, CURRENCIES, DATE_FORMATS, DENSITIES, NUMBER_FORMATS, SURFACES, THEMES, TIME_FORMATS,
+  storageKeys,
+} from "./constants";
 import { createFormat, DEFAULT_REGIONAL } from "./format";
-import { translate } from "./i18n";
+import { DEFAULT_LANG, LANGS, translate } from "./i18n";
 import type { Appearance, Lang, RegionalConfig } from "./types";
 
 const DEFAULT_APPEARANCE: Appearance = { theme: "light", accent: "crimson", surface: "soft", spacing: "cozy" };
-const DEFAULT_LANG: Lang = "vi";
 
 interface SettingsValue {
   appearance: Appearance;
@@ -28,13 +35,40 @@ interface SettingsValue {
 
 const SettingsContext = createContext<SettingsValue | null>(null);
 
-function lsGet(key: string, fallback: string): string {
-  if (typeof window === "undefined") return fallback;
-  try { return window.localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+/** The raw stored string, or null — absent key, no window, or storage that
+ * throws (private mode, blocked site data) are all "nothing stored". */
+function lsRead(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem(key); } catch { return null; }
 }
 function lsSet(key: string, val: string) {
   try { window.localStorage.setItem(key, val); } catch { /* ignore */ }
 }
+
+/** One persisted preference, read and VALIDATED against the values it is
+ * allowed to hold.
+ *
+ * WHY THIS IS NOT A CAST. Every one of these nine reads used to be
+ * `localStorage.getItem(k) ?? default` followed by `as Appearance["accent"]`,
+ * which is an assertion that the browser told the truth. It does not have to:
+ * the key survives a release that renames a value, it survives being edited by
+ * hand in devtools, and it survives being written by an older build. A value
+ * that is not in the palette reaches `<html data-accent="…">`, matches no token
+ * block, and the screen quietly keeps whichever accent it had — the failure has
+ * no error and no floor.
+ *
+ * So an unrecognised value is treated exactly as a missing one: the default.
+ * A value that IS recognised is returned unchanged, so nothing about a valid
+ * stored preference behaves differently than it did before. */
+function pick<T extends string>(raw: string | null, allowed: readonly T[], fallback: T): T {
+  return raw !== null && (allowed as readonly string[]).includes(raw) ? (raw as T) : fallback;
+}
+
+/** The languages the dictionary actually ships, as a plain list. `LANGS` is
+ * `[code, endonym]` pairs because the UI needs the label; validation needs only
+ * the code, and reading it from the same export is what stops a third list of
+ * languages existing. */
+const LANG_CODES: readonly Lang[] = LANGS.map(([code]) => code);
 
 /* These preferences are owned by the browser, not by React, so they are read
  * through useSyncExternalStore rather than assigned inside an effect.
@@ -47,7 +81,7 @@ function lsSet(key: string, val: string) {
  * reaches the markup (the header's theme icon is exactly that case). The inline
  * ThemeScript still applies the stored theme's CSS variables before first paint,
  * so this costs no flash of the wrong colours. */
-interface Settings {
+export interface Settings {
   appearance: Appearance;
   lang: Lang;
   regional: RegionalConfig;
@@ -64,22 +98,46 @@ const listeners = new Set<() => void>();
  * the same object must come back until a setter replaces it. */
 let cached: Settings | null = null;
 
-function readStored(): Settings {
+/** Resolve one complete settings snapshot from a raw key reader.
+ *
+ * PURE, AND EXPORTED FOR THAT REASON. It takes the reader rather than reaching
+ * for `localStorage` itself, so the validation above can be exercised with a
+ * plain object in a Node test — no browser, no DOM, no React render, no storage
+ * shim. `readStored` below is the one caller that supplies the real browser. */
+export function resolveSettings(read: (key: string) => string | null): Settings {
   return {
     appearance: {
-      theme: lsGet(storageKeys.theme, DEFAULT_APPEARANCE.theme) as Appearance["theme"],
-      accent: lsGet(storageKeys.accent, DEFAULT_APPEARANCE.accent) as Appearance["accent"],
-      surface: lsGet(storageKeys.surface, DEFAULT_APPEARANCE.surface) as Appearance["surface"],
-      spacing: lsGet(storageKeys.spacing, DEFAULT_APPEARANCE.spacing) as Appearance["spacing"],
+      theme: pick(read(storageKeys.theme), THEMES, DEFAULT_APPEARANCE.theme),
+      accent: pick(read(storageKeys.accent), ACCENTS, DEFAULT_APPEARANCE.accent),
+      surface: pick(read(storageKeys.surface), SURFACES, DEFAULT_APPEARANCE.surface),
+      spacing: pick(read(storageKeys.spacing), DENSITIES, DEFAULT_APPEARANCE.spacing),
     },
-    lang: lsGet(storageKeys.lang, DEFAULT_LANG) as Lang,
+    lang: pick(read(storageKeys.lang), LANG_CODES, DEFAULT_LANG),
     regional: {
-      dateFormat: lsGet(storageKeys.dateFormat, DEFAULT_REGIONAL.dateFormat) as RegionalConfig["dateFormat"],
-      timeFormat: lsGet(storageKeys.timeFormat, DEFAULT_REGIONAL.timeFormat) as RegionalConfig["timeFormat"],
-      currency: lsGet(storageKeys.currency, DEFAULT_REGIONAL.currency) as RegionalConfig["currency"],
-      numberFormat: lsGet(storageKeys.numberFormat, DEFAULT_REGIONAL.numberFormat) as RegionalConfig["numberFormat"],
+      dateFormat: pick(read(storageKeys.dateFormat), DATE_FORMATS, DEFAULT_REGIONAL.dateFormat),
+      timeFormat: pick(read(storageKeys.timeFormat), TIME_FORMATS, DEFAULT_REGIONAL.timeFormat),
+      currency: pick(read(storageKeys.currency), CURRENCIES, DEFAULT_REGIONAL.currency),
+      numberFormat: pick(read(storageKeys.numberFormat), NUMBER_FORMATS, DEFAULT_REGIONAL.numberFormat),
     },
   };
+}
+
+/** The defaults a snapshot falls back to, published so the pre-paint
+ * `ThemeScript` can be proven to agree with them rather than trusted to. */
+export const SETTINGS_DEFAULTS: Settings = SERVER_SETTINGS;
+
+/** The snapshot as the real browser reports it.
+ *
+ * Exported so the BROWSER path — not just the pure resolver above — can be
+ * exercised: `lsRead`'s own try/catch is the thing that turns blocked site data
+ * into the defaults, and a test that only ever calls `resolveSettings` with a
+ * hand-made reader would never touch it. */
+export function readStoredSettings(): Settings {
+  return resolveSettings(lsRead);
+}
+
+function readStored(): Settings {
+  return readStoredSettings();
 }
 
 function subscribe(onStoreChange: () => void): () => void {

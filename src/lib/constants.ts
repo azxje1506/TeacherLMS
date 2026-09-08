@@ -1,6 +1,8 @@
 /* English Tutor LMS — shared constants.
  * Ported from design-reference/lib/etlms-constants.js. */
 
+import type { Appearance, RegionalConfig } from "./types";
+
 export const AVATAR_PALETTE = ["#d14242", "#0284c7", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777", "#ca8a04", "#4f46e5", "#059669"];
 export const CLASS_PALETTE = ["#d14242", "#0284c7", "#16a34a", "#d97706", "#7c3aed", "#0891b2", "#db2777"];
 
@@ -56,3 +58,37 @@ export const storageKeys = {
   lang: "etlms.lang", dateFormat: "etlms.dateFormat", timeFormat: "etlms.timeFormat",
   currency: "etlms.currency", numberFormat: "etlms.numberFormat",
 } as const;
+
+/* ---------------------------------------------- the authorised preferences */
+
+/** Every value each persisted preference may hold, in the order Settings draws
+ * them.
+ *
+ * TWO JOBS, ONE LIST, and that is the point. The Settings page renders these to
+ * build its controls, and `settings-context` validates what came out of the
+ * browser against the same arrays — so a control can never offer a value the
+ * store would reject, and the store can never accept one no control can show.
+ * Before Sprint 11 there was no list at all: the reader cast whatever string it
+ * found, so a stale or hand-edited key reached `<html data-accent>` as an accent
+ * with no matching token block and the screen lost its palette.
+ *
+ * `satisfies` rather than a bare annotation: the arrays keep their literal
+ * tuple types (so `(typeof ACCENTS)[number]` is the union, not `string`) while
+ * still failing to compile if a value here is not a legal member. The other
+ * direction — a union member missing from its array — is covered by the total
+ * label Records in `components/settings/settings-ui.ts` and asserted both ways
+ * in tests/settings.test.ts.
+ *
+ * ORDER IS THE DESIGN'S. These are display order, not validation order, for the
+ * same reason `ATTENDANCE_DISPLAY_ORDER` is kept apart from the schema's status
+ * list: bending one to the other makes a change to either look like a change to
+ * both. */
+export const THEMES = ["light", "dark"] as const satisfies readonly Appearance["theme"][];
+export const ACCENTS = ["crimson", "indigo", "emerald", "slate"] as const satisfies readonly Appearance["accent"][];
+export const SURFACES = ["soft", "flat", "elevated"] as const satisfies readonly Appearance["surface"][];
+export const DENSITIES = ["cozy", "airy", "tight"] as const satisfies readonly Appearance["spacing"][];
+
+export const DATE_FORMATS = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY/MM/DD"] as const satisfies readonly RegionalConfig["dateFormat"][];
+export const TIME_FORMATS = ["12h", "24h"] as const satisfies readonly RegionalConfig["timeFormat"][];
+export const CURRENCIES = ["VND", "USD"] as const satisfies readonly RegionalConfig["currency"][];
+export const NUMBER_FORMATS = ["comma", "dot"] as const satisfies readonly RegionalConfig["numberFormat"][];

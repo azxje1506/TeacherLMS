@@ -1980,6 +1980,40 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 /* A genuinely disabled control, not a decorative one: it is only ever disabled
    when there is no derived report to act on, or an export is already running. */
 .rp-actions button:disabled{opacity:.55;cursor:not-allowed}
+
+/* ==========================================================================
+   SETTINGS (Sprint 11)
+   ========================================================================== */
+
+/* ---- The accent swatches --------------------------------------------------
+
+   WHY THESE ARE LITERAL COLOURS, when nothing else in this file's component
+   layer is. Every other painted surface in the app asks for `var(--accent)` and
+   gets whichever palette is currently bound. A swatch has the opposite job: it
+   has to show the colour you would get IF you chose it, so three of the four are
+   by definition not the bound one, and there is no token that means "some other
+   palette's accent". Crimson is worse still — it is the unnamed `:root` default,
+   so there is not even a selector to borrow it from.
+
+   THE VALUES ARE THE PALETTE'S OWN, copied from the `--accent` of each block at
+   the top of this file (and of each `[data-theme="dark"]` pairing below it), and
+   tests/settings.test.ts parses BOTH ends of that copy and fails if they ever
+   stop agreeing. A duplicated colour that is checked is a different thing from
+   one that is trusted.
+
+   `data-sw-accent`, NOT `data-accent`. `[data-accent="indigo"]` is an attribute
+   selector, so it matches any element carrying it — putting the real attribute
+   on a swatch would re-bind the whole palette on that one button as a side
+   effect of painting it. A separate attribute name says only what it means. */
+.set-sw[data-sw-accent="crimson"]{background:#d14242}
+.set-sw[data-sw-accent="indigo"]{background:#4f46e5}
+.set-sw[data-sw-accent="emerald"]{background:#0f766e}
+.set-sw[data-sw-accent="slate"]{background:#475569}
+[data-theme="dark"] .set-sw[data-sw-accent="crimson"]{background:#e06a6a}
+[data-theme="dark"] .set-sw[data-sw-accent="indigo"]{background:#818cf8}
+[data-theme="dark"] .set-sw[data-sw-accent="emerald"]{background:#34d399}
+[data-theme="dark"] .set-sw[data-sw-accent="slate"]{background:#94a3b8}
+
 /* Tailwind theme bridge — expose the design tokens as Tailwind colors/fonts so
    shadcn/ui primitives and utility classes resolve to the SAME palette. */
 @theme inline {
