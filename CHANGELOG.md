@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Reports (Sprint 10) — **shipped and in Production; closure pending the Gate 7.1 desktop re-check**
+## Unreleased — Reports (Sprint 10) — **shipped and in Production; closure pending the Gate 7.1-7.2 desktop re-check**
 
 ### Contract — banked before any implementation
 - **Gate 1 discovery passed.** At that point `/reports` was a four-line module
@@ -163,12 +163,36 @@
   and the sidebar behaviour are all untouched — and the fix is inert when stacked,
   because a track of at most 667px is already below the 760px cap.
 
+### Post-merge fix — Gate 7.2
+- **The workspace was left-biased on an ultra-wide screen.** Gate 7.1 was right to
+  stop the sheet centring itself, but it left every spare pixel on ONE side. With
+  the 248px desktop sidebar and `.app-main`'s 1400px cap the spare room ran 0px at
+  1280, 52px at 1440, 212px at 1600 and a 260px plateau past 1720 — all of it to
+  the right of the document. 1280 and 1440 were approved; 1600+ was not.
+- **Fix: bound the preview track and let the grid place itself.** The track stops
+  at the 760px the document was never going to exceed, so the two tracks add up to
+  a real workspace — 300 + gap + 760 — and `justify-content:center` has something
+  to centre. Free space falls OUTSIDE the pair rather than between them.
+- **No threshold, and no breakpoint.** `justify-content` does nothing while the
+  tracks fill their container and acts only once there is genuine spare room,
+  which is exactly the condition meant. 1280 and 1366 are therefore untouched by
+  construction rather than by a number somebody picked, and the density setting
+  moves the whole thing for free.
+- **The heading travels with it.** `.rp-page-head` takes the same bound and the
+  same auto margins, because a title flush left above an indented workspace would
+  be a new defect rather than a fix. The bound is stated once as
+  `calc(300px + var(--gap) + 760px)`.
+- **Gate 7.1 is kept, not reverted**: the sheet is still start-aligned, inert now
+  that the track is bounded but still the guard if the cap ever moves. Screen-only,
+  so PDF and Print are untouched; the 667px stacking threshold, the stacked rule,
+  the rail width and the sidebar are all unchanged. Five executable lines.
+
 ### Closure
 - **Excel** remains deferred to its own export gate and did **not** ship; CSV
   stays out of scope; `Performance Summary` did **not** ship and the Monthly
   Progress Report stays Reviews-owned.
-- **Sprint 10 closure is final once the Gate 7.1 desktop spacing fix is confirmed
-  on Production.** Everything else in this entry is verified.
+- **Sprint 10 closure is final once the Gate 7.1 and 7.2 desktop fixes are
+  confirmed on Production.** Everything else in this entry is verified.
 
 ## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
 - Billing contract, agreed before any code: the natural key is

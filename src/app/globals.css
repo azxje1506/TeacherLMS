@@ -1755,6 +1755,50 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   .rp-sheet{margin-inline:0 auto}
 }
 
+/* ---- The workspace is centred as ONE THING on an ultra-wide screen (7.1/7.2)
+   Gate 7.1 stopped the sheet centring itself inside a track that took all the
+   remaining width, which is what had pushed the document away from the rail. It
+   was right, and it is kept — but it left every spare pixel on ONE side, so a
+   wide monitor showed the whole workspace pinned left with a growing void to its
+   right. The desktop sidebar is 248px and `.app-main` caps at 1400px, so:
+
+     viewport   content   spare after the workspace
+     1280        968       0     (the track is under 760 — nothing to place)
+     1366       1054       0
+     1440       1128       52    (approved as-is; becomes 26 a side)
+     1600       1288      212    (the defect)
+     1720+      1336      260    (plateau, at .app-main's cap)
+
+   THE FIX IS TO BOUND THE TRACK AND LET THE GRID PLACE ITSELF. The preview track
+   stops at the 760px the document was never going to exceed, which makes the two
+   tracks add up to a real workspace width instead of "everything available", and
+   `justify-content` then has something to centre. Free space ends up OUTSIDE the
+   pair rather than between them, which is the whole point:
+
+     free | rail | gap | document | free        not   rail | gap | document | free
+
+   IT NEEDS NO THRESHOLD, and that is why there is no breakpoint here.
+   `justify-content` does nothing at all while the tracks fill their container —
+   it only acts once there IS spare room, which is exactly the condition we mean.
+   1280 and 1366 are therefore untouched by construction rather than by a number
+   somebody chose, and the density setting moves the whole thing for free.
+
+   THE HEADING TRAVELS WITH IT. `.rp-page-head` is the screen's other child, and a
+   title sitting flush left above a workspace indented 106px is a new defect, not
+   a fix. It takes the same bound and the same auto margins, so the title stays
+   over the rail at every width. The bound is stated ONCE, from the three numbers
+   that define it, so nothing can drift apart later.
+
+   ORDER MATTERS HERE. This block and the stacking query below both set
+   `grid-template-columns` on `.rp-grid` at the same specificity, so the LATER
+   one wins — the stacking query must stay after this. A test asserts that,
+   because moving it would silently un-stack every phone. */
+@media screen{
+  [data-screen-label="Reports"]{--rp-workspace:calc(300px + var(--gap) + 760px)}
+  .rp-grid{grid-template-columns:300px minmax(0,760px);justify-content:center}
+  .rp-page-head{max-width:var(--rp-workspace);margin-inline:auto}
+}
+
 /* The summary tile row — the comp's own figures. */
 .rp-stats{
   display:flex;

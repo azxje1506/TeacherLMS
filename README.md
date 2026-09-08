@@ -356,8 +356,8 @@ production data or a missing design, not an open defect:
   **Finance figures a report would show** are no longer waiting: Reports shipped
   in Sprint 10 (below). Finance's own **Excel export** remains deferred.
 
-**Sprint 10 — Reports: shipped and in Production; closure pending one final
-desktop check (Gate 7.1).** The contract was
+**Sprint 10 — Reports: shipped and in Production; closure pending the final
+desktop check (Gates 7.1-7.2).** The contract was
 banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) before implementation, and the
 module was then built against it: a Reports read model, `GET /api/reports`, the
 Reports workspace with its live preview, Export PDF and Print.
@@ -393,8 +393,16 @@ centring the 760px document inside a preview track that takes all remaining
 width, so half the spare room sat between the rail and the document and grew
 with the monitor, reaching roughly nine times the intended spacing on a wide
 screen. The Reports sheet is now start-aligned in its track, which makes that
-distance the gap and nothing else at every desktop width. Closure is recorded as
-final only once that fix is confirmed on Production.
+distance the gap and nothing else at every desktop width.
+
+**And its follow-on (Gate 7.2).** Start-aligning the sheet fixed the spacing but
+left every spare pixel on one side, so an ultra-wide monitor showed the whole
+workspace pinned left with a void to its right. The preview track is now bounded
+at the document's own 760px, which makes the rail, the gap and the document add
+up to a real workspace width, and the grid centres that pair as one thing —
+spare room falls outside it rather than between its parts, and the screen's
+heading takes the same bound so it stays over the rail. Closure is recorded as
+final only once both fixes are confirmed on Production.
 
 **Responsive shell fixes carried by this sprint.** Human verification of Reports
 surfaced four responsive sidebar defects that **pre-date Sprint 10 and were not

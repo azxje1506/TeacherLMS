@@ -1102,3 +1102,181 @@ describe("Reports · the document starts at the rail on desktop", () => {
     assert.equal((CSS.match(/container-name:rp-page/g) ?? []).length, 1);
   });
 });
+
+/* ======================================== Gate 7.2: ultra-wide alignment ==
+ * Gate 7.1 stopped the SHEET centring itself, which is what had separated the
+ * document from the rail. That was right and is kept. What it left behind was
+ * every spare pixel on one side, so a wide monitor pinned the whole workspace
+ * left with a growing void to its right. This gate bounds the preview track and
+ * centres the pair as ONE thing.
+ *
+ * THESE ARE GEOMETRY ASSERTIONS, not string matches. The solver below reads the
+ * numbers out of the files that own them — the rail width, the gap token and the
+ * 760px cap from the stylesheet, the 1400px cap, the page padding and the
+ * sidebar width from the shell components — and computes where the workspace
+ * actually lands. Delete `justify-content:center` and the balance assertions
+ * fail with real numbers, which is the point. */
+describe("Reports · the workspace is centred as one thing", () => {
+  const SHELL = code("src", "components", "shell", "app-shell.tsx");
+  const SIDEBAR_SRC = code("src", "components", "shell", "sidebar.tsx");
+
+  /** The screen-scoped Reports layout rules, as one blob. */
+  const SCREEN = mediaBlocks("screen").join("\n");
+
+  /** Every number below is READ, never retyped — a test that hardcodes 300 or
+   * 1400 keeps passing after somebody changes them. */
+  const num = (re: RegExp, where: string, label: string) => {
+    const m = where.match(re);
+    assert.ok(m, `could not read ${label}`);
+    return Number(m![1]);
+  };
+
+  const RAIL = num(/grid-template-columns:(\d+)px minmax\(0,760px\)/, SCREEN, "the rail width");
+  const SHEET_CAP = num(/minmax\(0,(\d+)px\)/, SCREEN, "the preview track cap");
+  const GAP = num(/--gap:(\d+)px/, CSS, "the default gap token");
+  const APP_MAX = num(/maxWidth:\s*(\d+)/, SHELL, "the app-main cap");
+  const APP_PAD_X = num(/padding:\s*"\d+px (\d+)px/, SHELL, "the app-main side padding");
+  const SB_WIDE = num(/collapsed \? \d+ : (\d+)/, SIDEBAR_SRC, "the expanded sidebar width");
+
+  /** Is the grid told to place itself, or does it start at the left edge? */
+  const CENTRED = /\.rp-grid\{[^}]*justify-content:center/.test(SCREEN);
+
+  /** Where the workspace actually lands, at one viewport. */
+  function layout(viewport: number, sidebar = SB_WIDE) {
+    const outer = Math.min(viewport - sidebar, APP_MAX);
+    const content = outer - 2 * APP_PAD_X;
+    // The preview track is bounded now, so it stops at the document's own cap.
+    const track = Math.min(SHEET_CAP, content - RAIL - GAP);
+    const workspace = RAIL + GAP + track;
+    const spare = Math.max(0, content - workspace);
+    const left = CENTRED ? spare / 2 : 0;
+    return { content, track, workspace, spare, left, right: spare - left };
+  }
+
+  it("109. the workspace is the rail, the gap and the document — nothing else", () => {
+    assert.equal(RAIL, 300, "the design's rail width, unchanged");
+    assert.equal(SHEET_CAP, 760, "the document's own cap, unchanged");
+    assert.equal(RAIL + GAP + SHEET_CAP, 1076, "the natural workspace width");
+    // The bound is stated once, from those three numbers, so density moves it.
+    assert.match(SCREEN, /--rp-workspace:calc\(300px \+ var\(--gap\) \+ 760px\)/,
+      "the workspace width is derived, not a literal 1076 typed somewhere");
+  });
+
+  it("110. spare room falls OUTSIDE the pair, never between rail and document", () => {
+    /* The defect this gate exists for. At 1600 there are 212 spare pixels; the
+     * question is only where they go. Before: all 212 to the right of the
+     * document. Now: half a side, and the rail-to-document distance is still
+     * exactly the gap. */
+    for (const vw of [1600, 1720, 1920, 2560]) {
+      const L = layout(vw);
+      assert.ok(L.spare > 0, `${vw} should have spare room to distribute`);
+      assert.equal(L.left, L.right, `${vw}: the workspace is not centred (${L.left} / ${L.right})`);
+      assert.ok(L.left > 0, `${vw}: nothing was placed on the left — the group is still left-biased`);
+      assert.equal(L.workspace, RAIL + GAP + SHEET_CAP, `${vw}: the workspace grew past its bound`);
+    }
+  });
+
+  it("111. the approved 1280 and 1440 layouts do not move", () => {
+    /* 1280 and 1366 have no spare room at all — the track is under the cap, so
+     * there is nothing for `justify-content` to do and the layout is byte-for-
+     * byte what the user approved. 1440 has 52px, which becomes 26 a side. */
+    for (const vw of [1280, 1366]) {
+      const L = layout(vw);
+      assert.equal(L.spare, 0, `${vw} must be untouched, but has ${L.spare}px spare`);
+      assert.ok(L.track < SHEET_CAP, `${vw}: the track is still the one that shrinks`);
+    }
+    const at1440 = layout(1440);
+    assert.equal(at1440.spare, 52);
+    assert.equal(at1440.left, 26);
+    assert.equal(at1440.right, 26);
+  });
+
+  it("112. the rail-to-document distance is the gap at every desktop width", () => {
+    /* Gate 7.1's guarantee, re-asserted as geometry: whatever the viewport, the
+     * only thing between the rail and the document is `gap`. */
+    for (const vw of [1280, 1366, 1440, 1600, 1920, 2560]) {
+      const L = layout(vw);
+      assert.equal(L.content - L.track - RAIL - L.spare, GAP,
+        `${vw}: something other than the gap is separating rail and document`);
+    }
+    assert.ok(rule(".rp-grid").includes("gap:var(--gap)"), "and it is still the token");
+  });
+
+  it("113. it is centred by placement, never by an offset", () => {
+    /* The banned implementations: a margin on either side, a viewport-derived
+     * pixel offset, or a breakpoint pretending to know how much room there is. */
+    for (const sel of [".rp-grid", ".rp-rail", ".rp-preview"]) {
+      const r = rule(sel);
+      assert.ok(!/margin-left|margin-right|margin-inline-start|left:/.test(r),
+        `${sel} must not be nudged into place`);
+    }
+    assert.ok(!/\.rp-(grid|rail|preview)\{[^}]*margin/.test(SCREEN),
+      "and no margin appears on them in the screen block either");
+    assert.ok(!/min-width:1[5-9]\d\dpx|min-width:2\d\d\dpx/.test(REPORTS_CSS),
+      "no ultra-wide viewport breakpoint — justify-content self-gates on real spare room");
+  });
+
+  it("114. Gate 7.1 is not quietly undone", () => {
+    /* The sheet must never centre itself again. It is inert now that the track
+     * is bounded, but it is the guard that holds if the cap ever moves. */
+    assert.match(SCREEN, /\.rp-sheet\{[^}]*margin-inline:0 auto/, "still start-aligned");
+    assert.ok(!/\.rp-sheet\{[^}]*margin-inline:auto/.test(SCREEN),
+      "`margin-inline:auto` on the sheet is exactly the defect 7.1 removed");
+    assert.ok(!/\.rp-sheet\{[^}]*margin:0 auto/.test(SCREEN), "and not via the shorthand either");
+  });
+
+  it("115. the stacking query still comes last, so a phone still stacks", () => {
+    /* BOTH set `grid-template-columns` on `.rp-grid` at the same specificity, so
+     * the later one wins. If this block were ever moved below the container
+     * query, every narrow layout would silently un-stack — and nothing else in
+     * this suite would notice, because the rule would still be present. */
+    const raw = read("src", "app", "globals.css");
+    /* THE WHOLE DECLARATION, not just `justify-content:center` — that string
+     * also appears on the sidebar's nav items at the top of the file, and an
+     * `indexOf` for it found THAT one and passed for the wrong reason. */
+    const workspace = raw.indexOf(".rp-grid{grid-template-columns:300px minmax(0,760px);justify-content:center}");
+    const stack = raw.indexOf("@container rp-page (max-width:667px)");
+    assert.notEqual(workspace, -1);
+    assert.notEqual(stack, -1);
+    assert.ok(workspace < stack,
+      "the workspace block must precede the stacking query or stacking loses the cascade");
+  });
+
+  it("116. the stacked layout and its threshold are untouched", () => {
+    const stackBlock = containerBlock("rp-page (max-width:667px)");
+    assert.equal(stackBlock.replace(/\s+/g, ""),
+      ".rp-grid{grid-template-columns:minmax(0,1fr)}.rp-rail{position:static;top:auto}",
+      "byte-for-byte what Gate 6.4 shipped");
+    assert.equal((CSS.match(/max-width:667px/g) ?? []).length, 1, "one threshold, still 667");
+    /* And `justify-content` cannot disturb it: a single `minmax(0,1fr)` track
+     * absorbs every spare pixel, so there is never anything left to distribute. */
+    assert.ok(stackBlock.includes("minmax(0,1fr)"), "the stacked track is still the greedy one");
+  });
+
+  it("117. the heading travels with the workspace", () => {
+    /* Centring the grid alone would leave the screen's title flush left above a
+     * workspace indented by half the spare room — a new defect, not a fix. */
+    assert.match(SCREEN, /\.rp-page-head\{[^}]*max-width:var\(--rp-workspace\)/,
+      "the heading takes the same bound as the workspace");
+    assert.match(SCREEN, /\.rp-page-head\{[^}]*margin-inline:auto/, "and the same placement");
+    assert.ok(rule(".rp-page-head").includes("margin-bottom:20px"),
+      "its own spacing is untouched");
+  });
+
+  it("118. print sees no alignment rule of any kind", () => {
+    for (const block of mediaBlocks("print", CSS)) {
+      assert.ok(!/justify-content:center/.test(block), "no centring inside @media print");
+      assert.ok(!/--rp-workspace/.test(block), "and no workspace bound either");
+    }
+    // Print still flattens the grid outright, which is what makes it immune.
+    assert.match(CSS, /body\.print-report \.rp-grid\{grid-template-columns:none !important/);
+  });
+
+  it("119. no Reports logic, PDF or Print module is involved in this at all", () => {
+    for (const src of ALL_UI) {
+      for (const banned of ["justify-content", "rp-workspace", "innerWidth", "matchMedia"]) {
+        assert.ok(!src.includes(banned), `Reports components must not carry ${banned}`);
+      }
+    }
+  });
+});
