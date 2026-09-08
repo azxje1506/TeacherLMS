@@ -509,8 +509,11 @@ describe("Settings · the design's own measurements", () => {
     assert.ok(/\.set-pair-appearance\{[^}]*gap:var\(--gap\);max-width:520px/.test(SET_CSS), "surface + density");
     assert.ok(/\.set-pair-regional\{[^}]*gap:var\(--gap\);max-width:560px/.test(SET_CSS), "regional");
     assert.ok(/\.set-pair-workspace\{[^}]*gap:var\(--gap\) 22px/.test(SET_CSS), "workspace row gap follows density, column gap stays fixed");
-    assert.ok(/\.set-seg-row\{[^}]*gap:8px\}/.test(SET_CSS) && /\.set-seg-row\.tight\{gap:6px\}/.test(SET_CSS),
-      "both of the comp's segment gaps");
+    /* Gate 6.2 made these follow density too. The comp's own 8px and 6px are
+     * preserved exactly at the default density — see the density suite, which
+     * checks the arithmetic rather than the literals. */
+    assert.ok(/\.set-seg-row\{[^}]*gap:calc\(var\(--gap\) \/ 2\)\}/.test(SET_CSS), "the roomy row's gap");
+    assert.ok(/\.set-seg-row\.tight\{gap:calc\(var\(--gap\) \* 0\.375\)\}/.test(SET_CSS), "the regional row's gap");
   });
 
   it("4. a segment is the comp's own control, and only its two states differ", () => {
@@ -572,10 +575,26 @@ describe("Settings · responsive layout is owned by the stylesheet", () => {
     assert.ok(SCREEN.includes('"set-seg-row"') && /\.set-seg-row\{/.test(SET_CSS), "and the segment row");
   });
 
-  it("3. nothing in the Settings section needs !important", () => {
-    /* There is no inline declaration left to outrank, so the presence of one
-     * here would mean an inline style had crept back. */
-    assert.ok(!/!important/.test(SET_CSS), "no !important anywhere in the Settings rules");
+  it("3. !important appears only where an inline declaration must be outranked", () => {
+    /* NO LAYOUT RULE NEEDS IT — that was the whole point of moving the grids off
+     * the elements, and a `!important` in one would mean an inline style had crept
+     * back. The exception is hover (Gate 6.2, decision 3): a segment's colours are
+     * inline because that is how the ported comp states them, so a hover rule can
+     * only win with it — exactly as `.btn-ghost:hover` and `.icon-danger:hover`
+     * already do in the existing interaction layer.
+     *
+     * Asserted as "only in hover", not merely "some are allowed", so the
+     * exception cannot quietly spread into the layout rules. */
+    const withBang = SET_CSS.split("}").filter((rule) => rule.includes("!important"));
+    assert.ok(withBang.length > 0, "the hover rules are here");
+    for (const rule of withBang) {
+      assert.ok(/:hover/.test(rule), `!important outside a hover rule: ${rule.trim().slice(0, 80)}`);
+    }
+    /* And no layout property is among them. */
+    for (const rule of withBang) {
+      assert.ok(!/grid-template|max-width|margin|padding|gap:|flex/.test(rule),
+        "no layout property is forced with !important");
+    }
   });
 
   it("4. the three pair grids collapse on ROOM, not on a viewport guess", () => {
@@ -765,9 +784,14 @@ describe("Settings · B. the page participates in the density system", () => {
     const cardRule = /\.set-card\{[^}]*\}/.exec(SET_CSS)?.[0] ?? "";
     assert.ok(cardRule.includes("padding:20px 22px"), "card padding is a banked anchor");
     assert.ok(SET_CSS.includes("gap:10px;max-width:420px"), "the swatch grid keeps the comp's 10px");
-    assert.ok(/\.set-seg-row\{[^}]*gap:8px\}/.test(SET_CSS), "segment spacing is control spacing, not density spacing");
-    assert.equal(settingsSegmentStyle(false).height, 34, "and no control height moves");
+    assert.equal(settingsSegmentStyle(false).height, 34, "no control height moves");
+    assert.equal(settingsSegmentStyle(true).height, 34, "in either state");
     assert.equal(settingsSegmentStyle(false, "dense").fontSize, 12.5, "nor any type size");
+    assert.equal(settingsSegmentStyle(false).padding, "0 13px", "nor the padding inside a control");
+    assert.equal(accentSwatchStyle(false).height, 34, "nor the swatch");
+    /* Density is expressed only in the stylesheet, so nothing in the component
+     * layer can have picked up a density-dependent size. */
+    assert.ok(!/var\(--gap\)/.test(UI), "settings-ui states no density-dependent value");
   });
 });
 
@@ -862,6 +886,181 @@ describe("Settings · C. the readiness transition, exercised", () => {
     const a = readStoredSettings();
     assert.notEqual(a, SETTINGS_DEFAULTS, "so readiness flips even with nothing stored");
     assert.deepEqual(a, SETTINGS_DEFAULTS);
+  });
+});
+
+/* ============= Gate 6.2 — language flash, control gaps, accent hover */
+
+describe("Settings · D. the page is never shown in the wrong language", () => {
+  it("1. the readiness state reaches the SERVER's own markup", () => {
+    /* THE DIFFERENCE FROM GATE 6.1. A selection is decided during the hydrating
+     * render, which React owns. The language is decided before that: the server
+     * renders `t()` against the default `vi` and the browser paints that HTML
+     * before any React runs. So the flag has to be an ATTRIBUTE the server emits,
+     * not a value only React consults. */
+    assert.ok(SCREEN.includes('data-settings-ready={hydrated ? "1" : "0"}'),
+      "the root publishes readiness as an attribute");
+    assert.ok(/\[data-screen-label="Settings"\]\[data-settings-ready="0"\]\{visibility:hidden\}/.test(SET_CSS),
+      "and the stylesheet hides the content until it flips");
+  });
+
+  it("2. it hides without moving anything", () => {
+    /* `visibility:hidden` keeps the box; `display:none` would collapse the page
+     * and the reveal would be a layout jump. */
+    const rule = /\[data-settings-ready="0"\]\{([^}]*)\}/.exec(SET_CSS)?.[1] ?? "";
+    assert.equal(rule, "visibility:hidden");
+    assert.ok(!/display:none/.test(SET_CSS), "nothing in Settings is display:none");
+  });
+
+  it("3. the reveal is the comp's own fade, played on reveal rather than on mount", () => {
+    assert.ok(/\[data-settings-ready="1"\]\{animation:fadeUp \.3s ease both\}/.test(SET_CSS));
+    assert.ok(!/animation: "fadeUp/.test(SCREEN),
+      "the animation left the inline style, or it would run while still invisible");
+  });
+
+  it("4. no spinner, no unmount, and the geometry stays", () => {
+    assert.ok(!/Loading|Spinner|skeleton/i.test(SCREEN), "nothing is drawn in place of the page");
+    assert.ok(!/hydrated \?\s*<|!hydrated &&|hydrated &&/.test(SCREEN),
+      "the tree is not conditionally rendered — only its visibility changes");
+    assert.equal((SCREEN.match(/<section/g) ?? []).length, 3, "all three cards are always mounted");
+  });
+
+  it("5. the language itself is still only ever the store's", () => {
+    assert.ok(!/lang === "en"|=== "vi"/.test(SCREEN), "no language branch on the screen");
+    assert.ok(SCREEN.includes("useSettings()"), "and it comes from the one store");
+    /* Not solved by forcing English on the server, and not by a cookie. */
+    assert.ok(!/document\.cookie|cookies\(\)/.test(SCREEN + PAGE), "no cookie persistence");
+    assert.ok(STORE.includes("lang: DEFAULT_LANG"), "vi is still the system default when nothing is stored");
+  });
+
+  it("6. the gating is scoped to Settings and reaches no other route", () => {
+    assert.ok(!/data-settings-ready/.test(code("src", "components", "providers.tsx")), "providers are untouched");
+    assert.ok(!/data-settings-ready/.test(code("src", "app", "layout.tsx")), "the root layout is untouched");
+    assert.ok(!/data-settings-ready/.test(code("src", "components", "shell", "app-shell.tsx")), "the shell is untouched");
+    const settingsReadySelectors = [...CSS.matchAll(/\[data-settings-ready="[01]"\]/g)];
+    assert.ok(settingsReadySelectors.length > 0);
+    for (const m of settingsReadySelectors) {
+      const line = CSS.slice(CSS.lastIndexOf("\n", m.index) + 1, CSS.indexOf("{", m.index));
+      assert.ok(line.includes('[data-screen-label="Settings"]'), `always paired with the Settings root: ${line}`);
+    }
+  });
+
+  it("7. the header's icon still does NOT depend on this — it was already correct", () => {
+    const header = code("src", "components", "shell", "header.tsx");
+    assert.ok(!/data-settings-ready|hydrated/.test(header), "the header needs no readiness gate");
+    assert.ok(header.includes('<span className="hdr-theme-icon-dark">'), "its CSS solution stands");
+  });
+});
+
+describe("Settings · E. density reaches the gaps between option buttons", () => {
+  it("1. both segment gaps derive from the density token", () => {
+    assert.ok(/\.set-seg-row\{[^}]*gap:calc\(var\(--gap\) \/ 2\)\}/.test(SET_CSS));
+    assert.ok(/\.set-seg-row\.tight\{gap:calc\(var\(--gap\) \* 0\.375\)\}/.test(SET_CSS));
+  });
+
+  it("2. …and resolve to exactly the comp's values at the default density", () => {
+    /* 16 / 2 = 8, and 16 * 0.375 = 6 — the two gaps the comp draws. So cozy is
+     * unchanged and only airy and tight move, which is the same promise the card
+     * rhythm made in Gate 6.1. */
+    const cozy = Number(/:root\{[^}]*--gap:(\d+)px/.exec(CSS)![1]);
+    assert.equal(cozy / 2, 8, "the roomy row keeps its 8px");
+    assert.equal(cozy * 0.375, 6, "the regional row keeps its 6px");
+  });
+
+  it("3. …and are actually different at the three densities", () => {
+    const airy = Number(/\[data-spacing="airy"\]\{--gap:(\d+)px\}/.exec(CSS)![1]);
+    const tight = Number(/\[data-spacing="tight"\]\{--gap:(\d+)px\}/.exec(CSS)![1]);
+    const cozy = Number(/:root\{[^}]*--gap:(\d+)px/.exec(CSS)![1]);
+    for (const factor of [1 / 2, 0.375]) {
+      const [t, c, a] = [tight * factor, cozy * factor, airy * factor];
+      assert.ok(t < c && c < a, `gaps are ordered tight < cozy < airy (${t} < ${c} < ${a})`);
+      assert.ok(a - t >= 3, "and the range is wide enough to see");
+    }
+  });
+
+  it("4. no density is branched on, in CSS or React", () => {
+    assert.ok(!/data-spacing/.test(SET_CSS), "still no density selector in the Settings rules");
+    for (const file of [SCREEN, UI]) {
+      assert.ok(!/"cozy"|"airy"|"tight"/.test(file.replace(/DENSITIES/g, "")), "and no density branch");
+    }
+  });
+
+  it("5. the swatch grid is the documented exception", () => {
+    /* Its gap feeds the container-query fold threshold, and a container query
+     * condition cannot read a custom property — so a gap that grew with density
+     * would leave the fold point wrong at airy. */
+    assert.ok(SET_CSS.includes("gap:10px;max-width:420px"), "fixed, as the anchor states");
+    assert.ok(/@container set-page \(max-width:\d+px\)/.test(SET_CSS), "and the fold it feeds is a fixed threshold");
+  });
+
+  it("6. a wider gap can still only wrap a row, never overflow it", () => {
+    /* Airy makes both the grid gap and the segment gaps larger, which squeezes a
+     * two-column group. The row is built to wrap, so the worst case is a second
+     * line — the thing that must stay impossible is a horizontal scrollbar. */
+    assert.ok(/\.set-seg-row\{[^}]*flex-wrap:wrap/.test(SET_CSS), "the row wraps");
+    assert.equal(settingsSegmentStyle(false, "dense").minWidth, "max-content", "and no label is squeezed");
+  });
+});
+
+describe("Settings · F. hover follows the current accent", () => {
+  /* LAZY, AND THAT IS THE POINT. An earlier version computed this in the describe
+   * body with an `assert` in it — so deleting the hover block made the assert
+   * throw during suite registration and all six tests silently DISAPPEARED
+   * instead of failing. A guard that vanishes when the thing it guards is removed
+   * is worse than no guard; test 0 now checks existence, and every other test
+   * reads the block through this function. */
+  const hoverBlock = (): string => {
+    const at = SET_CSS.indexOf("@media (hover:hover) and (pointer:fine)");
+    return at === -1 ? "" : SET_CSS.slice(at, SET_CSS.indexOf("\n}", at));
+  };
+
+  it("0. the Settings hover rules exist at all", () => {
+    assert.notEqual(hoverBlock(), "", "a guarded hover block is present in the Settings section");
+  });
+
+  it("1. an unselected segment hovers to the accent, through tokens only", () => {
+    assert.ok(/\.set-seg-row button:hover:not\(\[aria-pressed="true"\]\)/.test(hoverBlock()));
+    assert.ok(hoverBlock().includes("background:var(--accent-soft)"), "soft accent tint");
+    assert.ok(hoverBlock().includes("border-color:var(--accent)"), "accent-aware border");
+    assert.ok(hoverBlock().includes("color:var(--accent)"), "readable accent foreground");
+  });
+
+  it("2. no colour is hard-coded — so every accent and both themes are covered", () => {
+    assert.ok(!/#[0-9a-f]{3,8}\b/i.test(hoverBlock()), "no hex in the hover rules");
+    assert.ok(!/\b(black|white|grey|gray)\b/i.test(hoverBlock()), "and no named colour");
+    /* Both tokens are redefined by every accent and by the dark theme, so the
+     * four accents x two themes are covered by the palette rather than by rules. */
+    for (const accent of ACCENTS.filter((a) => a !== "crimson")) {
+      assert.ok(new RegExp(`\\[data-accent="${accent}"\\]\\{[^}]*--accent-soft:`).test(CSS), `${accent} defines --accent-soft`);
+      assert.ok(new RegExp(`\\[data-theme="dark"\\]\\[data-accent="${accent}"\\]\\{[^}]*--accent-soft:`).test(CSS), `${accent} dark`);
+    }
+    assert.ok(/\[data-theme="dark"\]\{[^}]*--accent-soft:/.test(CSS), "and dark crimson");
+  });
+
+  it("3. a selected control is never downgraded by hover", () => {
+    assert.ok(/:not\(\[aria-pressed="true"\]\)/.test(hoverBlock()), "the rules exclude the chosen option");
+    assert.equal((hoverBlock().match(/:not\(\[aria-pressed="true"\]\)/g) ?? []).length, 2,
+      "both the segment and the swatch exclude it");
+  });
+
+  it("4. the swatch reacts on its ring only, and keeps --fg when chosen", () => {
+    assert.ok(/\.set-sw:hover:not\(\[aria-pressed="true"\]\)\{border-color:var\(--accent\)/.test(hoverBlock()));
+    /* An accent ring around an accent fill would vanish for whichever accent is
+     * currently selected, which is why the chosen ring stays --fg. */
+    assert.equal(accentSwatchStyle(true).border, "2px solid var(--fg)");
+  });
+
+  it("5. hover is behind the pointer guard the repo already uses", () => {
+    /* On a touch screen `:hover` is a leftover from the last tap, not a state. */
+    assert.ok(hoverBlock().startsWith("@media (hover:hover) and (pointer:fine)"));
+    assert.ok(/@media \(hover:hover\) and \(pointer:fine\)\{\s*\.cal-event\{cursor:grab\}/.test(CSS),
+      "the same guard the calendar uses");
+  });
+
+  it("6. hover changes colour only — never geometry", () => {
+    assert.ok(!/padding|height|width|margin|font-size|border-width/.test(hoverBlock()),
+      "nothing in a hover rule can move a control");
+    assert.ok(!/border:/.test(hoverBlock()), "border-color only, so the 1px/2px stays");
   });
 });
 

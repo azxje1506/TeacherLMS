@@ -2010,6 +2010,28 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    others is asking for this. */
 [data-screen-label="Settings"]{margin-inline:auto}
 
+/* ---- Nothing is shown until the stored preferences are known --------------
+
+   THE LANGUAGE FLASH, AND WHY `hydrated` ALONE COULD NOT FIX IT (Gate 6.2,
+   defect 1). Gate 6.1 stopped controls claiming a default SELECTION, because
+   that was decided during the hydrating render and React owns that render. The
+   language is decided earlier still: the server renders `t()` against the
+   default `vi`, ships HTML full of Vietnamese, and the browser paints it before
+   any React has run. A flag consulted during hydration cannot un-paint that.
+
+   So the server's own markup declines to show the copy. It writes
+   `data-settings-ready="0"`, this rule hides the content from the first paint,
+   and the attribute becomes `1` in the same commit that brings the stored
+   language — so everything is revealed at once, already in English.
+
+   `visibility:hidden`, NOT `display:none` and not unmounting: the cards keep
+   their space, so the reveal shifts nothing. The fade is the comp's own `fadeUp`,
+   moved here from an inline style so that it plays on REVEAL rather than on
+   mount — otherwise the animation would run its whole course while the content
+   was still invisible and the text would simply pop in at the end. */
+[data-screen-label="Settings"][data-settings-ready="0"]{visibility:hidden}
+[data-screen-label="Settings"][data-settings-ready="1"]{animation:fadeUp .3s ease both}
+
 /* ---- Density reaches this page through the token, not through a branch -----
 
    `--gap` is the app's existing density variable — 16px cozy, 26px airy, 11px
@@ -2030,6 +2052,39 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 }
 .set-card:last-child{margin-bottom:0}
 .set-group{margin-bottom:var(--gap)}
+
+/* ---- Hover follows the accent the teacher is actually running --------------
+
+   (Gate 6.2, decision 3.) These controls had no hover rule of their own, so they
+   fell through to the app's neutral `--hover` grey — which reads as a flat dark
+   fill in the dark theme and says nothing about the palette in use. Hovering now
+   previews the accent: the soft tint behind the accent foreground, which is the
+   same "on" language the selected state and the active nav row already speak, so
+   nothing new is invented and every accent and both themes are covered by the
+   tokens rather than by a rule per combination.
+
+   `!important` IS REQUIRED HERE and only here. A segment's background, border
+   and colour are inline (they come from `settingsSegmentStyle`, which is how the
+   ported comp states them), and an inline declaration outranks any selector
+   without it. This is the same reason `.btn-ghost:hover` and `.icon-danger:hover`
+   already carry it a few hundred lines above — the existing interaction layer's
+   own convention, not a new one.
+
+   A SELECTED CONTROL IS LEFT ALONE. It already wears the accent; re-tinting it
+   on hover could only make it look less chosen. And the whole block sits behind
+   the repo's `(hover:hover) and (pointer:fine)` guard, so a tap on a phone does
+   not leave a control stuck looking hovered. */
+@media (hover:hover) and (pointer:fine){
+  .set-seg-row button:hover:not([aria-pressed="true"]){
+    background:var(--accent-soft) !important;
+    border-color:var(--accent) !important;
+    color:var(--accent) !important;
+  }
+  /* The swatch shows its own colour, so only its ring can react. Its selected
+     ring stays `--fg`: an accent ring around an accent fill would be invisible
+     for whichever accent is currently chosen. */
+  .set-sw:hover:not([aria-pressed="true"]){border-color:var(--accent) !important}
+}
 
 /* ---- The layout containers own their own columns --------------------------
 
@@ -2087,9 +2142,16 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    text would spill out of the buttons instead. The basis has to be the content
    for the wrap to know when it is needed — which is also why the segment itself
    carries `min-width:max-content`. */
-.set-seg-row{display:flex;flex-wrap:wrap;gap:8px}
-/* The regional grid's own tighter gap, straight from the comp. */
-.set-seg-row.tight{gap:6px}
+/* THE GAPS BETWEEN OPTION BUTTONS FOLLOW DENSITY TOO (Gate 6.2, decision 2).
+   Derived from `--gap` rather than branched on: `/2` and `*.375` are chosen so
+   that at cozy they resolve to exactly the comp's own 8px and 6px, leaving the
+   default page unchanged and moving only airy (13 / 9.75) and tight (5.5 /
+   4.125). Only the SPACE scales — height, padding and type size are stated in
+   `settingsSegmentStyle` and are deliberately untouched, so a tap target is the
+   same size at every density. */
+.set-seg-row{display:flex;flex-wrap:wrap;gap:calc(var(--gap) / 2)}
+/* The regional grid's own tighter rhythm, in the same proportion. */
+.set-seg-row.tight{gap:calc(var(--gap) * 0.375)}
 
 /* ---- The accent swatches --------------------------------------------------
 
@@ -2124,6 +2186,13 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 @media screen{
   [data-screen-label="Settings"]{container-type:inline-size;container-name:set-page}
 }
+/* THIS GAP DOES NOT FOLLOW DENSITY, and that is a deliberate exception to the
+   rule above. It is a banked design anchor, and — more importantly — the
+   container query below folds four swatches to two at a threshold COMPUTED from
+   it (four labels at ~70px plus three 10px gaps). A container query condition
+   cannot read a custom property, so a gap that grew with density would leave the
+   fold point silently wrong at airy, which is a worse outcome than a swatch grid
+   that breathes slightly less than its neighbours. */
 .set-accent-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;max-width:420px}
 @container set-page (max-width:360px){
   .set-accent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}

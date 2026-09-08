@@ -108,7 +108,28 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
   const known = (isSelected: boolean): boolean | null => (hydrated ? isSelected : null);
 
   return (
-    <div data-screen-label="Settings" style={{ animation: "fadeUp .3s ease both", maxWidth: 760 }}>
+    /* `data-settings-ready` is why the page does not appear in the wrong language.
+     *
+     * THIS IS A DIFFERENT DEFECT FROM THE ONE GATE 6.1 FIXED, at a different
+     * moment. The selection markers were wrong during the HYDRATING RENDER, which
+     * `hydrated` alone could fix because React owns that render. The language was
+     * wrong EARLIER THAN THAT: the server ships HTML containing Vietnamese, and
+     * the browser paints it before a line of React has run. No React-side flag can
+     * reach back and change something already on screen.
+     *
+     * So the server's own markup has to decline to show preference-dependent
+     * copy: it renders `0` here, the stylesheet hides the content from the very
+     * first paint, and the attribute flips to `1` in the same commit that brings
+     * the stored language — revealing everything at once, already in English.
+     *
+     * `visibility:hidden` rather than unmounting, so the cards keep their space
+     * and nothing shifts when the text arrives. Not a spinner, and not a
+     * server-rendered guess at the language, which would be a mismatch. */
+    <div
+      data-screen-label="Settings"
+      data-settings-ready={hydrated ? "1" : "0"}
+      style={{ maxWidth: 760 }}
+    >
       <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px" }}>{t("Settings")}</h1>
       <p style={{ color: "var(--muted)", fontSize: 14, margin: "0 0 22px" }}>
         {t("Personalise your workspace. Preferences are saved to this device.")}
