@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased — Reports (Sprint 10) — **contract only, no implementation**
-- **Gate 1 discovery passed.** `/reports` is a four-line module placeholder;
-  there is no Report model, stored report entity, Reports API route, DTO, export
-  or Reports test suite anywhere in the repository, and production holds no
-  reports collection. Recorded so a later gate is judged against what was
-  actually there.
+## Unreleased — Reports (Sprint 10) — **shipped, Production verified, CLOSED**
+
+### Contract — banked before any implementation
+- **Gate 1 discovery passed.** At that point `/reports` was a four-line module
+  placeholder; there was no Report model, stored report entity, Reports API
+  route, DTO, export or Reports test suite anywhere in the repository, and
+  production held no reports collection. Recorded so a later gate is judged
+  against what was actually there.
 - **The Reports contract was agreed before any code**, as Billing's was in
   Sprint 9, and is now written into `PROJECT_RULES.md` as a `## Reports`
   section. **No Reports implementation exists.**
@@ -66,9 +68,85 @@
   header, and a wide table may scroll inside its own bounded container — the page
   never scrolls horizontally, and neither PDF nor Print may depend on that
   scroller. No other screen's responsive behaviour changes.
-- **Nothing was implemented.** No UI, no `/api/reports`, no read model, no DTO,
-  no PDF or Print code, no tests, no schema change, no index, no production write
-  and no DDL. Documentation only.
+- **The contract commit implemented nothing** — no UI, no `/api/reports`, no read
+  model, no DTO, no PDF or Print code, no tests, no schema change, no index, no
+  production write and no DDL. Everything below was built against it afterwards.
+
+### Implementation
+- **Reports read model and `GET /api/reports`.** A pure composition module,
+  `src/lib/reports.ts`, plus a server service and one route. Not one figure is
+  computed there: revenue is `computeRevenue`, attendance is
+  `studentAttendanceRate`, homework is `homeworkCompletion` and
+  `studentHomeworkCompletion`, and Billing rows come from `buildBillingBranch`.
+  Reports composes; the owning domain answers.
+- **The Reports workspace** — the options rail, the scope controls and the live
+  document sheet — with **all five authorised report types**. A scope a report
+  does not use is disabled showing its sentinel rather than hidden, so the
+  designed layout does not change because a filter does not apply.
+- **The preview is derived; there is no Generate button.** A valid selection
+  produces the document automatically and an incomplete one shows the design's
+  own empty state.
+- **Export PDF** — client-side, A4 portrait, Unicode font, loud failure if the
+  font cannot load, nothing persisted and no server file URL — and **Print**, on
+  its own isolated Reports scope that does not touch the Reviews print path. One
+  content model feeds screen, Print and PDF, so a report cannot say one thing on
+  paper and another on screen.
+- **A stale-action guard.** `keepPreviousData` keeps the previous report on
+  screen while the next loads, which is right for the screen and wrong for a
+  file. Export and Print therefore wait for the current selection to resolve, and
+  both handlers re-read the condition, so a keyboard or programmatic call cannot
+  walk past a disabled button into a stale export or a stale print dialog.
+- **Responsive stacking now keys on available Reports width, not the viewport.**
+  The approved boundary is unchanged and merely restated in the terms it always
+  meant: 767px of viewport beside a 64px rail is 667px of content, so a
+  screen-only container query at 667px reproduces every previously approved case
+  and additionally catches the ones a viewport number could not see — a 768px or
+  860px viewport with the sidebar expanded. The container is declared inside
+  `@media screen` so the verified printed document cannot be reached by it.
+
+### Fixes found by human verification
+- **Student Payment PDF layout** — metric card arrangement and accent divider
+  corrected; table readability improved. Values and semantics unchanged.
+- **Student Payment Print** — the Reports page title and subtitle no longer leak
+  into the printed sheet, and the metric hierarchy and arrangement were
+  corrected. No page chrome reaches the document.
+- **Four responsive sidebar defects that pre-date Sprint 10 and were not
+  introduced by Reports**: a dead tablet label selector, collapsed-state leakage
+  into the mobile drawer, a no-op tablet expansion toggle, and an expand
+  animation that snapped in one direction because an untransitioned `min-width`
+  sat beside an animating `width`. Fixed here because Reports verification is
+  what exposed them.
+- **Reports/shell coordination** — the container query above, so Reports reacts
+  to its own width in the same layout pass rather than lagging the sidebar's
+  animation.
+
+### Verification
+- **Human browser verification PASS**: responsive Reports and sidebar
+  coordination, mobile drawer, **Student Payment PDF PASS**, **Student Payment
+  Print PASS**. No remaining visual blocker.
+- **Zero production writes.** The Finance, Reviews and Homework integrity probes
+  reproduce their accepted states before the merge, and again after Production
+  deployment: Billing 84 / `b3e2fb7a…`, Reviews 33 / `c4418428…`, Homework 15 /
+  `aef736e9…5741f`. No schema change, no index and no DDL in this sprint.
+- **Production verified.** `main` fast-forwarded to `fb034be` and deployed; the
+  Reports CSS and JavaScript chunks served by Production are **byte-identical**
+  to those built locally from that commit.
+- Engineering baseline: 2217 tests, 350 suites, 0 failures, typecheck clean,
+  lint 0 errors / 8 pre-existing warnings, 51 routes.
+
+### Known limitation, accepted
+- **An all-`Assigned` month reports the Homework domain's own numeric zero.**
+  `Assigned` is excluded from the completion measure entirely, so such a month
+  has an empty denominator — but Homework publishes no denominator on its
+  aggregate, and manufacturing one in Reports to turn that 0 into `No data`
+  would be Reports correcting an owner domain on read. Per student the domain
+  does say `null`, and those rows carry it. No misleading denominator copy is
+  attached.
+
+### Closure
+- **Sprint 10 — Reports is closed.** Excel remains deferred to its own export
+  gate and did **not** ship; CSV stays out of scope; `Performance Summary` did
+  **not** ship and the Monthly Progress Report stays Reviews-owned.
 
 ## Unreleased — Finance MVP (Sprint 9) — **Production deployed and verified**
 - Billing contract, agreed before any code: the natural key is

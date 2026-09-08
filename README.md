@@ -353,31 +353,44 @@ production data or a missing design, not an open defect:
 - **No monthly Billing generator** exists, so a future month can legitimately
   return no bills.
 - **Payment UI** and the **Student Profile Finance tab** wait for a design. The
-  **Finance figures a report would show** are no longer waiting: Reports is
-  Sprint 10 and its contract is approved (below). Finance's own **Excel export**
-  remains deferred.
+  **Finance figures a report would show** are no longer waiting: Reports shipped
+  in Sprint 10 (below). Finance's own **Excel export** remains deferred.
 
-**Sprint 10 — Reports: discovery and contract complete, implementation not
-begun.** Gate 1 discovery passed and the Gate 2 contract is approved and written
-into [`PROJECT_RULES.md`](./PROJECT_RULES.md) — no Reports code exists yet.
-`/reports` is still the module placeholder: there is no Reports API route, no
-read model, no DTO, no preview, no export and no Reports test suite.
+**Sprint 10 — Reports: shipped, production verified, closed.** The contract was
+banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) before implementation, and the
+module was then built against it: a Reports read model, `GET /api/reports`, the
+Reports workspace with its live preview, Export PDF and Print.
 
-The contract authorises exactly **five** report types — Monthly Revenue Report,
-Class Revenue Report, Student Payment Report, Attendance Summary and Homework
-Summary. Reports is read-only and composes figures the owning domains already
-produce; it owns no arithmetic and no month semantics of its own. Reports are
-**generated, never stored**: there is no Report model, id, lifecycle, history or
-cache, and previewing, printing or exporting writes nothing.
+Exactly **five** report types ship — Monthly Revenue Report, Class Revenue
+Report, Student Payment Report, Attendance Summary and Homework Summary. Reports
+is read-only and composes figures the owning domains already produce; it owns no
+arithmetic and no month semantics of its own. Reports are **generated, never
+stored**: there is no Report model, id, lifecycle, history or cache, and
+previewing, printing and exporting write nothing.
 
 `Performance Summary` is deliberately **not** a Reports type, and the **Monthly
 Progress Report stays Reviews-owned** — a second student academic document over
 the same ratings, average and month would be the same report twice. **Export
-PDF** and **Print** are authorised for Sprint 10; **Excel is deferred** to its
-own export gate, with nothing ported from the reference builder and no disabled
-control drawn; **CSV is out of scope**. Reports are teacher-facing, and the
+PDF** and **Print** shipped; **Excel is deferred** to its own export gate, with
+nothing ported from the reference builder and no disabled control drawn; **CSV
+is out of scope**. The Reports action row therefore carries two controls where
+the reference design draws three. Reports are teacher-facing, and the
 missing-parent indication is carried by the Student Payment Report's per-student
 rows alone.
+
+A valid selection derives its preview automatically — there is no Generate
+button — and Export PDF and Print are unavailable while a newer selection is
+still resolving, so neither can emit a document belonging to the previous one.
+The Reports layout responds to the width actually available to the screen rather
+than to the viewport, via a screen-only container query, so one viewport width
+stacks or does not according to how much room the shell currently leaves it.
+
+**Responsive shell fixes carried by this sprint.** Human verification of Reports
+surfaced four responsive sidebar defects that **pre-date Sprint 10 and were not
+introduced by Reports** — a dead tablet label selector, collapsed-state leakage
+into the mobile drawer, a no-op tablet expansion toggle and an asymmetric expand
+animation. They were fixed here because Reports verification is what exposed
+them.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons,
 Calendar and Settings screens — each ported
