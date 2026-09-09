@@ -1766,6 +1766,55 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    shared :focus-visible outline every button in the app already gets. */
 .notif-markall:hover{opacity:.7}
 .notif-open:hover{opacity:.75}
+
+/* ---- Notifications: the dropdown's geometry --------------------------------
+   THESE FIVE DECLARATIONS LIVE HERE AND NOT INLINE, and that is the whole point
+   of the block. Every one of them has to change below 768px, and this repository
+   has shipped the opposite arrangement more than once: a media query that could
+   never win because an inline declaration on the same element outranked it. The
+   panel's purely visual properties — radius, shadow, border, background, the
+   fadeUp — are still inline with the rest of the ported comp styles, because none
+   of them is breakpoint-sensitive and moving them would buy nothing.
+
+   THE DESKTOP SHAPE IS THE COMP'S: 370px, anchored to the bell's right edge,
+   47px below the top of the 38px trigger.
+
+   THE PHONE DEFECT THIS FIXES. `right:0` anchors the panel to the BELL, not to
+   the viewport — and the bell is not at the edge. Below 768px the header packs
+   `12px` of padding, a `34px` avatar, its `12px` inset and `1px` rule, `2px` of
+   margin and an `8px` gap to the right of the trigger, so the panel's right edge
+   starts about 69px in. The comp's `max-width:calc(100vw - 40px)` assumes an edge
+   anchor, so the panel measured ~29px WIDER than the space actually left to its
+   left, and ran off the left side of the screen at every phone width — 320, 360,
+   390 and 430 alike. It did not scroll the document, which is exactly why it
+   would have been easy to miss: it simply cut the icons and part of each row off.
+
+   THE FIX IS TO STOP ANCHORING TO THE BELL AT THAT WIDTH. `left` and `right`
+   together give the comp's own intent — 20px of breathing room each side — with
+   no dependence on where in the row the trigger happens to sit, so a later change
+   to the header cannot silently reintroduce the clipping.
+
+   `position:fixed` RESOLVES THE SAME EITHER WAY HERE. The header carries a
+   `backdrop-filter`, which makes it the containing block for fixed descendants,
+   so this box may resolve against the header rather than the viewport. Below
+   768px the sidebar is out of flow and the header spans the full viewport width
+   at its very top, pinned there by `position:sticky`, so the two containing
+   blocks coincide and both readings place the panel 58px down with 20px gutters.
+   The rule is correct without having to win that argument.
+
+   IT IS STILL A POPOVER. Same panel, same radius, same internal scroll, still
+   opening under the bell — not a bottom sheet, and not a modal: nothing here
+   makes it full-screen, adds a scrim or traps focus. */
+.notif-panel{
+  position:absolute;top:47px;right:0;
+  width:370px;max-width:calc(100vw - 40px);
+}
+@media (max-width:767px){
+  .notif-panel{
+    position:fixed;top:58px;left:20px;right:20px;
+    width:auto;max-width:none;
+  }
+}
 .icon-danger:hover{background:var(--accent-soft) !important;color:var(--accent) !important;border-color:var(--accent-soft) !important}
 
 /* ==========================================================================

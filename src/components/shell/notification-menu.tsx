@@ -172,7 +172,15 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
                 data-testid="notif-badge"
                 style={{
                   position: "absolute", top: 5, right: 6, minWidth: 16, height: 16, padding: "0 4px",
-                  borderRadius: 99, background: "var(--accent)", color: "#fff", fontSize: 10, fontWeight: 700,
+                  /* `--primary-fg` and not the comp's `#fff`. It is the existing
+                   * semantic "text on the accent family" token — no new token is
+                   * invented — and it is white in seven of the eight
+                   * theme/accent combinations, so this changes nothing visible in
+                   * any of them. The eighth is Dark + Slate, where `--accent` is
+                   * a pale `#94a3b8`: white on it measures about 2:1, which is
+                   * unreadable for 10px bold digits, and the token already
+                   * carries the dark ink that case needs. */
+                  borderRadius: 99, background: "var(--accent)", color: "var(--primary-fg)", fontSize: 10, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px solid var(--card)",
                 }}
               >
@@ -190,8 +198,12 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
           role="menu"
           aria-label={t("Notifications")}
           data-testid="notif-panel"
+          /* GEOMETRY IS NOT HERE. Position, anchoring, width and the mobile clamp
+           * all live on `.notif-panel` in globals.css, because every one of them
+           * changes below 768px and an inline declaration would outrank the media
+           * query that has to change it. What stays inline is the part that never
+           * varies by width — the comp's surface. */
           style={{
-            position: "absolute", top: 47, right: 0, width: 370, maxWidth: "calc(100vw - 40px)",
             background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14,
             boxShadow: "0 18px 48px rgba(0,0,0,.20)", zIndex: 120, overflow: "hidden",
             animation: "fadeUp .16s ease both",
@@ -294,7 +306,12 @@ function NotificationRow({
           cursor: "pointer", fontFamily: "inherit", padding: 0,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>{title}</div>
+        {/* The title WRAPS rather than truncating — it is the row's whole point,
+          * and the comp only ellipsizes the body beneath it. `overflowWrap`
+          * covers the one case wrapping alone cannot: a long unbroken token (a
+          * class code, a pasted name) has no space to break at, would overflow
+          * this button's box and would run under the dismiss control. */}
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)", overflowWrap: "anywhere" }}>{title}</div>
         <div style={{
           fontSize: 12, color: "var(--muted)", marginTop: 1,
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",

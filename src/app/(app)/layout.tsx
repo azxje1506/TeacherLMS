@@ -18,7 +18,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
    *
    * AFTER the session check, so an unauthenticated request redirects without
    * touching the database. Device-local read and dismiss state is not resolved
-   * here and cannot be: it lives in the browser, and the panel applies it. */
+   * here and cannot be: it lives in the browser, and the panel applies it.
+   *
+   * WHEN THIS REFRESHES, STATED BECAUSE THE ANSWER IS NOT OBVIOUS. A layout does
+   * not re-run on client-side navigation within its own segment, so moving
+   * between authenticated pages does NOT re-derive this list; a full load of the
+   * authenticated shell does. That is Sprint 12's accepted boundary and not an
+   * oversight: the alternative is polling, a socket, a refresh on every
+   * navigation or an endpoint that exists only to hand the client state the
+   * server already had — and the contract refuses all four. Read and dismiss
+   * remain instant either way, because those are the browser's own state. If
+   * live freshness is ever wanted, it is a product decision and a sprint of its
+   * own, not a hook added here. */
   const notifications = await getActiveNotifications();
 
   return (

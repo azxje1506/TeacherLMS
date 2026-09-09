@@ -50,6 +50,15 @@ const SHELL = code("src", "components", "shell", "app-shell.tsx");
 const LAYOUT = code("src", "app", "(app)", "layout.tsx");
 const SERVER = code("src", "lib", "notifications-server.ts");
 const CSS = read("src", "app", "globals.css");
+
+/** Just the Notifications block of the stylesheet, comment-free — so a scan for
+ * a rule cannot be satisfied by an unrelated one somewhere else in a 2,000-line
+ * file, and cannot be satisfied by the prose explaining it either. */
+const NOTIF_CSS = (() => {
+  const start = CSS.indexOf(".notif-markall:hover");
+  const end = CSS.indexOf("\n/* =", start);
+  return strip(CSS.slice(start, end === -1 ? CSS.length : end));
+})();
 const DICT = JSON.parse(read("src", "lib", "i18n-vi.json")) as Record<string, string>;
 
 /* --------------------------------------------------------------- fixtures */
@@ -368,12 +377,29 @@ describe("Notifications UI · the header row is otherwise unchanged", () => {
 /* ================================================================ geometry */
 
 describe("Notifications UI · the panel follows the design reference", () => {
-  it("38. every geometry anchor the comp specifies", () => {
-    for (const anchor of [
-      "width: 370", 'maxWidth: "calc(100vw - 40px)"', "top: 47", "right: 0",
-      "borderRadius: 14", "zIndex: 120", "maxHeight: 400", 'overflowY: "auto"',
-    ]) {
+  it("38. every geometry anchor the comp specifies, from the layer that owns it", () => {
+    /* The five breakpoint-sensitive declarations are the STYLESHEET's, so a
+     * media query can change them; the rest stay inline with the ported surface.
+     * Anchored on the `.notif-panel` rule rather than searched for loose in the
+     * file, so a stray `370px` somewhere else could not satisfy this. */
+    const rule = /\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    for (const decl of ["position:absolute", "top:47px", "right:0", "width:370px", "max-width:calc(100vw - 40px)"]) {
+      assert.ok(rule.includes(decl), `${decl} is the stylesheet's`);
+    }
+    /* And the surface, which never varies by width, is still the comp's. */
+    for (const anchor of ["borderRadius: 14", "zIndex: 120", "maxHeight: 400", 'overflowY: "auto"']) {
       assert.ok(MENU.includes(anchor), `${anchor} is drawn as the comp specifies`);
+    }
+  });
+
+  it("38a. no responsive-critical geometry is left inline where it could beat CSS", () => {
+    /* The defect class this repository has shipped repeatedly: a media query that
+     * cannot win because the same property is declared inline on the element. */
+    const panelStyle = /className="notif-panel"[\s\S]*?style=\{\{([\s\S]*?)\}\}/.exec(MENU)?.[1] ?? "";
+    assert.notEqual(panelStyle, "", "the panel's inline style block was found");
+    for (const banned of ["position", "top", "right", "left", "width", "maxWidth"]) {
+      assert.ok(!new RegExp(`(^|[\\s,])${banned}:`).test(panelStyle),
+        `${banned} must not be inline — the mobile rule has to be able to change it`);
     }
   });
 
@@ -384,12 +410,11 @@ describe("Notifications UI · the panel follows the design reference", () => {
   });
 
   it("40. colours come from tokens, so both themes and all four accents follow", () => {
-    const colours = [...MENU.matchAll(/(?:background|color|borderColor):\s*"(#[0-9a-fA-F]{3,8}|white|black)"/g)];
-    /* The badge's own #fff is the comp's, and it sits ON --accent, which is a
-     * solid colour in both themes — it is a foreground for a token, not a
-     * hard-coded surface. */
-    assert.deepEqual(colours.map((m) => m[1]), ["#fff"], "the only literal is the badge's foreground");
-    assert.ok(MENU.includes('background: "var(--accent)"'), "and the badge sits on the accent token");
+    const colours = [...MENU.matchAll(/(?:background|color|borderColor):\s*"(#[0-9a-fA-F]{3,8}|white|black|rgb[^"]*)"/g)];
+    assert.deepEqual(colours.map((m) => m[1]), [], "not one hard-coded colour is left");
+    assert.ok(MENU.includes('background: "var(--accent)"'), "the badge sits on the accent token");
+    assert.ok(MENU.includes('color: "var(--primary-fg)"'),
+      "and reads with the existing semantic inverse-text token, not a literal white");
     for (const token of ["var(--card)", "var(--border)", "var(--border-2)", "var(--muted)", "var(--fg)"]) {
       assert.ok(MENU.includes(token), `${token} is used`);
     }
@@ -405,6 +430,148 @@ describe("Notifications UI · the panel follows the design reference", () => {
     assert.ok(CSS.includes(".notif-open:hover{opacity:.75}"));
     assert.ok(MENU.includes('className="icon-action"'), "dismiss reuses the shared hover pair");
     assert.ok(!/onMouseEnter|onMouseOver/.test(MENU), "no JavaScript hover");
+  });
+});
+
+/* ================================================================ responsive */
+
+describe("Notifications UI · responsive hardening", () => {
+  it("57. a mobile rule exists, and it is a media query the stylesheet owns", () => {
+    assert.ok(/@media \(max-width:767px\)\{\s*\.notif-panel\{/.test(NOTIF_CSS),
+      "the phone override is at the header's own 767px breakpoint");
+  });
+
+  it("58. the phone rule stops anchoring to the bell, which is what caused the clipping", () => {
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.notEqual(mobile, "", "the phone rule was found");
+    assert.ok(mobile.includes("left:20px") && mobile.includes("right:20px"),
+      "both edges are pinned, so the panel cannot depend on where the trigger sits");
+    assert.ok(mobile.includes("width:auto"), "the 370px desktop width is released");
+    assert.ok(mobile.includes("max-width:none"), "and so is the clamp that assumed an edge anchor");
+  });
+
+  it("59. the phone rule overrides every desktop declaration it needs to", () => {
+    /* A media query that changes `width` but leaves `max-width`, or moves the
+     * anchor but leaves `right:0` at its old value, is the half-fix that leaves
+     * the defect in place. Every property the base rule sets must be answered. */
+    const base = /\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    const props = (rule: string) => new Set([...rule.matchAll(/([a-z-]+):/g)].map((m) => m[1]));
+    for (const p of props(base)) {
+      assert.ok(props(mobile).has(p), `the phone rule leaves \`${p}\` at its desktop value`);
+    }
+  });
+
+  it("60. the phone rule comes after the base rule, so it wins on source order", () => {
+    /* Same specificity, so order decides — and getting this backwards is a silent
+     * no-op rather than an error. */
+    assert.ok(NOTIF_CSS.indexOf("@media (max-width:767px)") > NOTIF_CSS.indexOf(".notif-panel{"));
+  });
+
+  it("61. no width the panel can take is wider than the viewport", () => {
+    /* Desktop clamps with the comp's own calc; phone releases the clamp but pins
+     * both edges instead, which bounds the width at `100vw - 40px` by
+     * construction. Neither branch can produce a box wider than the screen. */
+    const base = /\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.ok(base.includes("max-width:calc(100vw - 40px)"), "desktop is clamped to the viewport");
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.ok(/left:\d+px/.test(mobile) && /right:\d+px/.test(mobile) && mobile.includes("width:auto"),
+      "phone is bounded by its two pinned edges");
+  });
+
+  it("62. the phone gutters are the 20px each side the comp's own clamp implied", () => {
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    const left = Number(/left:(\d+)px/.exec(mobile)?.[1]);
+    const right = Number(/right:(\d+)px/.exec(mobile)?.[1]);
+    assert.equal(left, 20);
+    assert.equal(right, 20);
+    assert.equal(left + right, 40, "which is the `100vw - 40px` the comp asked for, actually delivered");
+  });
+
+  it("63. it stays a popover on a phone and does not become a sheet", () => {
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.ok(!/bottom:0|height:100|inset:0|100dvh|100vh/.test(mobile), "no full-height sheet");
+    assert.ok(/top:\d+px/.test(mobile), "it still opens from the top, under the header");
+    assert.ok(MENU.includes("borderRadius: 14"), "and keeps the comp's radius at every width");
+  });
+
+  it("64. the list still scrolls inside the panel rather than growing it", () => {
+    assert.ok(MENU.includes("maxHeight: 400") && MENU.includes('overflowY: "auto"'));
+    assert.ok(!/@media[^}]*\{[^}]*max-height:\s*(?!400)/.test(NOTIF_CSS), "and no breakpoint changes that");
+  });
+
+  it("65. the header is untouched by this gate", () => {
+    /* Sprint 11 deliberately left header spacing fixed and Sprint 8 settled its
+     * three shapes. Notifications hardening must not have reopened either. */
+    assert.ok(HEADER.includes("height: 60") && HEADER.includes("gap: 14") && HEADER.includes("zIndex: 20"));
+    assert.ok(!/notif-panel/.test(HEADER), "the panel's geometry is not the header's business");
+    assert.ok(!/control-gap/.test(MENU), "and the panel takes no density token");
+  });
+
+  it("66. the badge cannot change header geometry", () => {
+    /* It is absolutely positioned inside the trigger, so it is out of flow and
+     * its presence or absence moves nothing around it. */
+    const badge = /view\.unreadCount > 0 && \(([\s\S]*?)\n {12}\)\}/.exec(MENU)?.[1] ?? "";
+    assert.ok(badge.includes('position: "absolute"'), "out of flow");
+    assert.ok(/style=\{\{ \.\.\.iconBtn, position: "relative" \}\}/.test(MENU), "positioned against the 38px trigger");
+  });
+
+  it("67. long titles wrap and cannot run under the dismiss control", () => {
+    assert.ok(MENU.includes('overflowWrap: "anywhere"'), "an unbreakable token still breaks");
+    assert.ok(MENU.includes("flex: 1, minWidth: 0"), "and the text column may shrink below its content");
+    assert.ok(MENU.includes("flexShrink: 0"), "while the icon and dismiss keep their size");
+  });
+
+  it("68. only the body truncates, exactly as the comp draws it", () => {
+    assert.ok(MENU.includes('whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"'));
+    assert.equal((MENU.match(/textOverflow/g) ?? []).length, 1, "the title is never ellipsized");
+  });
+});
+
+/* ============================================================ motion / stack */
+
+describe("Notifications UI · motion and stacking", () => {
+  it("69. the open animation is the comp's, and reduced motion already covers it", () => {
+    assert.ok(MENU.includes('animation: "fadeUp .16s ease both"'));
+    assert.ok(/@media \(prefers-reduced-motion:reduce\)\{\s*\*,\*::before,\*::after\{animation-duration:\.01ms/.test(CSS),
+      "the app-wide reduced-motion rule already neutralises it — no new subsystem");
+  });
+
+  it("70. the animation moves the panel and never the page", () => {
+    /* `fadeUp` is opacity plus a transform, and the panel is out of flow at every
+     * width, so nothing it does can reflow the document. */
+    assert.ok(/@keyframes fadeUp\{from\{opacity:0;transform:translateY\(6px\)\}/.test(CSS));
+    const base = /\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.ok(/position:(absolute|fixed)/.test(base), "out of flow on desktop");
+    const mobile = /@media \(max-width:767px\)\{\s*\.notif-panel\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.ok(/position:(absolute|fixed)/.test(mobile), "and on a phone");
+  });
+
+  it("71. the panel sits above ordinary content and below every modal", () => {
+    assert.ok(MENU.includes("zIndex: 120"), "above the page");
+    /* Everything the app stacks above the header is a modal or a global overlay —
+     * drawer (80/81), nav overlay (89/90), dialog (90/91), toast (200) — and all
+     * of them SHOULD cover a popover. What must not exist is ORDINARY content in
+     * between, so this asserts the gap: nothing sits strictly between the
+     * header's 20 and the first overlay band at 80. A future page card at 100
+     * would fail here rather than silently paint over the panel. */
+    const stacked = [
+      ...[...strip(CSS).matchAll(/z-index:(\d+)/g)].map((m) => Number(m[1])),
+      ...[...[MENU, HEADER, SHELL].join("\n").matchAll(/zIndex: (\d+)/g)].map((m) => Number(m[1])),
+    ];
+    assert.ok(stacked.length > 3, "the scan actually found the stacking rules");
+    for (const z of stacked) {
+      assert.ok(z <= 20 || z >= 80, `z-index ${z} sits between the header and the overlays`);
+    }
+  });
+
+  it("72. no application-wide stacking was raised to make room for it", () => {
+    assert.ok(HEADER.includes("zIndex: 20"), "the header still declares its original 20");
+    /* The panel stacks locally, inside the header's own context, and the
+     * stylesheet's own ceiling is unchanged at the mobile nav's 90. */
+    const cssMax = Math.max(...[...strip(CSS).matchAll(/z-index:(\d+)/g)].map((m) => Number(m[1])));
+    assert.equal(cssMax, 90, "the stylesheet's highest stacking rule is still the nav overlay's");
+    assert.ok(!NOTIF_CSS.includes("z-index"), "and the Notifications block declares none at all");
   });
 });
 
@@ -455,6 +622,93 @@ describe("Notifications UI · keyboard and dismissal", () => {
 
   it("50. the dismiss control is labelled", () => {
     assert.ok(MENU.includes('aria-label={t("Dismiss")}'));
+  });
+});
+
+/* ================================================= states / accent / refresh */
+
+describe("Notifications UI · interaction states", () => {
+  it("73. every hover treatment is CSS, and none of them is a hard-coded neutral", () => {
+    /* Four hoverable things: the bell, Mark all read, the row's open action and
+     * dismiss. Each resolves through an existing rule or an opacity, so both
+     * themes follow and nothing paints a fixed grey. */
+    assert.ok(MENU.includes('className="btn-ghost"'), "the bell reuses the header's hover");
+    assert.ok(MENU.includes('className="notif-markall"') && NOTIF_CSS.includes(".notif-markall:hover{opacity:.7}"));
+    assert.ok(MENU.includes('className="notif-open"') && NOTIF_CSS.includes(".notif-open:hover{opacity:.75}"));
+    assert.ok(MENU.includes('className="icon-action"'), "dismiss reuses the shared icon hover");
+    assert.ok(CSS.includes(".icon-action:hover{background:var(--hover) !important;color:var(--fg) !important}"));
+    assert.ok(!/#[0-9a-fA-F]{3,8}/.test(NOTIF_CSS), "the Notifications block hard-codes no colour");
+  });
+
+  it("74. there is no JavaScript hover anywhere in the panel", () => {
+    for (const banned of ["onMouseEnter", "onMouseOver", "onMouseLeave", "onPointerEnter", ":hover"]) {
+      assert.ok(!MENU.includes(banned), `${banned} belongs in the stylesheet, not the component`);
+    }
+  });
+
+  it("75. focus uses the shared :focus-visible system and adds no bare :focus", () => {
+    assert.ok(/button:focus-visible[^{]*\{outline:2px solid var\(--accent\)/.test(CSS),
+      "the app-wide ring already covers all four controls");
+    assert.ok(!/:focus[^-v]/.test(NOTIF_CSS), "Notifications declares no bare :focus of its own");
+    assert.ok(!/outline: *['"]?none/.test(MENU), "and removes no ring");
+  });
+
+  it("76. read is not dismissed, and no read/unread row styling was invented", () => {
+    /* The comp draws no per-row read state — the badge is the unread signal — so
+     * inventing one would be a redesign. What must never happen is a read item
+     * being HIDDEN: read and dismissed are different acts. */
+    assert.ok(!/isRead\(|opacity.*read|data-read/.test(MENU), "no row is styled by its read state");
+    assert.ok(MENU.includes("view.visible.map("), "and the list is the engine's, unfiltered by read");
+    assert.ok(!/filter\([^)]*read/.test(MENU), "nothing hides a read notification");
+  });
+
+  it("77. accent changes reach the panel with no reload, through the token system", () => {
+    /* `[data-accent]` on <html> rewrites the variables; everything accent-tinted
+     * here reads one. Nothing caches an accent value in JS. */
+    for (const use of ['background: "var(--accent)"', 'soft: "var(--accent-soft)", solid: "var(--accent)"']) {
+      assert.ok(MENU.includes(use), use);
+    }
+    assert.ok(!/#d14242|#4f46e5|#0f766e|#475569/.test(MENU), "no accent hex is frozen into the panel");
+    assert.ok(!/useSettings\(\)[\s\S]{0,80}accent/.test(MENU), "and no accent is read into JS state");
+  });
+});
+
+describe("Notifications UI · the refresh boundary is deliberate and API-free", () => {
+  it("78. nothing notification-owned polls, sockets, revalidates or refetches", () => {
+    /* Scoped to the files Sprint 12 owns. `AppShell` is deliberately NOT in this
+     * list: it has carried a `useQuery` for the sidebar counts and a
+     * `router.refresh()` in the logout flow since long before this sprint, and a
+     * scan that failed on those would be reporting Sprint 1 as a Gate 4 defect. */
+    const owned = [MENU, LAYOUT, SERVER, code("src", "lib", "notification-ack-store.ts"),
+                   code("src", "components", "shell", "notification-copy.ts")].join("\n");
+    for (const banned of [
+      "setInterval", "setTimeout", "WebSocket", "EventSource", "refetchInterval",
+      "router.refresh", "revalidate", "useQuery", "swr", "poll",
+    ]) {
+      assert.ok(!owned.includes(banned), `${banned} would be the refresh loop the contract refuses`);
+    }
+  });
+
+  it("78a. and the shell's own pre-existing fetches were not repurposed for it", () => {
+    assert.ok(SHELL.includes('useQuery({ queryKey: ["meta", "counts"], queryFn: fetchCounts })'),
+      "the counts query is exactly what it was");
+    assert.ok(!/useQuery[\s\S]{0,120}notif/i.test(SHELL), "and no notification query joined it");
+    assert.ok(/router\.refresh\(\)/.test(SHELL) && /onLogout/.test(SHELL), "refresh is still only the logout path");
+  });
+
+  it("79. the boundary is written down where a maintainer would look", () => {
+    /* Whitespace-tolerant: the sentence wraps across comment lines, and a regex
+     * that only matches it on one line would pass or fail on reflowing. */
+    const raw = read("src", "app", "(app)", "layout.tsx").replace(/\s*\n\s*\*?\s*/g, " ");
+    assert.ok(/does not re-run on client-side navigation/.test(raw),
+      "the layout says when the list refreshes, so the behaviour is not a silent surprise");
+    assert.ok(/full load of the authenticated shell does/.test(raw), "and when it does");
+  });
+
+  it("80. and it is not surfaced to the teacher", () => {
+    for (const banned of ["Last updated", "Refresh", "Stale", "out of date", "Reload"]) {
+      assert.ok(!MENU.includes(banned), `no ${banned} affordance — it is a technical detail`);
+    }
   });
 });
 
