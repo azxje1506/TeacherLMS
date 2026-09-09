@@ -85,8 +85,9 @@ export default function LessonsPage() {
         <p style={{ color: "var(--muted)", fontSize: 14, margin: "5px 0 0" }}>{countLabel} · {t("generated from class schedules")}</p>
       </div>
 
-      {/* Status chips */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+      {/* Status chips — a filter pill group, so its gap is the workspace's derived
+        * control rhythm rather than a literal. See --control-gap in globals.css. */}
+      <div style={{ display: "flex", gap: "var(--control-gap)", flexWrap: "wrap", marginBottom: 16 }}>
         {STATUS_CHIPS.map((c) => (
           <button key={c} onClick={() => filterBy(c)} style={chipStyle(status === c)}>{t(c)}</button>
         ))}

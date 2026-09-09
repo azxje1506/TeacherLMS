@@ -32,7 +32,30 @@
  *
  * SEARCH IS ONE FUNCTION. The field, the button and ⌘K all call `openSearch`
  * and nothing else, so the two visible triggers and the shortcut can never
- * diverge. What `openSearch` opens is the caller's to supply — see the prop. */
+ * diverge. What `openSearch` opens is the caller's to supply — see the prop.
+ *
+ * THIS ROW'S SPACING DELIBERATELY DOES NOT FOLLOW DENSITY (Gate 6.3, finding B).
+ * The human pass named the header, so it was audited rather than assumed, and
+ * the answer is that its 14px is shell chrome and not workspace rhythm. Three
+ * reasons, any one of which would be enough:
+ *
+ *   1. THE ROW CANNOT WRAP. It is one non-wrapping flex line whose intrinsic
+ *      minimum IS the document's minimum width — that is the whole subject of
+ *      the note above, and of the Sprint 8 Gate 4.3 remediation. Every other
+ *      group brought under density in this gate wraps, so the worst a wider gap
+ *      can do there is add a line. Here it adds horizontal overflow, at exactly
+ *      the tablet widths that remediation was about.
+ *   2. NO DERIVED TOKEN RESOLVES TO 14 AT COZY. --control-gap is 8 there. Making
+ *      this row density-aware would therefore change the imported design at the
+ *      DEFAULT density, which is the one thing the whole exercise avoids.
+ *   3. IT IS NOT PAGE CONTENT. The header is a fixed 60px band of controls that
+ *      stays put while pages scroll beneath it. Density is the rhythm of the
+ *      workspace the teacher is reading; the frame around it holding still is
+ *      what makes that rhythm legible.
+ *
+ * The same audit kept the 620px block's own gaps, the user chip's 9px and the
+ * icon-and-label gaps inside single buttons fixed: those are intra-control
+ * spacing, not the space between members of a cluster. */
 
 import { useCallback, useEffect } from "react";
 import { useSettings } from "@/lib/settings-context";

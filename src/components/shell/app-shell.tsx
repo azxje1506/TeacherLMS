@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { useSettings } from "@/lib/settings-context";
 import { MOBILE_QUERY, TABLET_QUERY, useMediaQuery } from "@/lib/use-media-query";
 
 async function fetchCounts(): Promise<{ students: number; classes: number }> {
@@ -89,6 +90,35 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
 
   const { data: counts } = useQuery({ queryKey: ["meta", "counts"], queryFn: fetchCounts });
 
+  /* WHETHER THE WORKSPACE MAY BE SHOWN YET (Gate 6.3, finding A).
+   *
+   * THE DEFECT. The interface language is not CSS. `ThemeScript` can settle the
+   * appearance before first paint because appearance IS css variables on <html>,
+   * but the language is the TEXT of every page, chosen while the server renders
+   * — and the server cannot read `localStorage`. So with English persisted the
+   * server still ships Vietnamese, the browser paints it, and React swaps it a
+   * render later. Nothing consulted during hydration can un-paint that.
+   *
+   * WHY IT IS HERE AND NOT ON A PAGE. Gate 6.2 hid the Settings screen until the
+   * store was readable, which fixed /settings and nothing else: the sidebar, the
+   * header, page headings, descriptions, inputs and tabs are all outside that
+   * page and all of them still flashed. This is the smallest boundary that
+   * contains every one of them — `(app)/layout.tsx` renders exactly this
+   * component for every authenticated route, and nothing else does.
+   *
+   * WHAT REACHES THE DOM. An attribute, because the SERVER has to emit it: a
+   * value only React consults is a value that arrives too late. `hydrated` is
+   * false on the server AND for the hydrating render, so both produce `"0"` and
+   * the markup matches; it flips to `"1"` in the same commit that brings the
+   * stored language, and the stylesheet reveals the whole workspace at once,
+   * already correct. See [data-workspace-ready] in globals.css for why that is
+   * `visibility:hidden` rather than an unmount or a spinner.
+   *
+   * NO SECOND SOURCE. This is read out of the shared store like every other
+   * preference in the app — no `localStorage` call here, in the Header or in the
+   * Sidebar, and no `useState` mirror of the language anywhere. */
+  const { hydrated } = useSettings();
+
   async function onLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.replace("/login");
@@ -96,7 +126,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
   }
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
+    <div data-workspace-ready={hydrated ? "1" : "0"} style={{ display: "flex", minHeight: "100vh" }}>
       <Sidebar
         collapsed={railCollapsed}
         railExpanded={railExpanded}

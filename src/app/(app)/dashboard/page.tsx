@@ -81,7 +81,9 @@ export default function DashboardPage() {
             {t("You have")} <b style={{ color: "var(--fg)" }}>{data.todayCount} {data.todayCount === 1 ? t("lesson") : t("lessons")}</b> {t("scheduled today.")}
           </p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* An action cluster, spaced by the workspace's derived control rhythm.
+          * See --control-gap in globals.css. */}
+        <div style={{ display: "flex", gap: "var(--control-gap)", flexWrap: "wrap" }}>
           <Link href="/attendance" className="btn-ghost" style={quickBtn}><span style={{ display: "flex", color: "var(--accent)" }}><IconCheck size={15} /></span>{t("Take attendance")}</Link>
           <Link href="/reports" className="btn-ghost" style={quickBtn}><span style={{ display: "flex", color: "var(--accent)" }}><IconHomework size={15} /></span>{t("Generate report")}</Link>
         </div>

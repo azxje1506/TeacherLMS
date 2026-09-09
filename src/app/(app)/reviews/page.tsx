@@ -171,7 +171,9 @@ export default function ReviewsPage() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {/* An action cluster, spaced by the workspace's derived control
+                  * rhythm. See --control-gap in globals.css. */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--control-gap)" }}>
                   {/* ALWAYS CREATE. This goes to a blank review for a month the
                     * student does not yet have; it never turns into an edit of
                     * an existing one, and it carries the student id and nothing

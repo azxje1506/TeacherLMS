@@ -172,7 +172,10 @@ export default function ClassDetailPage() {
             </div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", marginTop: 5 }}>{infoLine}</div>
           </div>
-          <div className="act-row" style={{ display: "flex", gap: 8 }}>
+          {/* An action cluster, spaced by the workspace's derived control rhythm.
+            * Every button keeps its own height, padding and nowrap label, and the
+            * row still wraps at the mobile breakpoint. See --control-gap. */}
+          <div className="act-row" style={{ display: "flex", gap: "var(--control-gap)" }}>
             {/* Extra lesson belongs to the Lessons/Attendance sprint — shown for
                 one-on-one classes per the design, inert until then. */}
             {isOneOnOne && (

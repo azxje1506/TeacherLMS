@@ -214,7 +214,9 @@ function StudentProfile() {
           </div>
           <p style={{ color: "var(--muted)", fontSize: 13.5, margin: "5px 0 0" }}>{summary}</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* An action cluster, spaced by the workspace's derived control rhythm.
+          * See --control-gap in globals.css. */}
+        <div style={{ display: "flex", gap: "var(--control-gap)", flexWrap: "wrap" }}>
           <button onClick={() => setEditing(true)} className="btn-ghost" style={{ ...headBtn, color: "var(--fg)" }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
             {t("Edit")}

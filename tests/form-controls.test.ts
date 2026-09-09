@@ -148,8 +148,12 @@ describe("Form controls — one field family, one set of numbers", () => {
   it("6. focus is the same treatment on a Select as on an input", () => {
     // Not the same RULE any more — the trigger needs a state an input does not
     // have — but the same two declarations, from the same two tokens.
-    const input = UNCONDITIONAL.match(/\.ring:focus\{([^}]*)\}/);
-    assert.ok(input, ".ring:focus must state the app's focus treatment");
+    /* Anchored to the START of the selector: `.ring:focus-visible` also appears
+     * in the grouped `input…, textarea…, .ring:focus-visible{outline:none}` rule
+     * near the top of the file, and an unanchored match finds that one and
+     * reports the treatment as missing. */
+    const input = UNCONDITIONAL.match(/(?:^|[;}\n])\.ring:focus-visible\{([^}]*)\}/);
+    assert.ok(input, ".ring:focus-visible must state the app's focus treatment");
     assert.match(input[1], /border-color:var\(--accent\)/);
     assert.match(input[1], /box-shadow:0 0 0 3px var\(--ring\)/);
 
@@ -439,5 +443,188 @@ describe("DateField — a native date input with a visible empty state", () => {
     assert.match(UNCONDITIONAL, /input\[type="date"\]\{[^}]*max-width:100%/);
     assert.match(UNCONDITIONAL, /\.date-field\{position:relative;display:block\}/);
     assert.ok(!/\.date-field\{[^}]*width:/.test(UNCONDITIONAL), "the wrapper must not state a width");
+  });
+});
+
+/* ===================================== Gate 6.3 — the accent reaches the field
+   family, and the ring becomes a KEYBOARD ring.
+
+   Two human findings, one file. C: ordinary inputs and selects still hovered to
+   a neutral grey — a flat black fill in the dark theme — while the Settings
+   segments had already been brought under the accent in Gate 6.2. D: clicking a
+   control left the 3px focus ring stuck on it, because the ring was keyed on
+   :focus rather than :focus-visible.
+
+   BOTH ARE SHARED RULES, which is the point of testing them here rather than in
+   the Settings suite: one declaration each covers every field in the product. */
+
+/** Every `(hover:hover) and (pointer:fine)` block in the stylesheet, whole. */
+const HOVER_GUARDED = (() => {
+  const out: string[] = [];
+  for (const m of CSS.matchAll(/@media \(hover:hover\) and \(pointer:fine\)\{/g)) {
+    let depth = 0, j = CSS.indexOf("{", m.index);
+    for (; j < CSS.length; j++) {
+      if (CSS[j] === "{") depth++;
+      else if (CSS[j] === "}" && --depth === 0) break;
+    }
+    out.push(CSS.slice(m.index, j + 1));
+  }
+  return out;
+})();
+
+/** The guarded block carrying the bare-element field hover, and the trigger's.
+ *
+ * LAZY LOOKUPS, ASSERTED FOR EXISTENCE FIRST (test 31) — the lesson Gate 6.2
+ * learned the hard way: a block computed in a describe body with an assert in it
+ * makes every test in the suite VANISH when the rules are deleted, instead of
+ * failing. These are plain finds, and their absence is its own test. */
+const FIELD_HOVER = HOVER_GUARDED.find((b) => /input:not\(\[type=range\]\):hover/.test(b)) ?? "";
+const TRIGGER_HOVER = HOVER_GUARDED.find((b) => /\.cs-trigger:hover/.test(b)) ?? "";
+
+/** The one rule that covers input, textarea and native select. */
+const FIELD_RULE = () =>
+  /input:not\(\[type=range\]\):hover[^{]*,\s*textarea:hover[^{]*,\s*select:hover[^{]*\{([^}]*)\}/.exec(FIELD_HOVER);
+
+describe("Field family — hover belongs to the accent, not to grey", () => {
+  it("31. the shared hover rules exist at all", () => {
+    assert.notEqual(FIELD_HOVER, "", "the input/textarea/select hover block is present");
+    assert.notEqual(TRIGGER_HOVER, "", "the Select trigger hover block is present");
+    assert.ok(FIELD_RULE(), "and the one rule that covers all three fields");
+  });
+
+  it("32. an input, a textarea and a select all hover toward --accent", () => {
+    const body = FIELD_RULE()![1];
+    assert.match(body, /border-color:var\(--accent\)/, "the border moves toward the accent");
+    assert.ok(!/--muted-2|--hover\b/.test(body), "and the neutral it used to take is gone");
+  });
+
+  it("33. …and the Select trigger takes the soft accent it already had room for", () => {
+    /* The trigger, unlike a text input, already stated a background in its hover
+     * state — so it keeps the imported structure and only changes which family
+     * the colour comes from. */
+    const rule = /\.cs-trigger:hover[^{]*\{([^}]*)\}/.exec(TRIGGER_HOVER);
+    assert.ok(rule, "the trigger hover rule must exist");
+    assert.match(rule[1], /border-color:var\(--accent\)/);
+    assert.match(rule[1], /background:var\(--accent-soft\)/);
+    assert.ok(!/--muted-2|--hover\b/.test(rule[1]), "no neutral survives");
+  });
+
+  it("34. a text FIELD takes no fill — restraint, so it never reads as selected", () => {
+    const body = FIELD_RULE()![1];
+    assert.ok(!/background/.test(body), "hover changes the edge of an editable field, not its surface");
+    assert.ok(!/[^-]color:/.test(body), "and not its text colour");
+  });
+
+  it("35. no colour is hard-coded, so every accent and both themes are covered", () => {
+    for (const block of [FIELD_HOVER, TRIGGER_HOVER]) {
+      const decls = block.replace(/\/\*[\s\S]*?\*\//g, "");
+      assert.ok(!/#[0-9a-f]{3,8}\b/i.test(decls), "no hex in a hover rule");
+      assert.ok(!/\b(black|white|grey|gray)\b/i.test(decls), "and no named colour");
+    }
+    for (const accent of ["indigo", "emerald", "slate"]) {
+      for (const token of ["--accent:", "--accent-soft:"]) {
+        assert.ok(new RegExp(`\\[data-accent="${accent}"\\]\\{[^}]*${token}`).test(CSS), `${accent} ${token}`);
+        assert.ok(new RegExp(`\\[data-theme="dark"\\]\\[data-accent="${accent}"\\]\\{[^}]*${token}`).test(CSS),
+          `${accent} dark ${token}`);
+      }
+    }
+    assert.ok(/\[data-theme="dark"\]\{[^}]*--accent-soft:/.test(CSS), "and dark crimson");
+    /* ONE implementation, so dark mode needs no duplicate rule per accent. */
+    assert.equal(HOVER_GUARDED.filter((b) => /data-theme|data-accent/.test(b)).length, 0,
+      "no hover block is written per theme or per accent");
+  });
+
+  it("36. a disabled control does not answer the pointer", () => {
+    const heads: Array<[string, string]> = [
+      ["fields", /input:not\(\[type=range\]\):hover[^{]*\{/.exec(FIELD_HOVER)![0]],
+      ["the Select trigger", /\.cs-trigger:hover[^{]*\{/.exec(TRIGGER_HOVER)![0]],
+    ];
+    for (const [what, head] of heads) {
+      assert.match(head, /:not\(:disabled\)/, `${what} must exclude :disabled`);
+    }
+    assert.match(UNCONDITIONAL, /button:disabled\{opacity:\.55;cursor:not-allowed\}/,
+      "and the disabled treatment itself is unchanged");
+  });
+
+  it("37. an invalid field is STRENGTHENED by this, not overridden", () => {
+    /* The drawers state an error as an inline border in --accent. The rule that
+     * used to live here forced --muted-2 with !important, so hovering an invalid
+     * field quietly cleared its error edge. The accent is now what hover moves
+     * toward, so the error border is the one thing hover cannot take away. */
+    for (const [name, src] of Object.entries(DRAWERS)) {
+      assert.match(src, /border: `1px solid \$\{invalid \? "var\(--accent\)" : "var\(--border\)"\}`/, `${name}-drawer`);
+    }
+    assert.match(FIELD_RULE()![1], /border-color:var\(--accent\)/,
+      "hover resolves to the same token the error state does");
+    assert.match(UNCONDITIONAL, /\.cs-trigger\[data-invalid="1"\]\{border-color:var\(--accent\)\}/,
+      "and the Select's error state is untouched");
+  });
+
+  it("38. hover is only asked for where there is a pointer", () => {
+    /* On a touch screen :hover is a leftover from the last tap, not a state —
+     * the same stuck appearance finding D is about, in a different property. */
+    for (const block of [FIELD_HOVER, TRIGGER_HOVER]) {
+      assert.ok(block.startsWith("@media (hover:hover) and (pointer:fine){"));
+    }
+  });
+
+  it("39. hover changes colour only — never geometry", () => {
+    for (const block of [FIELD_HOVER, TRIGGER_HOVER]) {
+      const decls = block.replace(/\/\*[\s\S]*?\*\//g, "");
+      assert.ok(!/padding|height|width|font-size|border-width|border-radius/.test(decls),
+        "nothing in a hover rule can move a control");
+      assert.ok(!/[^-]border:/.test(decls), "border-color only, so the stated 1px stays");
+    }
+  });
+});
+
+describe("Focus ring — keyboard keeps it, a pointer does not leave it stuck", () => {
+  it("40. the shared ring is keyed on :focus-visible", () => {
+    /* THE DEFECT. `.ring` is worn by the Settings option buttons and swatches as
+     * well as by every text field, and a <button> keeps focus after a click — so
+     * choosing an option with the mouse left the 3px ring on it until something
+     * else was clicked. The selected border was right; the ring was simply the
+     * wrong indicator for a pointer. */
+    assert.match(UNCONDITIONAL, /\.ring:focus-visible\{[^}]*border-color:var\(--accent\)[^}]*\}/);
+    assert.match(UNCONDITIONAL, /\.ring:focus-visible\{[^}]*box-shadow:0 0 0 3px var\(--ring\)[^}]*\}/);
+    assert.ok(!/\.ring:focus\{/.test(UNCONDITIONAL), "and the bare :focus rule is gone, not kept alongside");
+  });
+
+  it("41. a keyboard user loses nothing, anywhere", () => {
+    /* A text input matches :focus-visible whenever it is focused, however focus
+     * arrived, so every field keeps exactly the ring it had. Buttons and links
+     * were already on :focus-visible — this brings the field ring into line with
+     * the rule that was always there rather than inventing one. */
+    assert.match(UNCONDITIONAL,
+      /button:focus-visible, a:focus-visible, \[role="button"\]:focus-visible, \[data-cs-trigger\]:focus-visible, \[tabindex\]:focus-visible, label:focus-visible\{outline:2px solid var\(--accent\);outline-offset:2px\}/);
+    /* The Select keeps its own keyboard state — the accent border and ring,
+     * rather than an outline that would draw a second ring outside it. */
+    assert.match(UNCONDITIONAL,
+      /\.cs-trigger:focus,\s*\.cs-trigger\[aria-expanded="true"\]\{[^}]*box-shadow:0 0 0 3px var\(--ring\)/);
+  });
+
+  it("42. no naked outline:none, and no JS blur-on-click workaround", () => {
+    /* Every outline:none in the file must be paired with something that still
+     * shows keyboard focus: the field ring and the Select trigger both replace
+     * the outline with a border and a box-shadow, and the date input's rule is
+     * about its own segment highlight. */
+    const kills = [...UNCONDITIONAL.matchAll(/([^\n{}]*)\{[^{}]*outline:none[^{}]*\}/g)].map((m) => m[1].trim());
+    assert.ok(kills.length > 0, "there are some to check");
+    for (const sel of kills) {
+      assert.ok(/focus-visible|\.cs-trigger|datetime-edit/.test(sel),
+        `outline:none needs a focus-visible replacement: ${sel}`);
+    }
+    for (const src of [SELECT, DATE_FIELD,
+      read("src", "components", "settings", "settings-screen.tsx"),
+      read("src", "components", "shell", "app-shell.tsx")]) {
+      assert.ok(!/\.blur\(\)/.test(codeOf(src)), "focus is never taken away in JavaScript");
+    }
+  });
+
+  it("43. the Settings controls still carry the focus class", () => {
+    const screen = read("src", "components", "settings", "settings-screen.tsx");
+    assert.match(screen, /className="ring"/, "a segment is still ring-focusable");
+    assert.match(screen, /className="ring set-sw"/, "and so is a swatch");
+    assert.match(screen, /aria-pressed=/, "the SELECTED state is separate from focus, and stays");
   });
 });

@@ -83,6 +83,56 @@ svg{display:block}
 /* --- Tweaks: Spacing --- */
 [data-spacing="airy"]{--gap:26px}
 [data-spacing="tight"]{--gap:11px}
+/* ---- Density's smaller rhythm, derived from the one density source --------
+
+   "--gap" is the workspace's density variable and it spaces BLOCKS apart: cards,
+   grid tracks, page sections. The space between two buttons that belong to the
+   same cluster is a smaller rhythm, and before Gate 6.3 every one of those was a
+   literal inside an inline style — so a filter-pill row stayed 6px at every
+   density while the grid around it breathed. That is the inconsistency the human
+   pass reported (finding B).
+
+   DERIVED, NOT STORED. There is no fourth preference and no second source of
+   truth: change Density and all three move together, in proportion. The factors
+   are chosen so that at cozy they resolve to exactly the comp's own 8px and 6px,
+   which is why the default workspace stays pixel-identical to the imported
+   design and only airy (13 / 9.75) and tight (5.5 / 4.125) move.
+
+   WHAT THEY ARE NOT FOR. Control heights, padding, type size, icon size and hit
+   targets are semantic component dimensions; none of them is derived from these
+   and none of them moves with density. Density scales the SPACE BETWEEN things.
+
+   They are declared here rather than inside the imported token block above so
+   that the derivation sits beside the density source it derives from, and the
+   design's own token list stays exactly as it was imported. */
+:root{--control-gap:calc(var(--gap) / 2);--control-gap-tight:calc(var(--gap) * 0.375)}
+
+/* ---- The workspace is never shown in a language it may be wrong about ------
+
+   (Gate 6.3, finding A.) WHY NO COMPONENT CAN FIX THIS. ThemeScript settles the
+   APPEARANCE before first paint because appearance is CSS: an inline script
+   writes data-theme on <html> and the tokens resolve. The interface language is
+   not CSS — it is the TEXT of every page, chosen while the server renders, and
+   the server cannot read localStorage. So the server ships Vietnamese, the
+   browser paints it, and React replaces it with the persisted English one render
+   later. A flag consulted during hydration cannot reach back and un-paint
+   something that is already on the screen.
+
+   GATE 6.2 PUT THE GATE ON THE SETTINGS PAGE, AND THAT WAS TOO NARROW. The
+   sidebar, the header, page headings, descriptions, inputs and tabs are all
+   outside that page, and every one of them flashed. Readiness belongs where the
+   authenticated workspace begins — AppShell, the single common root of every
+   (app) route — so the whole workspace is revealed at once, already correct.
+
+   visibility:hidden, NOT display:none and not unmounting: every box keeps its
+   geometry, so the reveal moves nothing. The colours underneath are already
+   right, because ThemeScript ran long before this rule mattered — what is hidden
+   is text, not theme. And this is ONE RENDER, not a load: nothing is fetched, so
+   there is no spinner here and none would be honest.
+
+   LOGIN IS DELIBERATELY NOT GATED. AppShell renders only inside (app); /login
+   has no shell, reads no workspace preference and waits for nothing. */
+[data-workspace-ready="0"]{visibility:hidden}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;border:2px solid var(--bg)}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted-2)}
@@ -92,7 +142,39 @@ svg{display:block}
 @keyframes drawerIn{from{transform:translateX(100%)}to{transform:none}}
 @keyframes overlayFade{from{opacity:0}to{opacity:1}}
 @keyframes selIn{from{opacity:0}to{opacity:1}}
-input:not([type=range]):hover:not(:focus), textarea:hover:not(:focus), select:hover:not(:focus){border-color:var(--muted-2) !important}
+/* ---- A field hovers toward the accent, not toward grey (Gate 6.3, finding C)
+
+   This rule used to move the border to --muted-2, a neutral that says nothing
+   about the palette in use and reads as a flat dark edge in the dark theme —
+   which is what the human pass reported once the Settings segments had already
+   been brought under the accent in Gate 6.2. It is the SHARED rule for every
+   input, textarea and native select in the product, so re-tokenising it HERE is
+   what makes the whole form family consistent; no field is patched on its own.
+
+   BORDER ONLY, AND THAT IS THE RESTRAINT. A text field that takes a fill on
+   hover reads as selected, or as disabled — the one thing an editable field must
+   never look like. --accent-soft behind a control is this app's "this is on"
+   language (the selected segment, the active nav row, the Select trigger below),
+   and an empty input is not on. So the field moves its EDGE toward the accent
+   and leaves --card alone.
+
+   :not(:disabled) — a disabled control must not answer the pointer at all;
+   without it a dead field still lit up under the cursor. :not(:focus) is the
+   original guard and keeps hover out of the focused state's way.
+
+   AN INVALID FIELD IS NOT WEAKENED BY THIS — IT IS STRENGTHENED. The drawers
+   state an error as an inline border in --accent, and the old !important grey
+   OVERRODE it on hover, so hovering an invalid field quietly cleared its error
+   edge. The accent is now what hover moves toward, so the error border is the
+   one thing hover can no longer take away.
+
+   BEHIND THE POINTER GUARD, the same one .cs-trigger and the Settings segment
+   rows already use. On a touch screen :hover is not a state, it is a leftover
+   from the last tap — and a field left wearing an accent edge after being tapped
+   is the same stuck appearance finding D is about, in a different property. */
+@media (hover:hover) and (pointer:fine){
+  input:not([type=range]):hover:not(:focus):not(:disabled), textarea:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled){border-color:var(--accent) !important}
+}
 /* The Select trigger hover USED to be declared here, with !important, because
    its border and background were inline styles. Both the !important and the rule
    are gone: the trigger state chain is one block in the interaction-state helpers
@@ -1580,7 +1662,25 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    currentColor ring at rest — that reads as a dark input border instead of the
    comp's var(--border). Neutralise the resting state; :focus below still wins. */
 .ring{box-shadow:none}
-.ring:focus{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--ring) !important}
+/* KEYBOARD FOCUS, NOT POINTER FOCUS (Gate 6.3, finding D).
+ *
+ * This was :focus, and .ring is worn by the Settings option buttons and swatches
+ * as well as by every text field. A <button> keeps focus after a click, so
+ * choosing an option with the mouse left the 3px keyboard ring sitting on it
+ * until something else was clicked — the selected border was right, the ring was
+ * simply the wrong indicator for a pointer.
+ *
+ * :focus-visible is the browser's own answer to that question, and it is not a
+ * downgrade for anyone: a text input matches :focus-visible whenever it is
+ * focused, however focus arrived, so every field keeps exactly the ring it had;
+ * a button matches it on Tab and not on click, which is the whole fix. No
+ * outline:none was added, nothing is blurred in JavaScript, and the keyboard
+ * path is untouched.
+ *
+ * The generic outline for buttons and links a few hundred lines above is already
+ * :focus-visible — this brings the field ring into line with it rather than
+ * inventing a rule. */
+.ring:focus-visible{border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--ring) !important}
 /* ---- Select trigger: the whole state chain, in one place -------------------
    WHAT WENT WRONG. The trigger is a <button>, and WebKit does not focus a button
    when you tap it. Every rule that painted the open state was keyed on :focus,
@@ -1622,8 +1722,19 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    pointer. On a touch screen :hover is not a state, it is a leftover from the
    last tap — the same reason .cal-event gates its grab cursor this way. */
 @media (hover:hover) and (pointer:fine){
-  .cs-trigger:hover:not(:focus):not([aria-expanded="true"]){
-    border-color:var(--muted-2);background:var(--hover);
+  /* THE TRIGGER'S HOVER IS THE ACCENT'S TOO (Gate 6.3, finding C). It was
+     --muted-2 over the neutral --hover fill, which in the dark theme is the flat
+     black hover the human pass reported. Unlike a text input this control
+     already had a background in its hover state, so re-tokenising it keeps the
+     imported structure and changes only which family the colour comes from: the
+     soft accent tint behind an accent edge, the same pairing the selected
+     segment and the active nav row already speak.
+     :not(:disabled) is added for the same reason as on the fields above — a
+     Select that cannot open must not light up under the pointer. The open and
+     focus rule below restates background:var(--card), so a hover tint can still
+     never survive into the open state. */
+  .cs-trigger:hover:not(:focus):not([aria-expanded="true"]):not(:disabled){
+    border-color:var(--accent);background:var(--accent-soft);
   }
 }
 /* Focus and open are one state, in the app's field language: the accent border
@@ -2010,27 +2121,22 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    others is asking for this. */
 [data-screen-label="Settings"]{margin-inline:auto}
 
-/* ---- Nothing is shown until the stored preferences are known --------------
+/* ---- The page's entrance now belongs to the WORKSPACE's readiness ----------
 
-   THE LANGUAGE FLASH, AND WHY `hydrated` ALONE COULD NOT FIX IT (Gate 6.2,
-   defect 1). Gate 6.1 stopped controls claiming a default SELECTION, because
-   that was decided during the hydrating render and React owns that render. The
-   language is decided earlier still: the server renders `t()` against the
-   default `vi`, ships HTML full of Vietnamese, and the browser paints it before
-   any React has run. A flag consulted during hydration cannot un-paint that.
+   THERE WAS A SETTINGS-ONLY GATE HERE, AND GATE 6.3 REMOVED IT. Gate 6.2 hid
+   this page until the stored preferences were known, which fixed the language
+   flash on /settings and nowhere else — the sidebar, the header and every other
+   page went on flashing, which is exactly what the next human pass reported.
+   The gate moved to AppShell (see [data-workspace-ready] near the top of this
+   file), where it covers the whole authenticated workspace.
 
-   So the server's own markup declines to show the copy. It writes
-   `data-settings-ready="0"`, this rule hides the content from the first paint,
-   and the attribute becomes `1` in the same commit that brings the stored
-   language — so everything is revealed at once, already in English.
-
-   `visibility:hidden`, NOT `display:none` and not unmounting: the cards keep
-   their space, so the reveal shifts nothing. The fade is the comp's own `fadeUp`,
-   moved here from an inline style so that it plays on REVEAL rather than on
-   mount — otherwise the animation would run its whole course while the content
-   was still invisible and the text would simply pop in at the end. */
-[data-screen-label="Settings"][data-settings-ready="0"]{visibility:hidden}
-[data-screen-label="Settings"][data-settings-ready="1"]{animation:fadeUp .3s ease both}
+   ONE READINESS BOUNDARY, NOT TWO. Keeping the page gate as well would have been
+   a second source of truth for the same question, nested inside the first and
+   able to disagree with it. So what is left here is only the ENTRANCE: the
+   comp's own fadeUp, keyed on the workspace being ready so that it still plays
+   on reveal rather than running its course while the page is invisible. It reads
+   readiness; it does not decide it. */
+[data-workspace-ready="1"] [data-screen-label="Settings"]{animation:fadeUp .3s ease both}
 
 /* ---- Density reaches this page through the token, not through a branch -----
 
@@ -2143,15 +2249,15 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    for the wrap to know when it is needed — which is also why the segment itself
    carries `min-width:max-content`. */
 /* THE GAPS BETWEEN OPTION BUTTONS FOLLOW DENSITY TOO (Gate 6.2, decision 2).
-   Derived from `--gap` rather than branched on: `/2` and `*.375` are chosen so
-   that at cozy they resolve to exactly the comp's own 8px and 6px, leaving the
-   default page unchanged and moving only airy (13 / 9.75) and tight (5.5 /
-   4.125). Only the SPACE scales — height, padding and type size are stated in
-   `settingsSegmentStyle` and are deliberately untouched, so a tap target is the
-   same size at every density. */
-.set-seg-row{display:flex;flex-wrap:wrap;gap:calc(var(--gap) / 2)}
+   Gate 6.3 did not change what these resolve to; it moved the two calc()s into
+   --control-gap and --control-gap-tight at the top of this file, so that the
+   filter pills and action clusters brought under density app-wide use the SAME
+   derivation rather than a second copy of it. Only the SPACE scales — height,
+   padding and type size are stated in settingsSegmentStyle and are deliberately
+   untouched, so a tap target is the same size at every density. */
+.set-seg-row{display:flex;flex-wrap:wrap;gap:var(--control-gap)}
 /* The regional grid's own tighter rhythm, in the same proportion. */
-.set-seg-row.tight{gap:calc(var(--gap) * 0.375)}
+.set-seg-row.tight{gap:var(--control-gap-tight)}
 
 /* ---- The accent swatches --------------------------------------------------
 

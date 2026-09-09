@@ -509,11 +509,13 @@ describe("Settings · the design's own measurements", () => {
     assert.ok(/\.set-pair-appearance\{[^}]*gap:var\(--gap\);max-width:520px/.test(SET_CSS), "surface + density");
     assert.ok(/\.set-pair-regional\{[^}]*gap:var\(--gap\);max-width:560px/.test(SET_CSS), "regional");
     assert.ok(/\.set-pair-workspace\{[^}]*gap:var\(--gap\) 22px/.test(SET_CSS), "workspace row gap follows density, column gap stays fixed");
-    /* Gate 6.2 made these follow density too. The comp's own 8px and 6px are
-     * preserved exactly at the default density — see the density suite, which
-     * checks the arithmetic rather than the literals. */
-    assert.ok(/\.set-seg-row\{[^}]*gap:calc\(var\(--gap\) \/ 2\)\}/.test(SET_CSS), "the roomy row's gap");
-    assert.ok(/\.set-seg-row\.tight\{gap:calc\(var\(--gap\) \* 0\.375\)\}/.test(SET_CSS), "the regional row's gap");
+    /* Gate 6.2 made these follow density too, and Gate 6.3 moved the two calc()s
+     * into app-wide tokens so the filter pills and action clusters share ONE
+     * derivation with them. The comp's own 8px and 6px are still what they
+     * resolve to at the default density — see the density suite, which checks
+     * the arithmetic rather than the literals. */
+    assert.ok(/\.set-seg-row\{[^}]*gap:var\(--control-gap\)\}/.test(SET_CSS), "the roomy row's gap");
+    assert.ok(/\.set-seg-row\.tight\{gap:var\(--control-gap-tight\)\}/.test(SET_CSS), "the regional row's gap");
   });
 
   it("4. a segment is the comp's own control, and only its two states differ", () => {
@@ -889,73 +891,142 @@ describe("Settings · C. the readiness transition, exercised", () => {
   });
 });
 
-/* ============= Gate 6.2 — language flash, control gaps, accent hover */
+/* ===== Gate 6.3 — the readiness boundary is the WORKSPACE, not this page ====
 
-describe("Settings · D. the page is never shown in the wrong language", () => {
-  it("1. the readiness state reaches the SERVER's own markup", () => {
+   Gate 6.2 put a `data-settings-ready` gate on the Settings screen. It fixed the
+   wrong-language flash on /settings and nowhere else, so the next human pass
+   reported the sidebar, the header, page headings, descriptions, inputs and tabs
+   all still painting Vietnamese first. The gate moved to `AppShell`; this suite
+   moved with it, and the old page-scoped assertions are gone rather than being
+   kept alongside — two gates for one question is the duplicate state the whole
+   module refuses. */
+
+const SHELL = code("src", "components", "shell", "app-shell.tsx");
+const HEADER = code("src", "components", "shell", "header.tsx");
+const SIDEBAR = code("src", "components", "shell", "sidebar.tsx");
+const APP_LAYOUT = code("src", "app", "(app)", "layout.tsx");
+const LOGIN = code("src", "app", "login", "page.tsx");
+
+describe("Settings · D. the WORKSPACE is never shown in a language it may be wrong about", () => {
+  it("1. readiness reaches the SERVER's own markup, at the workspace root", () => {
     /* THE DIFFERENCE FROM GATE 6.1. A selection is decided during the hydrating
      * render, which React owns. The language is decided before that: the server
      * renders `t()` against the default `vi` and the browser paints that HTML
      * before any React runs. So the flag has to be an ATTRIBUTE the server emits,
      * not a value only React consults. */
-    assert.ok(SCREEN.includes('data-settings-ready={hydrated ? "1" : "0"}'),
-      "the root publishes readiness as an attribute");
-    assert.ok(/\[data-screen-label="Settings"\]\[data-settings-ready="0"\]\{visibility:hidden\}/.test(SET_CSS),
-      "and the stylesheet hides the content until it flips");
+    assert.ok(SHELL.includes('data-workspace-ready={hydrated ? "1" : "0"}'),
+      "AppShell publishes readiness as an attribute");
+    assert.ok(/\[data-workspace-ready="0"\]\{visibility:hidden\}/.test(CSS),
+      "and the stylesheet hides the workspace until it flips");
   });
 
-  it("2. it hides without moving anything", () => {
-    /* `visibility:hidden` keeps the box; `display:none` would collapse the page
-     * and the reveal would be a layout jump. */
-    const rule = /\[data-settings-ready="0"\]\{([^}]*)\}/.exec(SET_CSS)?.[1] ?? "";
-    assert.equal(rule, "visibility:hidden");
-    assert.ok(!/display:none/.test(SET_CSS), "nothing in Settings is display:none");
-  });
-
-  it("3. the reveal is the comp's own fade, played on reveal rather than on mount", () => {
-    assert.ok(/\[data-settings-ready="1"\]\{animation:fadeUp \.3s ease both\}/.test(SET_CSS));
-    assert.ok(!/animation: "fadeUp/.test(SCREEN),
-      "the animation left the inline style, or it would run while still invisible");
-  });
-
-  it("4. no spinner, no unmount, and the geometry stays", () => {
-    assert.ok(!/Loading|Spinner|skeleton/i.test(SCREEN), "nothing is drawn in place of the page");
-    assert.ok(!/hydrated \?\s*<|!hydrated &&|hydrated &&/.test(SCREEN),
-      "the tree is not conditionally rendered — only its visibility changes");
-    assert.equal((SCREEN.match(/<section/g) ?? []).length, 3, "all three cards are always mounted");
-  });
-
-  it("5. the language itself is still only ever the store's", () => {
-    assert.ok(!/lang === "en"|=== "vi"/.test(SCREEN), "no language branch on the screen");
-    assert.ok(SCREEN.includes("useSettings()"), "and it comes from the one store");
-    /* Not solved by forcing English on the server, and not by a cookie. */
-    assert.ok(!/document\.cookie|cookies\(\)/.test(SCREEN + PAGE), "no cookie persistence");
-    assert.ok(STORE.includes("lang: DEFAULT_LANG"), "vi is still the system default when nothing is stored");
-  });
-
-  it("6. the gating is scoped to Settings and reaches no other route", () => {
-    assert.ok(!/data-settings-ready/.test(code("src", "components", "providers.tsx")), "providers are untouched");
-    assert.ok(!/data-settings-ready/.test(code("src", "app", "layout.tsx")), "the root layout is untouched");
-    assert.ok(!/data-settings-ready/.test(code("src", "components", "shell", "app-shell.tsx")), "the shell is untouched");
-    const settingsReadySelectors = [...CSS.matchAll(/\[data-settings-ready="[01]"\]/g)];
-    assert.ok(settingsReadySelectors.length > 0);
-    for (const m of settingsReadySelectors) {
-      const line = CSS.slice(CSS.lastIndexOf("\n", m.index) + 1, CSS.indexOf("{", m.index));
-      assert.ok(line.includes('[data-screen-label="Settings"]'), `always paired with the Settings root: ${line}`);
+  it("2. it is the smallest boundary that actually contains the flash", () => {
+    /* The reported surfaces — sidebar, header, titles, descriptions, inputs, tabs
+     * — are all children of AppShell and none of them is a child of the Settings
+     * page. `(app)/layout.tsx` renders this component for every authenticated
+     * route, so gating it once covers all of them. */
+    assert.ok(APP_LAYOUT.includes("<AppShell"), "the authenticated layout renders the shell");
+    assert.ok(/<Sidebar/.test(SHELL) && /<Header/.test(SHELL) && /\{children\}/.test(SHELL),
+      "and the shell contains the sidebar, the header and the page");
+    const at = SHELL.indexOf('data-workspace-ready');
+    for (const child of ["<Sidebar", "<Header", "{children}"]) {
+      assert.ok(SHELL.indexOf(child) > at, `${child} is inside the gated element`);
     }
   });
 
-  it("7. the header's icon still does NOT depend on this — it was already correct", () => {
-    const header = code("src", "components", "shell", "header.tsx");
-    assert.ok(!/data-settings-ready|hydrated/.test(header), "the header needs no readiness gate");
-    assert.ok(header.includes('<span className="hdr-theme-icon-dark">'), "its CSS solution stands");
+  it("3. server and hydrating client emit the SAME readiness markup", () => {
+    /* `hydrated` is `snapshot !== SERVER_SETTINGS`, and React uses
+     * `getServerSnapshot` for the hydrating render as well as the server one — so
+     * both produce "0" and there is nothing to mismatch. A `useState` seeded from
+     * storage, or a direct read here, would render "1" during hydration against a
+     * server "0". */
+    assert.ok(STORE.includes("const hydrated = snapshot !== SERVER_SETTINGS"),
+      "readiness is derived from the snapshot's identity");
+    assert.ok(STORE.includes("getServerSnapshot"), "and the server snapshot is the hydrating one");
+    assert.ok(SHELL.includes("const { hydrated } = useSettings()"),
+      "the shell reads it from the shared store");
+  });
+
+  it("4. no direct storage read, and no second copy of the language, in the shell", () => {
+    for (const [name, src] of [["app-shell", SHELL], ["header", HEADER], ["sidebar", SIDEBAR]] as const) {
+      assert.ok(!/localStorage|sessionStorage|document\.cookie/.test(src), `${name} reads no storage`);
+      assert.ok(!/useState<?[^>]*>?\(\s*(lang|"vi"|"en")/.test(src), `${name} keeps no language state`);
+    }
+    assert.ok(!/lang === "en"|=== "vi"/.test(SHELL + HEADER + SIDEBAR), "and branches on no language");
+    assert.ok(!/document\.cookie|cookies\(\)/.test(SHELL + APP_LAYOUT + SCREEN + PAGE),
+      "no cookie or server-side preference migration");
+    assert.ok(STORE.includes("lang: DEFAULT_LANG"), "vi is still the system default when nothing is stored");
+  });
+
+  it("5. it hides without moving anything, and without a spinner", () => {
+    /* `visibility:hidden` keeps every box; `display:none` or an unmount would
+     * collapse the workspace and the reveal would be a layout jump. */
+    const rule = /\[data-workspace-ready="0"\]\{([^}]*)\}/.exec(CSS)?.[1] ?? "";
+    assert.equal(rule, "visibility:hidden");
+    assert.ok(!/hydrated \?\s*<|!hydrated &&|hydrated &&/.test(SHELL),
+      "the tree is not conditionally rendered — only its visibility changes");
+    assert.ok(!/Loading|Spinner/i.test(SHELL), "nothing is drawn in place of the workspace");
+  });
+
+  it("6. exactly ONE readiness boundary exists", () => {
+    /* The Gate 6.2 page gate is gone, not kept alongside. */
+    assert.ok(!/data-settings-ready/.test(CSS), "no page-scoped gate survives in the stylesheet");
+    assert.ok(!/data-settings-ready/.test(SCREEN), "nor on the Settings screen");
+    const roots = [...CSS.matchAll(/\[data-workspace-ready="0"\]/g)];
+    assert.equal(roots.length, 1, "one hiding rule, in one place");
+    const emitters = [SHELL, SCREEN, HEADER, SIDEBAR, code("src", "components", "providers.tsx"),
+      code("src", "app", "layout.tsx")]
+      .filter((s) => /data-workspace-ready=/.test(s));
+    assert.equal(emitters.length, 1, "and exactly one component emits it");
+  });
+
+  it("7. the Settings page keeps its entrance by READING readiness, not owning it", () => {
+    assert.ok(/\[data-workspace-ready="1"\] \[data-screen-label="Settings"\]\{animation:fadeUp \.3s ease both\}/.test(SET_CSS),
+      "the fade is keyed on the workspace being ready");
+    assert.ok(!/animation: "fadeUp/.test(SCREEN),
+      "and it stays out of the inline style, or it would run while still invisible");
+    assert.equal((SCREEN.match(/<section/g) ?? []).length, 3, "all three cards are always mounted");
+    assert.ok(SCREEN.includes("useSettings()"), "the page still reads the one store");
+    assert.ok(SCREEN.includes("hydrated ? isSelected : null"),
+      "and `hydrated` still answers its own narrower question about a control's selection");
+  });
+
+  it("8. the pre-auth experience is deliberately NOT gated", () => {
+    /* AppShell renders only inside (app). Login has no shell, consumes no
+     * workspace preference, and must not wait on one. */
+    assert.ok(!/data-workspace-ready|AppShell/.test(LOGIN), "login has no workspace gate");
+    assert.ok(!/useSettings|SettingsProvider/.test(LOGIN), "and consumes no workspace preference");
+    assert.ok(!/data-workspace-ready/.test(code("src", "app", "layout.tsx")), "the root layout is untouched");
+    assert.ok(!/data-workspace-ready/.test(code("src", "components", "providers.tsx")), "providers are untouched");
+  });
+
+  it("9. ThemeScript is untouched, and is still what keeps the colours right", () => {
+    /* The appearance is CSS and can be settled before first paint; the language
+     * is text and cannot. That asymmetry is the whole reason this gate exists,
+     * and it depends on the pre-paint script continuing to do its half. */
+    assert.ok(THEME_SCRIPT.includes("el.dataset.theme=g('etlms.theme','light')"));
+    assert.ok(THEME_SCRIPT.includes("el.dataset.accent=g('etlms.accent','crimson')"));
+    assert.ok(THEME_SCRIPT.includes("el.dataset.spacing=g('etlms.spacing','cozy')"));
+    assert.ok(!/data-workspace-ready|lang|language/i.test(THEME_SCRIPT),
+      "and it was NOT extended to guess the language");
+  });
+
+  it("10. the header's icon still does NOT depend on this — it was already correct", () => {
+    assert.ok(!/data-workspace-ready|hydrated/.test(HEADER), "the header needs no readiness gate of its own");
+    assert.ok(HEADER.includes('<span className="hdr-theme-icon-dark">'), "its CSS solution stands");
   });
 });
 
 describe("Settings · E. density reaches the gaps between option buttons", () => {
   it("1. both segment gaps derive from the density token", () => {
-    assert.ok(/\.set-seg-row\{[^}]*gap:calc\(var\(--gap\) \/ 2\)\}/.test(SET_CSS));
-    assert.ok(/\.set-seg-row\.tight\{gap:calc\(var\(--gap\) \* 0\.375\)\}/.test(SET_CSS));
+    /* Gate 6.3 moved the two calc()s out of these rules and into app-wide
+     * tokens, so the filter pills and action clusters share ONE derivation with
+     * the segment rows rather than each carrying a copy. What they resolve to is
+     * unchanged — the arithmetic is checked in the next two tests. */
+    assert.ok(/\.set-seg-row\{[^}]*gap:var\(--control-gap\)\}/.test(SET_CSS));
+    assert.ok(/\.set-seg-row\.tight\{gap:var\(--control-gap-tight\)\}/.test(SET_CSS));
+    assert.ok(/--control-gap:calc\(var\(--gap\) \/ 2\)/.test(CSS), "and the token does the halving");
+    assert.ok(/--control-gap-tight:calc\(var\(--gap\) \* 0\.375\)/.test(CSS), "and the tighter one");
   });
 
   it("2. …and resolve to exactly the comp's values at the default density", () => {
@@ -999,6 +1070,116 @@ describe("Settings · E. density reaches the gaps between option buttons", () =>
      * line — the thing that must stay impossible is a horizontal scrollbar. */
     assert.ok(/\.set-seg-row\{[^}]*flex-wrap:wrap/.test(SET_CSS), "the row wraps");
     assert.equal(settingsSegmentStyle(false, "dense").minWidth, "max-content", "and no label is squeezed");
+  });
+});
+
+/* ===== Gate 6.3 — density reaches the shared control clusters, app-wide ==== */
+
+/** The clusters deliberately brought under workspace density, and the token each
+ * takes. Every one is a group of SIBLING CONTROLS — filter pills, or a row of
+ * action buttons — which is what "workspace layout rhythm" means here. */
+const DENSITY_CLUSTERS: ReadonlyArray<readonly [string[], string, string]> = [
+  [["src", "app", "(app)", "students", "page.tsx"], "var(--control-gap-tight)", "status filter pills"],
+  [["src", "app", "(app)", "classes", "page.tsx"], "var(--control-gap)", "status filter pills"],
+  [["src", "app", "(app)", "lessons", "page.tsx"], "var(--control-gap)", "status chips"],
+  [["src", "app", "(app)", "dashboard", "page.tsx"], "var(--control-gap)", "quick-action cluster"],
+  [["src", "app", "(app)", "students", "[id]", "page.tsx"], "var(--control-gap)", "header action cluster"],
+  [["src", "app", "(app)", "classes", "[id]", "page.tsx"], "var(--control-gap)", "act-row action cluster"],
+  [["src", "app", "(app)", "reviews", "page.tsx"], "var(--control-gap)", "card action cluster"],
+];
+
+describe("Settings · E2. density reaches the shared control clusters", () => {
+  it("1. each selected cluster consumes the derived token, not a literal", () => {
+    for (const [parts, token, what] of DENSITY_CLUSTERS) {
+      const src = code(...parts);
+      assert.ok(src.includes(`gap: "${token}"`), `${parts.at(-2)}/${parts.at(-1)}: ${what} takes ${token}`);
+    }
+  });
+
+  it("2. the tokens come from the ONE density source", () => {
+    /* Not a stored preference, not a second variable someone can set
+     * independently: both are calc() over `--gap`, which is the only thing
+     * `[data-spacing]` writes. */
+    const decl = /:root\{--control-gap:([^;]*);--control-gap-tight:([^}]*)\}/.exec(CSS);
+    assert.ok(decl, "both tokens are declared together on :root");
+    for (const expr of [decl![1], decl![2]]) {
+      assert.ok(expr.includes("var(--gap)"), `derived from --gap: ${expr}`);
+    }
+    const spacingRules = [...CSS.matchAll(/\[data-spacing="[a-z]+"\]\{([^}]*)\}/g)].map((m) => m[1]);
+    assert.ok(spacingRules.length > 0, "density has token blocks");
+    for (const body of spacingRules) {
+      assert.match(body, /^--gap:\d+px$/, `density writes only --gap: ${body}`);
+    }
+  });
+
+  it("3. Tight < Cozy < Airy, distinctly, for both tokens", () => {
+    const cozy = Number(/:root\{[^}]*--gap:(\d+)px/.exec(CSS)![1]);
+    const airy = Number(/\[data-spacing="airy"\]\{--gap:(\d+)px\}/.exec(CSS)![1]);
+    const tight = Number(/\[data-spacing="tight"\]\{--gap:(\d+)px\}/.exec(CSS)![1]);
+    for (const factor of [1 / 2, 0.375]) {
+      const [t, c, a] = [tight * factor, cozy * factor, airy * factor];
+      assert.ok(t < c && c < a, `ordered tight < cozy < airy (${t} < ${c} < ${a})`);
+      assert.ok(a - t >= 3, "and the range is wide enough to see");
+    }
+    /* And cozy is still exactly the imported design, so nothing moved by
+     * default. */
+    assert.equal(cozy / 2, 8);
+    assert.equal(cozy * 0.375, 6);
+  });
+
+  it("4. no page branches on a density value", () => {
+    for (const [parts] of DENSITY_CLUSTERS) {
+      const src = code(...parts);
+      assert.ok(!/data-spacing|"airy"|"cozy"|"tight"/.test(src),
+        `${parts.at(-2)}/${parts.at(-1)} states no density branch`);
+    }
+    /* Nor does the stylesheet grow a per-page density selector. */
+    const branchy = [...CSS.matchAll(/\[data-spacing="[a-z]+"\][^{\n]+\{/g)];
+    assert.equal(branchy.length, 0, "no compound [data-spacing=…] selector anywhere");
+  });
+
+  it("5. only SPACE moved — no height, padding, type size or hit target", () => {
+    /* The whole contract of this finding: density is the space between things.
+     * A control that changed size with density would be a different control at
+     * each setting, and a smaller tap target at tight. */
+    for (const [parts] of DENSITY_CLUSTERS) {
+      const src = code(...parts);
+      for (const prop of ["height", "minHeight", "padding", "fontSize", "borderRadius"]) {
+        assert.ok(!new RegExp(`${prop}: "var\\(--control-gap`).test(src),
+          `${parts.at(-1)}: ${prop} must not be derived from a gap token`);
+      }
+    }
+    /* The segment's own geometry is stated in one place and is density-free. */
+    const seg = settingsSegmentStyle(false);
+    assert.equal(seg.height, 34);
+    assert.equal(seg.padding, "0 13px");
+  });
+
+  it("6. every widened cluster can still only wrap, never overflow", () => {
+    /* A wider gap in a row that cannot wrap is horizontal overflow. Six of the
+     * seven declare flexWrap inline; `.act-row` is the exception and wraps at the
+     * mobile breakpoint through the stylesheet, which is where its wrap has
+     * always lived. */
+    for (const [parts, , what] of DENSITY_CLUSTERS) {
+      const src = code(...parts);
+      const at = src.indexOf(`gap: "var(--control-gap`);
+      const decl = src.slice(src.lastIndexOf("<div", at), src.indexOf(">", at));
+      const wraps = /flexWrap: "wrap"/.test(decl) || /className="act-row"/.test(decl);
+      assert.ok(wraps, `${what} must be able to wrap: ${decl.trim()}`);
+    }
+    assert.ok(/\.act-row\{flex-wrap:wrap !important\}/.test(CSS), "and .act-row's wrap rule stands");
+  });
+
+  it("7. the header's fixed spacing is a decision, and it is recorded", () => {
+    /* The human pass named the header. It was audited and deliberately left
+     * alone — it is one non-wrapping row whose intrinsic minimum IS the
+     * document's minimum width, and no derived token resolves to its imported
+     * 14px at cozy. This asserts the outcome; header.tsx states the reasons. */
+    assert.ok(!/var\(--control-gap|var\(--gap\)/.test(HEADER), "no density token reaches the header row");
+    assert.ok(/gap: 14/.test(HEADER), "its imported spacing is intact");
+    assert.ok(read("src", "components", "shell", "header.tsx")
+      .includes("THIS ROW'S SPACING DELIBERATELY DOES NOT FOLLOW DENSITY"),
+      "and the decision is documented where the next reader will look");
   });
 });
 

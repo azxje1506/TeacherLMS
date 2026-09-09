@@ -108,28 +108,26 @@ export function SettingsScreen({ account }: { account: { name: string; email: st
   const known = (isSelected: boolean): boolean | null => (hydrated ? isSelected : null);
 
   return (
-    /* `data-settings-ready` is why the page does not appear in the wrong language.
+    /* THIS PAGE NO LONGER GATES ITSELF, and that is the Gate 6.3 change.
      *
-     * THIS IS A DIFFERENT DEFECT FROM THE ONE GATE 6.1 FIXED, at a different
-     * moment. The selection markers were wrong during the HYDRATING RENDER, which
-     * `hydrated` alone could fix because React owns that render. The language was
-     * wrong EARLIER THAN THAT: the server ships HTML containing Vietnamese, and
-     * the browser paints it before a line of React has run. No React-side flag can
-     * reach back and change something already on screen.
+     * Gate 6.2 published `data-settings-ready` here and hid the cards until the
+     * store was readable. It was the right mechanism at the wrong boundary: it
+     * fixed the wrong-language flash on /settings and nowhere else, so the
+     * sidebar, the header and every other page went on painting Vietnamese
+     * first. That gate now lives on `AppShell`, the one common root of every
+     * authenticated route, and covers the whole workspace at once.
      *
-     * So the server's own markup has to decline to show preference-dependent
-     * copy: it renders `0` here, the stylesheet hides the content from the very
-     * first paint, and the attribute flips to `1` in the same commit that brings
-     * the stored language — revealing everything at once, already in English.
+     * There is deliberately NOT a second one here. Two readiness flags for the
+     * same question — one nested inside the other, each able to disagree — is
+     * precisely the duplicate state this module has refused everywhere else.
+     * The page's own entrance survives as a stylesheet rule keyed on the
+     * workspace's readiness (`[data-workspace-ready="1"] [data-screen-label=
+     * "Settings"]`), so the comp's fadeUp still plays on reveal rather than
+     * running its course while the page is invisible.
      *
-     * `visibility:hidden` rather than unmounting, so the cards keep their space
-     * and nothing shifts when the text arrives. Not a spinner, and not a
-     * server-rendered guess at the language, which would be a mismatch. */
-    <div
-      data-screen-label="Settings"
-      data-settings-ready={hydrated ? "1" : "0"}
-      style={{ maxWidth: 760 }}
-    >
+     * `hydrated` is still used below, for the narrower question it has always
+     * answered: may a CONTROL claim that a particular option is the teacher's? */
+    <div data-screen-label="Settings" style={{ maxWidth: 760 }}>
       <h1 style={{ fontSize: 24, fontWeight: 600, letterSpacing: "-.02em", margin: "0 0 4px" }}>{t("Settings")}</h1>
       <p style={{ color: "var(--muted)", fontSize: 14, margin: "0 0 22px" }}>
         {t("Personalise your workspace. Preferences are saved to this device.")}

@@ -142,7 +142,9 @@ export default function ClassesPage() {
 
         <div style={{ flex: 1 }} />
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {/* Filter pills: one control cluster, so its gap is the workspace's derived
+          * control rhythm rather than a literal. See --control-gap in globals.css. */}
+        <div style={{ display: "flex", gap: "var(--control-gap)", flexWrap: "wrap" }}>
           {STATUS_CHIPS.map((c) => (
             <button key={c} onClick={() => setStatus(c)} style={chipStyle(status === c)}>{t(c)}</button>
           ))}
