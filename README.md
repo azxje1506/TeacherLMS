@@ -458,6 +458,12 @@ language hydration, density, accent hover, focus behaviour and the regression
 sweep — and Sprint 11 merged to `main` at `ceb1e8b` as a fast-forward,
 preserving every implementation commit.
 
+The Sprint 11 **closure audit has since passed**, re-checked against the merged
+code rather than against the gate reports: the shipped implementation matches the
+banked contract, no blocker remains open, and no debug code, temporary comment,
+migration, test-only bypass or unfinished TODO was introduced. **Sprint 11 —
+Settings is closed.**
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

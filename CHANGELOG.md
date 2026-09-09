@@ -2,6 +2,41 @@
 
 ## Unreleased — Settings (Sprint 11) — **shipped, human-verified, merged, CLOSED**
 
+### Closure audit — **passed**
+- Run against the **merged** code on `main`, not against the gate reports.
+  Runtime commit `ceb1e8b`, closure documentation `6e69042`; every Sprint 11
+  commit contained in `main`, `main == origin/main`, working tree clean and 0
+  unpushed.
+- **All Sprint 11 gates complete and all human re-tests recorded PASS.** Every
+  issue raised at Gates 6, 6.1, 6.2 and 6.3 was fixed before closure, and no
+  blocker remains open.
+- **The shipped implementation matches the accepted contract**, re-verified in
+  the current source: nine settings and no tenth; existing `etlms.*` keys with
+  no key added or renamed; no Save/Apply, server action, Settings API, model,
+  schema, index or migration; Workspace card read-only; VND the source currency
+  with USD display-only over the untouched existing rate; `vi` the default with
+  `en` on the source-string fallback; no auth, JWT or cookie change; and no
+  dependency change since the sprint baseline.
+- **No residue.** No TODO, FIXME, HACK, `console.*`, `debugger`, `it.only`/
+  `.skip`, environment escape hatch or test-only bypass was introduced anywhere
+  in the sprint diff, and no migration or backfill script was touched. The
+  retired Gate 6.2 `data-settings-ready` gate survives only as prose explaining
+  its removal and as negative assertions proving it is gone.
+- **Containment re-verified at the system level.** Exactly one readiness
+  boundary exists — one emitter in `app-shell.tsx`, one hiding rule, one
+  descendant reveal rule. `ThemeScript` and the root layout are untouched since
+  the baseline, so theme first paint is unchanged. Every `--control-gap` /
+  `--control-gap-tight` consumer uses the token **only as `gap`** — never a
+  width, height, padding or type size — and all seven clusters can wrap, six
+  inline and `.act-row` through the mobile breakpoint, so mobile at Airy cannot
+  overflow. Both shared field-hover rules exclude `:disabled`, both Settings
+  hover rules exclude `[aria-pressed="true"]` so a selected control is never
+  downgraded, and every accent state resolves through `--accent` /
+  `--accent-soft` with no hard-coded colour.
+- **Final gates on `main`:** lint **0 errors** with the same 8 pre-existing
+  warnings, **2420 / 2420 tests**, production build green, `git diff --check`
+  clean.
+
 ### Closure — merged to `main` at `ceb1e8b`
 - **Sprint 11 is closed.** Contract banked in `PROJECT_RULES.md` before any code
   (`## Settings`); implemented across six commits on `sprint-11-settings`;
