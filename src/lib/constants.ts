@@ -50,6 +50,10 @@ export const LOGIN_DELAY_MS = 700;
 export const ACTIVITY_MAX = 40;
 export const RECENT_SEARCH_MAX = 6;
 export const CMD_RESULT_MAX = 40;
+/** How many notifications the bell dropdown draws. A PRESENTATION cap and not a
+ * limit on the derived set: item 21 still exists, still counts toward the unread
+ * badge and is still marked by "Mark all read" — it is only not rendered. */
+export const NOTIFICATION_MAX = 20;
 
 /** localStorage keys, namespaced so persisted prefs are easy to find/clear. */
 export const storageKeys = {

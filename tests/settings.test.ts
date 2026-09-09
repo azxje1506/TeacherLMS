@@ -292,13 +292,17 @@ describe("Settings · the store validates what the browser gives it", () => {
      * or a Notifications file. This is what stops the inversion from being
      * satisfiable by dropping a reader somewhere out of the old scan's sight.
      *
-     * It passes today with `lib/constants.ts` as the only match, and it is not
-     * vacuous when Gate 2 lands the reader: it then constrains WHERE that reader
-     * may live. The rule is deliberately a property of the path rather than an
-     * allowlist of filenames, so it never needs "just one more entry" — which is
-     * how a guard like this normally rots. Gate 2 still owns the positive
-     * assertion that a reader EXISTS; it cannot be written here, because at
-     * contract-banking time it would assert something Sprint 12 has not built. */
+     * The rule is deliberately a property of the path rather than an allowlist of
+     * filenames, so it never needs "just one more entry" — which is how a guard
+     * like this normally rots.
+     *
+     * GATE 2 COMPLETED IT. When this was banked at Gate 1.1 the only match was
+     * `lib/constants.ts` and the guard could say only where a reader would be
+     * ALLOWED to live, because asserting that one existed would have asserted
+     * something unbuilt. Sprint 12's engine has since landed, so the positive
+     * half is now here too: a reader must actually exist. Without it the whole
+     * assertion would pass just as happily if the acknowledgement layer were
+     * deleted tomorrow. */
     const readers = srcFiles()
       .filter(([, src]) => /notifDismissed|notifRead/.test(src))
       .map(([rel]) => rel);
@@ -307,6 +311,14 @@ describe("Settings · the store validates what the browser gives it", () => {
       assert.ok(rel === "lib/constants.ts" || /notification/i.test(rel),
         `${rel} reads a reserved notification key; only the declaring module and Notifications code may`);
     }
+
+    /* AT LEAST ONE LEGITIMATE READER, named as the acknowledgement layer rather
+     * than counted, so deleting it fails here loudly instead of quietly reverting
+     * this test to the pre-Sprint-12 assertion it replaced. */
+    const owners = readers.filter((rel) => rel !== "lib/constants.ts");
+    assert.ok(owners.length >= 1, "Sprint 12 gave the reserved keys a reader; a guard with none is the old test again");
+    assert.ok(owners.includes("lib/notification-state.ts"),
+      `acknowledgement state is the reader; found [${owners.join(", ")}]`);
   });
 });
 
