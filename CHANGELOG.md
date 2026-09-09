@@ -1,6 +1,111 @@
 # Changelog
 
-## Unreleased — Settings (Sprint 11) — **contract banked, not implemented**
+## Unreleased — Settings (Sprint 11) — **shipped, human-verified, merged, CLOSED**
+
+### Closure — merged to `main` at `ceb1e8b`
+- **Sprint 11 is closed.** Contract banked in `PROJECT_RULES.md` before any code
+  (`## Settings`); implemented across six commits on `sprint-11-settings`;
+  human-verified against `ceb1e8b`; fast-forwarded into `main`.
+- **Implementation history, preserved in full — no squash, no rebase, no force
+  push, and the merge was a fast-forward so `main` gained no merge commit:**
+  - `594f5ab` — core Settings page (and the authorised `reports-ui` test
+    reversal, in the same commit that replaced the placeholder, as banked)
+  - `0b2d859` — responsive / integration hardening
+  - `99de52c` — test-quality repair (two vacuous assertions)
+  - `60620e0` — human-verification defects
+  - `f92a46b` — language / density / hover polish
+  - `ceb1e8b` — app-wide preference consistency
+- **Human verification PASS is authoritative**, against deployed `ceb1e8b`:
+  **A** app-wide language hydration — no Vietnamese flash on the authenticated
+  workspace with English persisted, sidebar/header/content reveal together, no
+  layout jump, login unaffected. **B** density — Tight/Cozy/Airy visibly move the
+  intended shared control clusters while control heights and typography hold, and
+  header spacing stays fixed by design. **C** accent hover — shared
+  input/textarea/select follow the current accent in both themes, the neutral
+  black/grey hover is gone, disabled and error states remain correct. **D** focus
+  — keyboard ring visible, pointer/touch leaves no stuck ring, selected state
+  clear. **E** regression sweep — expected accent/density propagation only, no
+  semantic status regression, no overflow or clipping, Finance/Reports meaning
+  unchanged, Print/PDF still theme-neutral.
+- **Final gates, on merged `main`:** lint **0 errors** (the same 8 pre-existing
+  warnings, none new), **2420 / 2420 tests passing**, production build green,
+  `git diff --check` clean. The 2420 figure is the 2235 audit baseline plus the
+  Settings, propagation, form-control and readiness suites this sprint added; no
+  pre-existing test was weakened or deleted.
+- **Scope shipped:** the Settings page over the existing store; stored-preference
+  validation; app-wide workspace language readiness at `AppShell`; shared density
+  propagation to seven control clusters through tokens derived from `--gap`;
+  shared accent-aware form-control hover; `:focus-visible` for the shared ring.
+- **Nothing outside that scope changed.** The merged diff touches no API route,
+  Mongoose model, schema, index, migration, auth/JWT/cookie path, Finance or
+  Reports arithmetic, Review business logic, Billing semantics, PDF theme or
+  print implementation, and **no dependency manifest**. The seven page files
+  touched by density carry a one-line `gap` change each and nothing else.
+- **No production data was created, edited or deleted**, and **no production DDL
+  was declared or run** — Settings owns no data, by contract.
+- **Notifications did NOT ship**, and no part of one was drawn. The application
+  still has no notification source, model, menu, unread count or read state; the
+  reserved `etlms.notifDismissed` / `etlms.notifRead` keys remain read by
+  nothing. **Notifications requires its own sprint.**
+- **Also still deferred / out of scope, unchanged:** cross-device preference sync,
+  configurable timezone or application clock, report-branding, school or
+  organisation settings, module-specific defaults, password / security /
+  auth-provider settings, session management, and any tenth setting.
+
+### Gate 7 — final merge readiness
+- Final contract audit re-run against `PROJECT_RULES.md`: nine settings and no
+  tenth; existing `localStorage` keys only, with no key added or renamed; no
+  Save/Apply, no server action, no Settings API, model or schema; Workspace card
+  read-only; VND remains the source currency with USD display-only and the
+  existing fixed demo rate untouched; `vi` remains the default with `en` on the
+  source-string fallback and no second dictionary; theme/accent/surface/density
+  remain shared-store preferences; responsive and accessibility contracts hold.
+  No FAIL.
+- Focused suites re-run before merging — Settings, Settings propagation, form
+  controls, responsive shell, responsive components, Finance UI, Reports UI,
+  Reviews UI, Reports PDF, Review PDF, drawer dismiss and date-field state:
+  **1044 / 1044 passing**.
+- Post-merge gates re-run on `main` itself rather than trusted from the feature
+  branch: lint, tests, build and `git diff --check` all green.
+
+### Gate 6.3 — app-wide preference consistency (`ceb1e8b`)
+- **The language-flash fix moved to the right boundary.** Gate 6.2 hid the
+  Settings page until the store was readable, which fixed `/settings` and nothing
+  else — the sidebar, header, page titles, descriptions, inputs and tabs all
+  still painted Vietnamese first. The gate now lives on `AppShell` and publishes
+  `data-workspace-ready` as a **server-emitted attribute**, because a value only
+  React consults arrives after the browser has already painted. `visibility`
+  rather than an unmount, so nothing shifts on reveal; no spinner, no cookie, no
+  server-side language guess, `ThemeScript` untouched, and `/login` not gated.
+  The page-level gate was **removed**, not kept alongside — the Settings entrance
+  now reads the one boundary instead of owning a second.
+- **Density reaches shared control clusters.** `--control-gap` and
+  `--control-gap-tight` were hoisted onto `:root` as `calc()` over the existing
+  `--gap`, so one derivation serves the Settings segments and seven app-wide
+  clusters — the Students, Classes and Lessons filter pills and the Dashboard,
+  Student-detail, Class-detail and Reviews action rows. Cozy still resolves to
+  the design's own 8px and 6px, so the default workspace is pixel-identical and
+  only airy and tight move. **The header was audited and deliberately excluded**,
+  for reasons recorded in `header.tsx`: it cannot wrap and its intrinsic minimum
+  is the document's own, no derived token resolves to its imported 14px at cozy,
+  and it is shell chrome rather than page rhythm. The Reviews composer action
+  rows were excepted too — Sprint 8 width-audited them against a fixed budget.
+- **Form-control hover joined the accent system.** The shared bare-element rule
+  and `.cs-trigger:hover` both resolved to `--muted-2` over the neutral
+  `--hover` fill, which reads as flat black in the dark theme. Both now resolve
+  through `--accent` / `--accent-soft`, so four accents times two themes are
+  covered by tokens with no per-combination rule. A text field takes the accent
+  **edge only and no fill** — a filled editable field reads as selected. Both
+  gained `:not(:disabled)`, and an invalid field is now *strengthened*: the old
+  `!important` grey used to override the drawers' inline error border on hover.
+- **The shared ring became a keyboard ring.** `.ring:focus` → `.ring:focus-visible`.
+  A `<button>` keeps focus after a click, so choosing an option with the mouse
+  left the 3px ring stuck on it; a text input matches `:focus-visible` whenever
+  it is focused however focus arrived, so no field lost anything. No
+  `outline:none` was added and nothing is blurred in JavaScript.
+- 23 tests added and the Gate 6.2 page-gate suite retargeted rather than kept.
+  Each new guard was mutation-tested: reverting the ring, the hover token, the
+  readiness attribute, one density cluster or the disabled guard each fails.
 
 ### Gate 1 — audit passed
 - **The Settings state layer already existed before Sprint 11, and is production-used.**

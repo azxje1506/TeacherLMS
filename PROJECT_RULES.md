@@ -388,7 +388,7 @@ Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendanc
 
 **Settings owns no data.** No Settings collection, no Settings model, no schema field, no index, no production DDL, no new dependency, no billing or subscription surface, and no cross-device preference sync. Preferences live on the device that set them, which is what the page tells the teacher.
 
-**One banked test expectation.** `tests/reports-ui.test.ts` currently asserts that the Settings route still renders `ModulePlaceholder`. Replacing the placeholder is expected to invert that assertion, and the inversion must land in the same gate that replaces the page. **That failure is authorised in advance and is not a regression.**
+**One banked test expectation — since discharged.** `tests/reports-ui.test.ts` asserted that the Settings route still rendered `ModulePlaceholder`. Replacing the placeholder was expected to invert that assertion, and the inversion had to land in the same gate that replaced the page. **That failure was authorised in advance and was not a regression.** It landed in `594f5ab`: the assertion was inverted rather than deleted, because what it has always checked is that a sprint does not edit a screen that is not its own. The shared `ModulePlaceholder` component itself stays, for the modules that still use it.
 
 # Current Milestone
 

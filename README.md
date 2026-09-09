@@ -402,27 +402,61 @@ into the mobile drawer, a no-op tablet expansion toggle and an asymmetric expand
 animation. They were fixed here because Reports verification is what exposed
 them.
 
-**In contract (Sprint 11 — Settings).** The Gate 1 audit has **passed** and the
-contract is banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) as its `## Settings`
-section. **No implementation has started.** The audit's headline finding is that
-the Settings *state* has existed and been production-used since the earliest
-sprints — `SettingsProvider`, the bound formatter, the translation layer, the
-appearance CSS tokens and the `etlms.*` `localStorage` keys are read by 48 call
-sites across every module — while `/settings` itself still renders the module
-placeholder, leaving accent, surface, density and the language switch fully
-styled but unreachable by any control.
+**Sprint 11 — Settings: implemented, human-verified, merged, closed.** The
+contract was banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) as its
+`## Settings` section before any code, and the module was then built against it.
+The Gate 1 audit's headline finding shaped the whole sprint: the Settings
+*state* had existed and been production-used since the earliest sprints —
+`SettingsProvider`, the bound formatter, the translation layer, the appearance
+CSS tokens and the `etlms.*` `localStorage` keys, read by 48 call sites across
+every module — while `/settings` itself still rendered the module placeholder,
+leaving accent, surface, density and the language switch fully styled but
+unreachable by any control. Sprint 11 built the page over that store and added
+no second one.
 
-Sprint 11's scope is therefore narrow: the production Settings UI over that
-existing store, plus validation of stored preference values against their
-authorised enumerations. Nine settings are authorised — theme, accent, surface,
-density, interface language, date format, time format, currency and number
-format — and no others. Persistence stays device-local in the existing keys, so
-there is **no Settings API, model, collection, schema change, migration or new
-dependency**, and no change to authentication. Currency remains a **display**
-preference only: stored tuition and every Finance calculation stay integer VND.
-**Notifications are explicitly deferred** — the app has no notification source or
-bell menu, so Sprint 11 draws no Notifications card at all rather than an inert
-one. Settings is **not implemented and not deployed.**
+**Preferences are device-local and save themselves.** Nine settings ship and no
+others: **Appearance** — Theme, Accent colour, Surface, Density; **Language &
+Region** — interface language, date format, time format, currency, number
+format. Every change applies immediately through the existing setters into the
+existing `etlms.*` keys, so there is **no Save button, no Apply button and no
+form** — and **no Settings API, model, collection, schema change, index,
+migration, production DDL or new dependency**, and no change to authentication,
+JWT or cookies. A stored value that is not in its authorised enumeration now
+falls back to the existing default rather than reaching the document as an
+appearance with no matching token block.
+
+**The Workspace card is read-only** — account name, email, current currency and
+the application day. Nothing on this page edits an account, a password, a role
+or a session. **Currency is a display preference only:** choosing `USD` changes
+how an amount renders and nothing else; stored tuition, fees, billing and every
+derived revenue figure stay integer VND in the database and in all arithmetic.
+**Notifications are deferred in full** — the application has no notification
+source, model, menu, unread count or read state, so Settings draws **no
+Notifications card at all**, not even an inert one, and the two reserved keys
+are left exactly as they were. Notifications gets its own sprint.
+
+**Two shipped behaviours reach beyond the page, because the preferences always
+did.** The interface language is not CSS: it is the text of every page, chosen
+while the server renders, and the server cannot read `localStorage` — so with
+English persisted the server shipped Vietnamese and the browser painted it
+before any React ran. The authenticated workspace therefore publishes its own
+readiness at `AppShell`, the single common root of every authenticated route,
+and reveals in the correct language atomically; `ThemeScript` continues to
+settle the colours before first paint, which is exactly why appearance never
+flashed and language did. **Login is deliberately not gated** — it has no shell
+and consumes no workspace preference. Alongside it, workspace **density** now
+reaches shared control clusters (filter pills and action rows) through tokens
+derived from the one `--gap`, leaving control heights, typography, icon sizes
+and hit targets untouched; the header's spacing stays fixed by design, being the
+one non-wrapping row whose intrinsic minimum is the document's own. Shared
+**input, textarea and select** hover moved off a neutral grey onto the accent
+system, and the shared focus ring moved to `:focus-visible` so a keyboard user
+keeps a visible ring while a click no longer leaves one stuck.
+
+Human verification of the deployed branch passed on all five checks — app-wide
+language hydration, density, accent hover, focus behaviour and the regression
+sweep — and Sprint 11 merged to `main` at `ceb1e8b` as a fast-forward,
+preserving every implementation commit.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
