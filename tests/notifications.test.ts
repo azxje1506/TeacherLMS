@@ -477,6 +477,118 @@ describe("Notifications · derivation is a read", () => {
   });
 });
 
+/* ============================================ malformed rows (Gate 5 audit) */
+
+describe("Notifications · a schema-legal but incomplete row cannot take the app down", () => {
+  /* WHY THIS BLOCK EXISTS. Derivation runs in `(app)/layout.tsx`, the layout for
+   * EVERY authenticated route, so anything it throws on is not a broken bell — it
+   * is a 500 on every page. The domain types promise `string` for fields the
+   * Mongoose schema does not mark `required` (only `id` is), so a document
+   * without them is legal today and the types are not evidence.
+   *
+   * Both cases below were found by the Gate 5 audit against adversarial input,
+   * not by review, and both threw before the fix. */
+
+  it("56. a student with no `joined` is skipped, not thrown on", () => {
+    /* `monthOf(undefined)` threw on `.slice`. Skipping is the right failure: the
+     * approved rule requires the student had already joined, and with no join
+     * date that cannot be established. */
+    for (const joined of [undefined, null, ""]) {
+      const src = sources({
+        students: [{ ...student("s1"), joined } as unknown as Student],
+        classes: [klass("c1", ["s1"])],
+        lessons: taughtIn(["2026-06"]),
+      });
+      assert.deepEqual(deriveNotifications(src, CLOCK), [], `joined=${JSON.stringify(joined)}`);
+    }
+  });
+
+  it("57. a well-formed student beside a malformed one is still reported", () => {
+    /* The guard must skip the record, not abandon the pass. */
+    const src = sources({
+      students: [{ ...student("bad"), joined: undefined } as unknown as Student, student("s2")],
+      classes: [klass("c1", ["bad", "s2"])],
+      lessons: taughtIn(["2026-06"]),
+    });
+    assert.deepEqual(ids(deriveNotifications(src, CLOCK)), ["review:s2:2026-06"]);
+  });
+
+  it("58. a bill with no month still surfaces, and does not break the comparator", () => {
+    /* `sortKey` was `undefined`, and `undefined.localeCompare` threw — but only
+     * once a SECOND notification existed for the comparator to run against, which
+     * is why a single-row fixture would have missed it. Money owed is reported
+     * rather than dropped: the rule turns on `status`, not on the month. */
+    const src = sources({
+      students: [student("s1")], classes: [klass("c1", ["s1"])],
+      billing: [
+        { ...bill("B1"), month: undefined } as unknown as Billing,
+        { ...bill("B2"), month: undefined } as unknown as Billing,
+      ],
+    });
+    const got = deriveNotifications(src, CLOCK);
+    assert.deepEqual(ids(got), ["tuition:B1", "tuition:B2"]);
+  });
+
+  it("58a. and every derived notification carries a STRING sort key", () => {
+    /* THE ASSERTION THAT DISTINGUISHES THE TWO FIXES. Tests 58 and 59 pass with
+     * the construction guard reverted, because the comparator's own `?? ""`
+     * catches it — mutation-testing showed exactly that, and a guard that cannot
+     * tell which fix it is testing is not testing either.
+     *
+     * This pins the construction: an `AppNotification` typed `sortKey: string`
+     * must not be handed one that is `undefined`. The comparator's guard is the
+     * last line of defence, not the contract. */
+    const src = sources({
+      students: [student("s1")], classes: [klass("c1", ["s1"])],
+      billing: [{ ...bill("B1"), month: undefined } as unknown as Billing],
+      lessons: [...taughtIn(["2026-06"]), lesson("L1", { date: "2026-07-12" })],
+    });
+    const got = deriveNotifications(src, CLOCK);
+    assert.ok(got.length >= 3, "all three types are present");
+    for (const n of got) {
+      assert.equal(typeof n.sortKey, "string", `${n.id} has a string sort key`);
+      assert.equal(typeof n.id, "string");
+      assert.equal(typeof n.href, "string");
+    }
+  });
+
+  it("59. a monthless bill sorts first, where an anomalous record belongs", () => {
+    const src = sources({
+      students: [student("s1")], classes: [klass("c1", ["s1"])],
+      billing: [bill("B-dated", { month: "2026-02" }), { ...bill("B-none"), month: undefined } as unknown as Billing],
+    });
+    assert.deepEqual(ids(deriveNotifications(src, CLOCK)), ["tuition:B-none", "tuition:B-dated"]);
+  });
+
+  it("60. the comparator itself never throws on a missing key", () => {
+    /* Asserted directly, because a comparator is the one function that cannot
+     * recover: `Array.prototype.sort` offers no way to catch it. */
+    const a = { id: "a", type: "tuition", sortKey: undefined } as unknown as AppNotification;
+    const b = { id: "b", type: "tuition", sortKey: undefined } as unknown as AppNotification;
+    assert.doesNotThrow(() => compareNotifications(a, b));
+    assert.equal(Math.sign(compareNotifications(a, b)), -1, "and still falls through to the id");
+  });
+
+  it("61. a lesson with a missing date or start is handled without throwing", () => {
+    const src = sources({
+      classes: [klass("c1", [])],
+      lessons: [
+        lesson("L1", { date: "2026-07-12", start: "09:00" }),
+        { ...lesson("L2"), date: undefined } as unknown as Lesson,
+        { ...lesson("L3"), date: "2026-07-13", start: undefined } as unknown as Lesson,
+      ],
+    });
+    let got: AppNotification[] = [];
+    assert.doesNotThrow(() => { got = deriveNotifications(src, CLOCK); });
+    assert.ok(ids(got).includes("makeup:L1:2026-07-12"), "the good one is reported");
+    assert.ok(!ids(got).some((id) => id.startsWith("makeup:L2")), "a dateless lesson is outside the window");
+  });
+
+  it("62. an entirely empty source set derives nothing and throws nothing", () => {
+    assert.deepEqual(deriveNotifications(sources(), CLOCK), []);
+  });
+});
+
 /* ================================================================== clock */
 
 describe("Notifications · the application clock is an argument", () => {

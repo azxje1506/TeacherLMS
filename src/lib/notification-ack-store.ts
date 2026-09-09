@@ -67,9 +67,3 @@ export function commitAcknowledgement(next: AcknowledgementState): void {
   cached = next;
   for (const notify of listeners) notify();
 }
-
-/** Drop the cache so the next snapshot re-reads storage. FOR TESTS ONLY — a
- * module-level cache otherwise leaks one test's acknowledgement into the next. */
-export function resetAcknowledgementCache(): void {
-  cached = null;
-}

@@ -190,7 +190,16 @@ function deriveTuition(src: NotificationSources, studentName: (id: string) => st
       amount: b.fee,
       billingStatus: b.status,
       href: "/finance" as const,
-      sortKey: b.month,
+      /* `?? ""` because `Billing.month` is typed `string` but is not required by
+       * the schema, and an undefined sort key threw in the comparator as soon as
+       * a second notification existed for one to be compared against.
+       *
+       * THE BILL STILL SURFACES. Money owed is the whole point of this type and
+       * the rule turns on `status`, not on the month, so a bill with no month is
+       * reported rather than dropped — it sorts first, which is where an
+       * anomalous record belongs, and the row simply omits the month it does not
+       * have. */
+      sortKey: b.month ?? "",
     }));
 }
 
@@ -284,6 +293,18 @@ function deriveReview(src: NotificationSources, clock: NotificationClock): AppNo
 
   for (const student of src.students) {
     if (!canReviewStudent(student)) continue;
+    /* A STUDENT WITH NO `joined` IS SKIPPED, and this guard is not theoretical:
+     * `joined` is typed `string` but the Mongoose schema does not mark it
+     * required, so a document without one is legal and `monthOf(undefined)` threw
+     * on `.slice`. Because derivation runs in the authenticated layout, that took
+     * out every page rather than just the bell.
+     *
+     * SKIPPING IS THE RIGHT FAILURE, not a defensive default. The approved rule
+     * requires that the student had already joined; with no join date that cannot
+     * be established, and claiming a review is due would be asserting something
+     * unknown. It fails closed, exactly as `canReviewStudent` and
+     * `isSelectableMonth` do. */
+    if (typeof student.joined !== "string" || student.joined === "") continue;
     const joinedMonth = monthOf(student.joined);
 
     /* Back from the month before the application month to the far edge of the
@@ -348,7 +369,13 @@ function taughtMonths(src: NotificationSources): Set<string> {
 export function compareNotifications(a: AppNotification, b: AppNotification): number {
   const rank = TYPE_RANK[a.type] - TYPE_RANK[b.type];
   if (rank !== 0) return rank;
-  const key = a.sortKey.localeCompare(b.sortKey);
+  /* `?? ""` on both sides even though the type says `string`. That is not
+   * belt-and-braces: the domain types make the same promise about `Billing.month`
+   * and the database does not keep it, so a value typed `string` reaching here as
+   * `undefined` is the case that actually happened. A comparator is also the one
+   * function that must never throw — `Array.prototype.sort` gives no way to
+   * recover, and this one runs inside the authenticated layout. */
+  const key = (a.sortKey ?? "").localeCompare(b.sortKey ?? "");
   if (key !== 0) return key;
   return a.id.localeCompare(b.id);
 }
