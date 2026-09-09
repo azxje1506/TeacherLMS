@@ -1,5 +1,76 @@
 # Changelog
 
+## Unreleased — Notifications (Sprint 12) — **contract banked, not implemented**
+
+### Gate 1 — roadmap discovery
+- The numbered priority list in `PROJECT_RULES.md` (`# Current Milestone`) runs
+  **1. Students … 9. Settings** and was fully consumed by Sprint 11. It names no
+  tenth module, so it establishes no ordering after Settings, and the string
+  `Sprint 12` appeared nowhere in the repository.
+- **Notifications was nevertheless the only module the repository designated for
+  a sprint of its own**, in four independent places written across three sprints:
+  `PROJECT_RULES.md` (`## Settings`), `README.md`, this file, and
+  `RECURRENCE_DESIGN.md` — the last of which also recorded that retiring a lesson
+  someone was notified about "needs a rule; none exists yet". Every other deferred
+  item (Global Search, Excel export, the Homework submission writer, AI review
+  generation, cross-device sync, timezone, report branding, organisation settings)
+  is deferred **without** a sprint.
+- Gate 1 therefore identified the module but **blocked**: no `## Notifications`
+  section existed, so there was no product contract, and the only statement of
+  what a notification *is* came from a single design-comp subtitle naming three
+  sources and defining none of them. Inventing those rules is forbidden by
+  `CLAUDE.md` and by the `## Missing UI Specification` rule.
+
+### Gate 1.1 — contract banked
+- **Sprint 12 is Notifications**, and the contract is now banked in
+  `PROJECT_RULES.md` as a dedicated `## Notifications` section, before any code —
+  the same order every prior sprint used.
+- **Scope:** the existing header bell becomes interactive. Three notification
+  types and no fourth — **unpaid tuition** (`Unpaid` / `Partially Paid` Billing),
+  **upcoming makeup** (active, uncancelled, unpassed, within 7 calendar days
+  inclusive) and **review due** (period complete, expected Review absent).
+- **Notifications own no data.** No `Notification` model, collection, schema,
+  index, migration or backfill; no persisted copy of any Billing, Lesson or Review
+  value; and no notification interaction writes to any domain collection. The
+  `Activity` model is explicitly **not** a notification source and is not
+  repurposed. Source data is server-owned and derived at read time; only
+  acknowledgement is stored, device-locally, in the two **already-reserved** keys
+  `etlms.notifRead` and `etlms.notifDismissed`. **No third key, no rename, no
+  cross-device sync and no `/api/notifications` route.**
+- **Also banked:** read and dismiss as distinct acts (opening the panel marks
+  nothing read); a deterministic stable derived id built from type, source
+  identity and period — never an index, render order, UUID or presentation text;
+  deterministic ordering with source identity as the final tie-breaker; a
+  presentation-only cap of **20** items; deduplication on the stable id;
+  navigation into existing screens only, creating nothing and inventing no route;
+  and the live-view rule — a source that stops qualifying loses its notification,
+  and a stale acknowledgement entry can never resurrect or invent one.
+- **Nothing is ever sent.** No email, SMS, `mailto:`, browser push or push-service
+  integration; no parent-facing or student-facing delivery; no reminder action in
+  Finance, Reports or anywhere else. The bell is a read-only awareness layer.
+- **The Sprint 11 Settings contract is unchanged.** Sprint 12 does **not** add the
+  Notifications Settings card: Settings keeps three sections, nine settings, no
+  Save/Apply and no new persistence. The design reference's Notifications card
+  stays deferred and non-shipping.
+- **One authorised test-contract inversion, and only one.**
+  `tests/settings.test.ts` #15 asserted that the reserved keys were "read by
+  nothing" — true of every sprint up to and including Sprint 11, and no longer the
+  invariant once Sprint 12 gives them a reader. It is **inverted, not deleted**,
+  and now pins what always mattered: both keys declared and unrenamed, exactly two
+  notification keys, no Settings surface reading either, and — as the anti-vacuity
+  guard — a **recursive walk of all of `src/`** requiring every reader to be the
+  declaring module or Notifications code. The old form scanned four Settings
+  files, so a reader placed anywhere else would have satisfied it while proving
+  nothing; the walk cannot be escaped that way. Verified by mutation: a reader in
+  `lib/dashboard.ts`, a third `notif*` key, and a renamed key each fail it.
+- **Guards deliberately left unchanged:** no Notifications card in Settings, three
+  Settings sections, the Finance reminder/send/notification ban, and the Reports
+  notification ban.
+- **No feature code, route, model, schema, index, migration, storage key or
+  production write was introduced by this gate.** Gate 1.1 is contract and
+  test-contract only; the positive assertion that a reader *exists* belongs to
+  Gate 2, because at banking time it would assert something unbuilt.
+
 ## Unreleased — Settings (Sprint 11) — **shipped, human-verified, merged, CLOSED**
 
 ### Closure audit — **passed**

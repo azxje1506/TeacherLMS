@@ -464,6 +464,37 @@ banked contract, no blocker remains open, and no debug code, temporary comment,
 migration, test-only bypass or unfinished TODO was introduced. **Sprint 11 —
 Settings is closed.**
 
+**Sprint 12 — Notifications: contract banked, not yet implemented.** The numbered
+priority list in [`PROJECT_RULES.md`](./PROJECT_RULES.md) runs *1. Students … 9.
+Settings* and was fully consumed by Sprint 11, so it names no successor — but
+Notifications was the only module the repository designated for a sprint of its
+own, in four places written across three sprints. Its product contract had never
+been written down, so it has now been banked as a dedicated `## Notifications`
+section before any code, the same order every prior sprint used.
+
+The existing header bell becomes interactive and that is the whole surface: **no
+`/notifications` route, no sidebar item, no page, and not the deferred
+Notifications Settings card** — the Sprint 11 Settings contract is unchanged at
+three sections and nine settings. Three notification types ship and no fourth:
+**unpaid tuition**, **upcoming makeup** within 7 calendar days, and **review
+due**. Notifications **own no data** — no model, collection, schema, index,
+migration or API, no persisted copy of any Billing, Lesson or Review value, and no
+notification interaction writes to any domain collection. They are derived at read
+time from entities that already own their data; only acknowledgement is stored,
+device-locally, in the two keys the design reserved years ago
+(`etlms.notifRead`, `etlms.notifDismissed`) with no third key and no rename.
+**Nothing is ever sent** — no email, SMS, `mailto:`, push or parent-facing
+delivery; the bell is a read-only awareness layer over state the application
+already holds.
+
+One prior test assertion was deliberately inverted, and it is the only one:
+`tests/settings.test.ts` asserted the reserved keys were *read by nothing*, which
+was true until the sprint that gives them a reader. It was inverted rather than
+deleted and now walks **all** of `src/` to require that every reader is either the
+declaring module or Notifications code — the old form scanned four Settings files,
+so a reader placed anywhere else would have satisfied it while proving nothing.
+The Settings-card, Finance-reminder and Reports-notification bans are untouched.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

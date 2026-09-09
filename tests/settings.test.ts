@@ -19,7 +19,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 
@@ -42,10 +42,40 @@ const read = (...parts: string[]) => readFileSync(path.join(process.cwd(), ...pa
  * here for the same reason it does there: the Settings screen's own header
  * comment names every forbidden thing (`localStorage`, `useState`, the
  * Notifications card) in order to explain why it is absent. */
-function code(...parts: string[]): string {
-  return read(...parts)
+const stripComments = (src: string) =>
+  src
     .replace(/\/\*[\s\S]*?\*\//g, " ")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+function code(...parts: string[]): string {
+  return stripComments(read(...parts));
+}
+
+/** Every `.ts`/`.tsx` file under `src/`, as [path relative to `src/`, source with
+ * its comments stripped].
+ *
+ * A RECURSIVE WALK RATHER THAN A LIST OF FILES, deliberately. The only consumer
+ * is the reserved-notification-key guard below, which Sprint 12's contract
+ * inverted. Its previous form scanned four named Settings files, so a reader
+ * added anywhere else in the application would have satisfied it while proving
+ * nothing — the exact rot `PROJECT_RULES.md` (`## Notifications`) forbids when it
+ * says the assertion "must not be left vacuous by moving the implementation
+ * outside the files the old assertion happened to scan". A walk cannot be
+ * escaped that way. */
+function srcFiles(): Array<[string, string]> {
+  const root = path.join(process.cwd(), "src");
+  const out: Array<[string, string]> = [];
+  const visit = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) visit(full);
+      else if (/\.tsx?$/.test(entry.name)) {
+        out.push([path.relative(root, full).split(path.sep).join("/"), stripComments(readFileSync(full, "utf8"))]);
+      }
+    }
+  };
+  visit(root);
+  return out;
 }
 
 const SCREEN = code("src", "components", "settings", "settings-screen.tsx");
@@ -221,16 +251,62 @@ describe("Settings · the store validates what the browser gives it", () => {
     assert.deepEqual({ ...storageKeys }, expected);
   });
 
-  it("15. the deferred notification keys are still read by nothing", () => {
-    /* Named exactly, not by an `/notif/i` sweep: `settings-context` contains
+  it("15. the reserved notification keys are declared, unrenamed, and readable only by Notifications", () => {
+    /* AN AUTHORISED CONTRACT INVERSION, banked in PROJECT_RULES (`## Notifications`)
+     * before any Sprint 12 code was written.
+     *
+     * This assertion used to read "the deferred notification keys are still read
+     * by nothing", and that was true of every sprint up to and including Sprint 11
+     * — Settings deliberately left both keys orphaned. Sprint 12 is the sprint
+     * that gives them a reader, so "read by nothing" stops being the invariant and
+     * would have to be either deleted or inverted. It is INVERTED, not deleted,
+     * because what it has always really protected is that nobody quietly grows a
+     * third key or scatters acknowledgement state across the application, and that
+     * is still worth protecting.
+     *
+     * Named exactly, not by an `/notif/i` sweep: `settings-context` contains
      * `for (const notify of listeners)`, and a test that cannot tell a listener
      * from a notification is a test that will one day be deleted rather than
      * believed. */
+    assert.equal(storageKeys.notifRead, "etlms.notifRead", "declared, and not renamed");
+    assert.equal(storageKeys.notifDismissed, "etlms.notifDismissed", "declared, and not renamed");
+
+    /* NO THIRD NOTIFICATION KEY. Test 14 pins the whole map by equality; this pins
+     * the one corner Sprint 12 is most likely to grow, and names the offender in
+     * its own failure message rather than printing an eleven-key diff. */
+    const notifKeys = Object.keys(storageKeys).filter((k) => /^notif/.test(k));
+    assert.deepEqual(notifKeys.sort(), ["notifDismissed", "notifRead"],
+      "exactly two notification keys, and Sprint 12 adds no storage of its own");
+
+    /* SETTINGS DOES NOT OWN ACKNOWLEDGEMENT — unchanged from the pre-Sprint-12
+     * form of this test, and still true after it. Read/dismiss state belongs to
+     * the bell; it is per-item state, not a preference, so it never reaches a
+     * preference surface and adds no tenth setting. */
     for (const file of [SCREEN, PAGE, UI, STORE]) {
-      assert.ok(!/notifDismissed|notifRead/.test(file), "Sprint 11 reads neither reserved key");
+      assert.ok(!/notifDismissed|notifRead/.test(file), "no Settings surface reads either key");
     }
-    assert.ok(storageKeys.notifDismissed === "etlms.notifDismissed" && storageKeys.notifRead === "etlms.notifRead",
-      "and both are left declared, exactly as they were");
+
+    /* AND THE PART THAT KEEPS THE INVERSION HONEST. Walk ALL of `src/` — not the
+     * four Settings files the old assertion happened to scan — and require that
+     * every reader of a reserved key is either the module that DECLARES the keys
+     * or a Notifications file. This is what stops the inversion from being
+     * satisfiable by dropping a reader somewhere out of the old scan's sight.
+     *
+     * It passes today with `lib/constants.ts` as the only match, and it is not
+     * vacuous when Gate 2 lands the reader: it then constrains WHERE that reader
+     * may live. The rule is deliberately a property of the path rather than an
+     * allowlist of filenames, so it never needs "just one more entry" — which is
+     * how a guard like this normally rots. Gate 2 still owns the positive
+     * assertion that a reader EXISTS; it cannot be written here, because at
+     * contract-banking time it would assert something Sprint 12 has not built. */
+    const readers = srcFiles()
+      .filter(([, src]) => /notifDismissed|notifRead/.test(src))
+      .map(([rel]) => rel);
+    assert.ok(readers.includes("lib/constants.ts"), "the declaring module still declares them");
+    for (const rel of readers) {
+      assert.ok(rel === "lib/constants.ts" || /notification/i.test(rel),
+        `${rel} reads a reserved notification key; only the declaring module and Notifications code may`);
+    }
   });
 });
 
