@@ -1760,6 +1760,12 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 .row-name:hover{color:var(--accent) !important}
 .icon-action:hover{background:var(--hover) !important;color:var(--fg) !important}
 .icon-restore:hover{background:var(--hover) !important;color:var(--green) !important}
+/* Notifications dropdown hovers, straight from the comp's style-hover attributes
+   on the panel's two text buttons. The row's dismiss control reuses .icon-action
+   above rather than declaring the same pair again, and the focus ring is the
+   shared :focus-visible outline every button in the app already gets. */
+.notif-markall:hover{opacity:.7}
+.notif-open:hover{opacity:.75}
 .icon-danger:hover{background:var(--accent-soft) !important;color:var(--accent) !important;border-color:var(--accent-soft) !important}
 
 /* ==========================================================================

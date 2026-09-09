@@ -60,7 +60,9 @@
 import { useCallback, useEffect } from "react";
 import { useSettings } from "@/lib/settings-context";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { IconSidebar, IconSearch, IconPlus, IconSun, IconMoon, IconBell } from "@/components/icons";
+import { IconSidebar, IconSearch, IconPlus, IconSun, IconMoon } from "@/components/icons";
+import { NotificationMenu } from "./notification-menu";
+import type { AppNotification } from "@/lib/notifications";
 
 const iconBtn: React.CSSProperties = {
   minWidth: 38, width: 38, height: 38, border: "1px solid var(--border)", borderRadius: 9,
@@ -72,7 +74,7 @@ function initials(name: string) {
 }
 
 export function Header({
-  onToggleSidebar, navExpanded, onOpenSearch, user,
+  onToggleSidebar, navExpanded, onOpenSearch, user, notifications = [],
 }: {
   onToggleSidebar: () => void;
   /** Is the thing this button controls currently showing? The rail expanded on a
@@ -95,6 +97,10 @@ export function Header({
    * they replace has always been, at every width. */
   onOpenSearch?: () => void;
   user: { name: string };
+  /** The active notification set, derived on the server and handed down through
+   * `AppShell` — the same server-owned boundary `user` arrives by. Defaulted so
+   * the header still renders where a caller has none to give. */
+  notifications?: readonly AppNotification[];
 }) {
   const { t, appearance, setAppearance } = useSettings();
   const isDark = appearance.theme === "dark";
@@ -213,16 +219,11 @@ export function Header({
         <TooltipContent>{t("Toggle theme")}</TooltipContent>
       </Tooltip>
 
-      <div style={{ position: "relative" }}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button aria-label={t("Notifications")} className="btn-ghost" style={{ ...iconBtn, position: "relative" }}>
-              <IconBell size={17} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t("Notifications")}</TooltipContent>
-        </Tooltip>
-      </div>
+      {/* The bell was an inert button until Sprint 12; it is now the trigger for
+        * the notifications popover, which owns its own open state, badge and
+        * panel. The header's job is still only to place it — the row's geometry,
+        * spacing and every other control are unchanged. */}
+      <NotificationMenu notifications={notifications} />
 
       {/* The avatar is the user chip at every width; the name and role are the
         * part a tablet cannot afford, so only they are hidden below 1100px. */}

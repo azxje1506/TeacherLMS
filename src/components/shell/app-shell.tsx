@@ -11,6 +11,7 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { useSettings } from "@/lib/settings-context";
 import { MOBILE_QUERY, TABLET_QUERY, useMediaQuery } from "@/lib/use-media-query";
+import type { AppNotification } from "@/lib/notifications";
 
 async function fetchCounts(): Promise<{ students: number; classes: number }> {
   const res = await fetch("/api/meta/counts");
@@ -18,7 +19,15 @@ async function fetchCounts(): Promise<{ students: number; classes: number }> {
   return res.json();
 }
 
-export function AppShell({ user, children }: { user: { name: string; email: string }; children: React.ReactNode }) {
+export function AppShell({ user, notifications, children }: {
+  user: { name: string; email: string };
+  /** The active notification set, derived on the server in `(app)/layout.tsx`.
+   * It reaches the bell as a prop for the same reason `user` does: the shell is
+   * a client component, the derivation is server-only, and the alternative was a
+   * client fetch of five collections to render a badge. */
+  notifications?: readonly AppNotification[];
+  children: React.ReactNode;
+}) {
   /* THE COLLAPSE PREFERENCE, AND WHAT `null` MEANS.
    *
    * `null` is "follow this width's default" — expanded on a desktop, an icon
@@ -161,6 +170,7 @@ export function AppShell({ user, children }: { user: { name: string; email: stri
           onToggleSidebar={() => (isMobile ? setNavOpen((o) => !o) : setCollapsePref(!railCollapsed))}
           navExpanded={isMobile ? navShown : !railCollapsed}
           user={user}
+          notifications={notifications}
         />
         <main className="app-main" style={{ flex: 1, width: "100%", maxWidth: 1400, margin: "0 auto", padding: "28px 32px 48px" }}>
           {children}
