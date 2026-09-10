@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Notifications (Sprint 12) — **contract banked, not implemented**
+## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, deployed to Production**
 
 ### Gate 1 — roadmap discovery
 - The numbered priority list in `PROJECT_RULES.md` (`# Current Milestone`) runs
@@ -70,6 +70,79 @@
   production write was introduced by this gate.** Gate 1.1 is contract and
   test-contract only; the positive assertion that a reader *exists* belongs to
   Gate 2, because at banking time it would assert something unbuilt.
+
+### Gate 2 — the headless engine
+- Derivation, ordering, deduplication, the stable id and the acknowledgement
+  transitions ship as pure modules (`lib/notifications.ts`,
+  `lib/notification-state.ts`, `lib/notification-ack-store.ts`) with no React,
+  no fetch and no storage call inside the rules themselves. **No model,
+  collection, index, migration or `/api/notifications` route was created**, as
+  the contract requires.
+- The contract left the **review-due** window unbounded; it is now bounded, so a
+  long-dormant student cannot accumulate an unbounded backlog of due periods.
+
+### Gate 3 — header integration
+- The existing header bell became interactive. Source data is read in
+  `(app)/layout.tsx` — the layout every authenticated route already renders — and
+  handed down as props, so the panel needs **no API route and no client fetch**.
+- Acknowledgement is client-only and device-local, in the two reserved keys and
+  no third.
+
+### Gate 4 — UI hardening
+- **A right-anchored popover clipped off the left edge of every phone**, with no
+  scroll able to reveal it. Below 767px the panel is now `position:fixed` with
+  `left:20px;right:20px`, so it is inset 20px on both sides at every mobile width
+  and cannot introduce horizontal overflow.
+- Badge contrast was corrected to use `--primary-fg` rather than a hard-coded
+  colour, so it follows every accent in both themes.
+
+### Gate 5 — falsification audit
+- Running the real modules against adversarial input found **two defects that
+  could 500 every authenticated page**, because derivation runs in the shared
+  layout: a `Student` with no `joined` and a `Billing` with no `month`. Both
+  fields are typed `string` but neither is `required` in its Mongoose schema, so
+  such documents are legal in the database today — **the domain types were a
+  promise the storage layer does not keep.**
+- Both now skip the record and fail closed rather than defaulting, and a
+  well-formed record beside a malformed one is still reported.
+
+### Gate 6 / 6.1 — human verification
+- The human browser pass **PASSED** and returned two defects, both fixed at
+  `b074656` without touching `src/lib`.
+- **A pointer click left a stale keyboard focus ring.** `:focus-visible` is only
+  re-evaluated when focus *changes*, so clicking an already-focused control fires
+  no focus event and the keyboard ring stays lit. Fixed with the browser's own
+  modality signal — `event.detail > 0` distinguishes a real pointer click from
+  Enter/Space — releasing focus for the pointer and leaving the keyboard ring
+  intact. No outline rule was added, removed or redefined.
+- **Read and unread rows were visually identical once the panel was open.** The
+  badge counts but says nothing about *which* rows are new. Added as an
+  authorised inversion of the Gate 4/5 guard: an `--accent-soft` row background
+  and a small `--accent` dot drawn on the already fixed-width icon tile, so no
+  geometry changes. **Four** hover states, not two, because a single
+  `:hover{background:var(--hover)}` would paint read and unread identically the
+  moment the cursor crossed either; the hovered-unread value is computed from the
+  same two tokens with `color-mix`, so every accent and both themes follow with
+  nothing hard-coded and no new token.
+
+### Gate 7 — merge and production deployment
+- Validation re-run on the branch before merging: **2621 / 2621 tests**, lint 0
+  errors (the same 8 pre-existing warnings), `tsc --noEmit` clean, production
+  build green, `git diff --check` clean.
+- Merged into `main` by **fast-forward** — `b542fd4` to `b074656` — preserving all
+  six Sprint 12 commits. No squash, no rebase, no merge commit, no history
+  rewrite. The Sprint 12 branch is retained.
+- Deployed to **Vercel Production** (`teacher-lms-lake.vercel.app`) as
+  `dpl_7UjsRvwXG2jJz1owZsEiPdpgH5wF`, READY.
+- **The deployed artifact was proven identical to a local build of `b074656`**:
+  all 41 static chunks and the stylesheet match by MD5, the single exception
+  being Vercel's own injected toolbar snippet — which itself names that
+  deployment id. This is a stronger identity proof than deployment metadata, and
+  it is how the deployed SHA was established.
+- **No production write of any kind.** No domain record was created or mutated
+  for verification, and no DDL was performed — Notifications declare no index.
+- The browser re-pass against Production remains the user's step; it runs on
+  bytes already proven identical to the ones the Gate 6 pass verified.
 
 ## Unreleased — Settings (Sprint 11) — **shipped, human-verified, merged, CLOSED**
 

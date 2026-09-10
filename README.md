@@ -464,7 +464,7 @@ banked contract, no blocker remains open, and no debug code, temporary comment,
 migration, test-only bypass or unfinished TODO was introduced. **Sprint 11 —
 Settings is closed.**
 
-**Sprint 12 — Notifications: contract banked, not yet implemented.** The numbered
+**Sprint 12 — Notifications: implemented, human-verified, merged and deployed to Production.** The numbered
 priority list in [`PROJECT_RULES.md`](./PROJECT_RULES.md) runs *1. Students … 9.
 Settings* and was fully consumed by Sprint 11, so it names no successor — but
 Notifications was the only module the repository designated for a sprint of its
@@ -494,6 +494,28 @@ deleted and now walks **all** of `src/` to require that every reader is either t
 declaring module or Notifications code — the old form scanned four Settings files,
 so a reader placed anywhere else would have satisfied it while proving nothing.
 The Settings-card, Finance-reminder and Reports-notification bans are untouched.
+
+The module **shipped against that contract**: a headless derivation layer with no
+React, fetch or storage call inside the rules; source data read once in
+`(app)/layout.tsx` and handed down as props, so the panel needs no API route and
+no client fetch; and acknowledgement held device-locally in the two reserved keys.
+A falsification audit caught two defects able to **500 every authenticated page**
+— derivation runs in the shared layout, and a `Student` without `joined` or a
+`Billing` without `month` is legal in the database because neither field is
+`required` in its schema; both now skip the record and fail closed. The human
+browser pass **passed** and returned two further defects, both fixed: a stale
+keyboard focus ring after a pointer click (`:focus-visible` is re-evaluated only
+when focus *changes*), and no visible read/unread distinction once the panel is
+open.
+
+`main` was **fast-forwarded** from `b542fd4` to `b074656`, preserving all six
+commits with no squash, rebase or merge commit, and the branch is retained. That
+revision is live on **Vercel Production** — the deployed artifact was proven
+identical to a local build of `b074656` by MD5 across all 41 static chunks and the
+stylesheet. **No production record was created or mutated for verification, and no
+DDL was performed.** The remaining browser re-pass against Production is the
+user's; it runs on bytes already proven identical to the ones the Gate 6 pass
+verified.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
