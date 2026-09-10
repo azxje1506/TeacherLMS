@@ -140,6 +140,116 @@
   payment UI, Settings field or print stylesheet was introduced. It has no design
   in the imported comp and needs its own gate.
 
+### Gate 3 — backend read models and module-owned endpoints
+- **Backend only. No UI.** Neither tab is built: no component, no React Query
+  hook, no Student Profile branch, no `.sp-split`, no container query, no chart,
+  ring or timeline in JSX. The Classes and Finance tabs are untouched and the
+  profile page is byte-identical to `main`. A test in this gate asserts all of
+  that, so the boundary is checked rather than promised.
+- **Two module-owned GET endpoints**, both behind the session, both read-only,
+  both mirroring the shipped `GET /api/reviews/student/:studentId`:
+  `GET /api/attendance/student/:studentId` and
+  `GET /api/homework/student/:studentId`. Each answers a student who does not
+  resolve with the repository's own `Student not found` 404; an **archived**
+  student is readable, because their history is a record of things that happened.
+  Neither route defines POST, PATCH, PUT or DELETE.
+- **`src/lib/student-profile.ts`** — the pure read models. No database, no React,
+  no fetch, no storage and no clock: `appMonth` is an argument, so Sprint 13
+  introduces no application clock and `TODAY` keeps the meaning it had.
+- **`src/lib/student-profile-service.ts`** — the DB-bound half, the pairing
+  `reports.ts` / `reports-service.ts` already draws. One query per collection,
+  never one per lesson or per assignment; `.select()` and `.lean()` throughout.
+  **Zero writes**: no create, update, delete or upsert verb appears, no update
+  operator appears, and — unlike the Attendance register read, which legitimately
+  does — neither function advances a lesson lifecycle. A profile view must never
+  mutate a lesson because somebody looked at a student.
+
+#### Why these reads are not in attendance-service.ts and homework-service.ts
+- That was Gate 2's recommended shape, and **banked guards make it impossible**.
+  They were found by implementing it first and watching six tests fail, and every
+  one of them is right, so this gate left them all sealed rather than arguing:
+  - `tests/homework-service.test.ts` **#40** pins that service's imports to
+    exactly six modules; **#22** forbids it from naming `submissions` anywhere;
+    **#23** forbids `status`; **#26** forbids `studentId:`, `scope:`, `classId:`
+    and `createdAt:`. Sprint 7 deliberately left the Homework service *unable to
+    address a submission at all* — which is what makes the deferred submission
+    writer absent by construction rather than by care. A read that must select
+    `submissions` and `status` cannot live there without dismantling that.
+  - `tests/attendance.test.ts` pins `ATTENDANCE_ERROR`'s key set to exactly four
+    reasons, so that module has no `student_not_found` to answer with.
+- An earlier attempt also tried adding the shared derivations to `finance.ts` and
+  hit three more: `tests/homework-service.test.ts` **#42** pins finance's
+  homework exports at exactly two, **#42b** pins its `Assigned` exclusions at
+  exactly two occurrences, and `tests/review-analytics.test.ts` **#32** pins its
+  null-returning helpers at two. `finance.ts` is deliberately sealed too, and is
+  **unmodified by this gate**.
+- The precedent for a screen that composes other modules' figures without editing
+  them is Reports (Sprint 10). **No banked guard was weakened, moved or deleted,
+  and the endpoints stay module-owned**, which is what *Data Ownership* protects.
+
+#### The rules, and where each one lives
+- **No counting rule is restated.** The attendance percentage is
+  `studentAttendanceRate` and the completion percentage is
+  `studentHomeworkCompletion` — the shipped helpers Reports and the Reviews
+  learning journey already read. They are **called**, once per month, and their
+  numerators and denominators summed; summing an exact numerator and an exact
+  denominator is exact, so the lifetime figure *is* the monthly one added up.
+- **Attendance.** `Present`, `Late` and `Excused` attend and `Absent` does not;
+  the denominator is stored entries on **completed** lessons of the student's own
+  classes, and nothing is invented where no register exists. Four raw lifetime
+  counts. Six monthly points, oldest first, ending at the application month, each
+  equal to the shipped helper's own answer for that month. **The Lesson owns the
+  date** — the legacy `AttendanceRecord.date` mirror is not addressed anywhere.
+  *Recent absences* is `Absent` only; *Recent late arrivals* is `Late` only.
+- **Homework.** A class-scoped assignment is read through `submissions[studentId]`
+  and **never** through its top-level status; **a missing key means the work is
+  not theirs** and the assignment is omitted rather than defaulted to `Assigned`.
+  `Total` counts every assignment addressed to the student, `Assigned` included,
+  so it is **legitimately larger** than `Completed + Late + Missing` — the two
+  answer different questions and the gap is the unmarked work.
+- **Ordering is deterministic** — newest first, by `Lesson.date` or `dueDate`,
+  with the source entity's own id as the final tie-breaker. Reversing the input
+  cannot change the output, so the database's natural order is never relied upon.
+- **Caps are presentation only** — 20 on a timeline, 5 on a side card — and every
+  percentage, tile and aggregate still describes the whole record.
+- **`null`, never `0`**, wherever nothing was recorded: an empty month's bar, a
+  student with no entries, and a student whose work carries no outcome yet. A
+  student with work but no outcomes is **not** the empty state.
+
+#### Tests
+- **`tests/student-attendance.test.ts` (32)** and
+  **`tests/student-homework.test.ts` (30)**. Totals move 2621 -> 2683, all green.
+- **Cross-module agreement is executed, not asserted about.** Both suites prove
+  the identity that stops one fact appearing as two numbers: the payload's own
+  numerator and denominator equal the shipped helper summed over the months in
+  scope, and each monthly point equals that helper's answer for its month.
+- **Mutation-tested, five defects introduced and reverted.** Counting `Excused`
+  as an absence fails #21; reading the legacy `AttendanceRecord.date` fails #11;
+  using a class-scoped assignment's top-level status fails #2, #3, #7 and #8;
+  treating a missing submission key as `Assigned` fails #2 and #3.
+- **The fifth mutation found a real gap in this gate's own tests, and it was
+  fixed.** Removing the top-level `Assigned` exclusion from the shipped helper
+  changed nothing any test could see, because that exclusion and the per-student
+  one agree on every ordinary record — the seeder writes an all-`Assigned`
+  submissions map exactly when the assignment is `Assigned`, and this MVP ships
+  no submission writer to break that. **#11b** was added with the one divergent
+  fixture that isolates it, and now fails when the exclusion is removed. It pins
+  shipped behaviour rather than choosing new behaviour.
+- The Gate 2.1 inversion is untouched: `tests/reviews-ui.test.ts` needed no
+  further change and stays green, and the positive assertion that the two
+  branches exist is still the UI gate's to make.
+
+#### Unchanged
+- **No schema, index, migration, backfill, production DDL or new dependency**, no
+  change to authentication, JWT or cookies, and no production write. `finance.ts`,
+  `attendance.ts`, `homework.ts`, `attendance-service.ts` and `homework-service.ts`
+  are all byte-identical to `main`.
+- **Finance — Class Payment Slip Printing remains deferred and untouched.** No QR
+  asset, bank information, print component, billing API, payment UI, Settings
+  field or print stylesheet was introduced.
+- **Sprint 13 is not complete.** The Attendance and Homework tabs are still
+  unbuilt, and the profile still renders the comp's later-sprint panel for both.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

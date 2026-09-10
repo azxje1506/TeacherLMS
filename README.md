@@ -578,13 +578,60 @@ The positive assertion — that those two branches exist — belongs to the
 implementation gate, so the suite is **green at banking time**, the same division
 Sprint 12 used.
 
-**No implementation has begun.** Neither tab is built, no endpoint, service, read
-model, component or responsive rule exists yet, and no product behaviour has
-changed. A separate future candidate — a **Finance class payment slip** for
-printing tuition notices, with a playful print style, an amount due, tuition-month
-content and a fixed bank QR code — is recorded at product level only and is
-**explicitly excluded from Sprint 13 by name**; it has no design in the imported
-comp and would need its own gate.
+**Gate 3 has since shipped the backend, and only the backend.** Two module-owned,
+session-guarded, read-only endpoints now exist —
+`GET /api/attendance/student/:studentId` and `GET /api/homework/student/:studentId`
+— mirroring the shipped `GET /api/reviews/student/:studentId`, each answering an
+unresolvable student with the repository's own `Student not found` 404 while an
+archived student stays readable. Behind them sit a pure
+`src/lib/student-profile.ts` and a DB-bound `src/lib/student-profile-service.ts`,
+the pairing `reports.ts` / `reports-service.ts` already draws.
+
+**No counting rule was restated.** The attendance percentage is
+`studentAttendanceRate` and the completion percentage is
+`studentHomeworkCompletion` — the shipped helpers Reports and the Reviews learning
+journey already read. They are called per month and their numerators and
+denominators summed, so the lifetime figure *is* the monthly one added up, and
+both suites prove that identity by running it rather than asserting about it.
+`Excused` attends and is never filed as an absence; the **Lesson owns the date**
+and the legacy `AttendanceRecord.date` mirror is addressed nowhere; a class-scoped
+assignment is read through `submissions[studentId]` and a **missing key means the
+work is not theirs**; `Total` includes `Assigned` and is therefore legitimately
+larger than `Completed + Late + Missing`; ordering is deterministic with the
+source id as the final tie-breaker; the 20- and 5-item caps are presentation only;
+and nothing recorded reports `null` rather than `0`.
+
+**Gate 2's recommended shape turned out to be unavailable, and the guards that
+blocked it were left sealed.** The reads could not go in `homework-service.ts` —
+`tests/homework-service.test.ts` #40 pins its imports, #22 forbids it from naming
+`submissions` anywhere, #23 forbids `status`, #26 forbids the ownership keys —
+because Sprint 7 deliberately left that service *unable to address a submission at
+all*, which is what keeps the deferred submission writer absent by construction.
+Nor in `attendance-service.ts`, whose `ATTENDANCE_ERROR` key set is pinned to four
+reasons with no `student_not_found`. Nor in `finance.ts`, which three further
+guards seal. A composing module was the answer, exactly as Reports composes other
+domains' figures without editing them. **No banked guard was weakened, moved or
+deleted**, and `finance.ts`, `attendance.ts`, `homework.ts` and both module
+services are byte-identical to `main`.
+
+The suite moves **2621 -> 2683**, all green, across
+`tests/student-attendance.test.ts` (32) and `tests/student-homework.test.ts` (30).
+Five deliberate defects were introduced and reverted to prove the guards bite; the
+fifth found a **real gap in this gate's own tests** — removing the shipped
+helper's top-level `Assigned` exclusion changed nothing any test could see,
+because that exclusion and the per-student one agree on every ordinary record — so
+**#11b** was added with the one divergent fixture that isolates it.
+
+**No UI exists yet, and Sprint 13 is not complete.** Neither tab is built: no
+component, no query hook, no Student Profile branch, no `.sp-split` and no
+container query, and the profile still renders the comp's later-sprint panel for
+Attendance and Homework as well as for Classes and Finance. **No schema, index,
+migration, production DDL, new dependency or production write** was introduced,
+and a profile read advances no lesson lifecycle. A separate future candidate — a
+**Finance class payment slip** for printing tuition notices, with a playful print
+style, an amount due, tuition-month content and a fixed bank QR code — is recorded
+at product level only and is **explicitly excluded from Sprint 13 by name**; it
+has no design in the imported comp and would need its own gate.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
