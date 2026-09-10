@@ -434,6 +434,70 @@ Events display a lesson-type badge: **Regular / Makeup / Extra**, plus attendanc
 
 **Explicitly out of scope for Sprint 12:** a Notifications page, a Notifications sidebar item, the Notifications Settings card, parent-facing or student-facing notifications, email, SMS, browser push or any push-service integration, reminder sending, a Notification collection, an API whose only purpose is duplicating state the application already owns, cross-device read-state sync, notification history, Global Search, Excel export, the Homework submission writer, AI review generation, a configurable timezone, report branding, organisation settings, any authentication or session redesign, and unrelated refactors.
 
+## Student Profile — Attendance & Homework
+
+**These two tabs make data the product already owns reachable from the student it is about, and they introduce nothing else.** Attendance and Homework are closed modules that own their records; the Student Profile is where a teacher asks what those records say about one person. Sprint 13 answers that question on the two tabs the imported design already draws and the application already renders as "arrives in a later sprint". It creates no module, no route, no navigation entry and no data.
+
+**Both tabs own no data whatsoever.** There is **no new Mongoose model, no new collection, no schema field, no index, no migration, no backfill, no production DDL and no new dependency.** Every figure is derived at read time from `Lesson`, `AttendanceRecord`, `Homework` and `Class` — entities that already own it — and no value is copied onto the Student, stored, cached or written back. The tabs reference the related entity rather than duplicating its value, which is what *Data Ownership* requires.
+
+**Nothing is written, repaired, reconciled or reported.** Opening a student's profile must never mutate a lesson, advance a lifecycle, create a register, record an outcome or normalise a stored value. Both tabs are **read-only in the strictest sense**: no mutation, no form, no drawer, no dirty state, no action that changes a record, and no disabled control hinting at one.
+
+**The scope is this student's classes, and it is the scope the Reviews tab already uses.** Lessons are narrowed to the classes whose roster names the student; homework is narrowed to work set to one of those classes or addressed to the student by name. This is the narrowing `studentMonthMetrics` performs today, and Sprint 13 must not widen it: passing the whole studio's lessons would make coverage describe the school rather than the student. **The Reviews tab's monthly learning journey already shows an attendance percentage and a homework completion percentage for reviewed months. Those figures and these must agree**, which they do only by sharing the same helpers at the same scope. A figure that disagreed with the one a teacher can see two tabs away would be the same fact stated twice and differently.
+
+**Roster membership is read as it stands today, and that is a stated limitation.** A student moved out of a class after a month was taught will see that month's coverage shrink, though their percentage is unmoved. Attendance stores no membership history and no other answer is available from this data. Nothing infers, reconstructs or back-fills a historical roster.
+
+**The counting rules are Attendance's and Homework's, and they are not restated here.** `studentAttendanceRate` and `studentHomeworkCompletion` already state them once, in `src/lib/finance.ts`, and are already consumed by Reports and Reviews. Sprint 13 **reuses** them and, where a lifetime figure is needed that a month-scoped helper cannot give, **extends that same file** rather than writing a second copy of the rule anywhere else.
+
+### The Attendance tab
+
+**The headline percentage counts what Attendance already counts.** `Present`, `Late` and `Excused` are attended; `Absent` is not. The denominator is the stored entries for this student on **completed** lessons — never the lesson count, and never an entry invented for a register that does not name them. A student with no entries has **no percentage**, and the tab shows its empty state rather than `0%`.
+
+**Four counts, in the design's order: Present, Late, Absent, Excused.** They are raw lifetime counts of stored entries and they are not percentages. They use `ATTENDANCE_DISPLAY_ORDER` and `ATTENDANCE_COLORS`, which already exist.
+
+**Monthly attendance is six months ending at the application's current month.** Each bar is that month's percentage under the rule above. A month in which the student's classes completed no lesson has no percentage: it draws the design's minimum-height stub and labels its rate with the application's em-dash placeholder for "no value". **It never renders as `0%`**, which would assert a month of total absence that the data does not record. Sprint 13 introduces **no configurable timezone and no new application clock**; `TODAY` keeps the meaning it already has.
+
+**The attendance timeline is newest first**, showing the lesson's class, the student's status for it and the lesson's own date. **The Lesson owns the date.** `AttendanceRecord.date` is a legacy mirror that some stored documents already carry in disagreement with their lesson, and it is **never read** — a rescheduled lesson appears on the date it was actually taught.
+
+**Recent absences lists `Absent` and nothing else.** `Excused` is counted as attended everywhere else in this application, and a screen that filed it under absences would contradict a rule already in production. Each row carries the class, the status badge the design draws, the date and the entry's note where one was recorded. **Recent late arrivals lists `Late` only.**
+
+### The Homework tab
+
+**The completion ring is the existing completion measure and no other.** `Completed` and `Late` are done; `Missing` is not; **`Assigned` is excluded from the measure entirely** rather than counted as a failure — the rule *Homework* already states. A student with no work carrying an outcome has no percentage and the ring shows none.
+
+**Four counts: Total, Completed, Late, Missing.** **`Total` is every assignment addressed to this student, `Assigned` included**, because that is what the work they were given amounts to. The ring's denominator excludes `Assigned`, so `Total` is legitimately **larger** than `Completed + Late + Missing`. **That is correct and is not a defect**: the two answer different questions, exactly as Finance's billed total legitimately exceeds the rows a teacher can act on.
+
+**A class-scoped assignment shows the student's own outcome**, read from `submissions[studentId]` — never the assignment's top-level status, which describes the assignment rather than the person. A student-scoped assignment shows its own status and only where `studentId` names this student.
+
+**An assignment with no entry for this student is not theirs and does not appear.** Membership is the snapshot taken when the work was set; a student added to a class afterwards is not in that map, and no key is invented, repaired or written back for them.
+
+**The homework timeline is newest first by due date**, showing the title, the class, the scope label and the student's own status badge. **Missing homework** and **Late homework** list the same work filtered to those two outcomes, each with the title, class and due date.
+
+### Rules both tabs share
+
+**Ordering is deterministic and never inherited from the database.** Timelines and lists run newest first — by the lesson's date for Attendance, by the due date for Homework — and where two dates are equal a stable secondary ordering applies, with the source entity's own id as the final tie-breaker. Natural collection order is never relied upon.
+
+**Lists are capped, and the cap is presentation only.** A timeline shows at most **20** items and each side card at most **5**. Items beyond the cap are not mutated, not hidden from any count and not removed from any aggregate — every percentage and every tile still describes the whole record.
+
+**Records belonging to students who no longer exist are untouched.** Attendance preserves stored entries for deleted students and Homework preserves their submission keys; both are the only surviving evidence that those people were taught. These tabs read one living student and therefore never surface, count, repair or erase such an entry.
+
+**Each tab has exactly one empty state, and it is the comp's own.** Attendance: *"No attendance recorded for this student yet."* Homework: *"No homework assigned to this student yet."*, with the design's assign action. An empty **side card** is its own separate state — *"No absences on record. 🎉"*, *"No late arrivals on record."*, *"Nothing missing. 🎉"*, *"No late submissions."* — and a student with records but no absences sees the tab, not the empty tab. **A partial answer is never dressed as an empty one.**
+
+**Every string is already in the dictionary.** The twelve Vietnamese keys these two designs need were ported and have had no reader until now. Sprint 13 gives them one. `vi` remains the default and `en` continues to use the existing source-string fallback; **no second dictionary and no new key is introduced** for a string the dictionary already holds.
+
+**The layout is the comp's and is not reinterpreted.** Both tabs are the design's `minmax(0,1.6fr) minmax(0,1fr)` split with the app's `--gap`, its card shell, its soft-tone tiles, its 150px bar chart and its `r=40` completion ring — which is the geometry `RING_CIRCUMFERENCE` and `ringDash` already serve. No spacing, type scale, radius, shadow, transition, colour or icon is changed.
+
+**The responsive rule belongs to the stylesheet and must not be one an inline declaration can beat.** The two-column split is declared as a **class the stylesheet owns** — never as an inline `grid-template-columns` with a media rule trying to override it, which this repository has shipped as a dead rule more than once. It collapses on the **room the tab actually has**, through a container query anchored on the existing `[data-screen-label="Student profile"]`, for the reason Reports and Settings already use one: the content column moves with the sidebar rail and the density token, so the viewport is a poor proxy for it. **No new viewport breakpoint is introduced** — `tests/finance-ui.test.ts` allows only 620, 767, 860, 1099 and 1100, and that guard is not loosened. The bar chart and both timelines must fit without the page scrolling horizontally, and neither tab adds a horizontal scroll region.
+
+**The tabs are operable and announced.** Each tab's content is reachable in the existing tab order, its headings describe its regions, and no figure is carried by colour alone — the four status tiles, every timeline row and both side cards name their status in text beside its colour, as the comp draws them. The bar chart and the completion ring are decorative renderings of figures stated in text next to them. Focus is visible through the existing `:focus-visible` treatment and a pointer interaction leaves no stuck ring. **The existing tablist semantics are unchanged**; the absence of `role="tabpanel"` on this page pre-dates Sprint 13, spans the closed Overview and Reviews tabs, and is **not** repaired here.
+
+**The Classes and Finance tabs keep the placeholder, and the fallback branch stays.** Both read data for which the imported design supplies no tab body — the comp draws them as its `tabOther` panel — so under *Missing UI Specification* they continue to render *"arrives in a later sprint"* exactly as they do today. `TABS` is unchanged at six entries in its existing order.
+
+**The Reviews tab is not touched.** Sprint 8 deliberately omitted the comp's attendance and homework blocks from the performance tab; Sprint 13 does **not** restore them there, does not move analytics between tabs and changes no Reviews figure, query, endpoint or component. The Overview tab, the profile header, the tablist and the `?tab=` deep-link behaviour are likewise unchanged.
+
+**One banked test expectation is deliberately inverted here, and it is the only one.** `tests/reviews-ui.test.ts` #83 asserts that the profile page *"gained a branch, and lost none"* — that Overview branches first, Reviews is the one new branch, and *every other tab still renders the comp's later-sprint panel*. That last premise was correct for every sprint up to and including Sprint 12 and is **authorised to change in Sprint 13**, because Sprint 13 is the sprint that gives two of those tabs a body. The assertion is **inverted rather than deleted**, and what it has always protected is unchanged: **a sprint does not edit a screen that is not its own.** Its other clauses stay exactly as written — the `TABS` array is still pinned to its six entries in order, `t("arrives in a later sprint")` is still required as the fallback, and the Overview cards are still required to be present. It must not be left vacuous by moving the new branches outside the file the assertion scans. **The positive assertion — that an Attendance branch and a Homework branch exist — belongs to the implementation gate and is not written at banking time**, exactly as Sprint 12 left the existence of a notification reader to its own gate.
+
+**Explicitly out of scope for Sprint 13:** the Classes tab, the Finance tab, the payment UI, the homework submission writer or any recording of an outcome, class-detail enrolment and the assign-students picker, the Extra lesson control, Global Search, Quick Add, Excel or CSV export, AI review generation, a student-facing or parent-facing surface, printing or PDF from either tab, **any payment-slip or billing document — including the deferred Finance class payment slip, its playful print style, its amount-due figure, its tuition-month content and its fixed bank QR code**, cross-device state, a configurable timezone, a Notifications change, a Settings change, any authentication or session change, and unrelated refactors.
+
 # Current Milestone
 
 Stable production foundation completed.

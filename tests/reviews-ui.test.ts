@@ -1267,11 +1267,33 @@ describe("Student Profile Reviews — the boundary", () => {
     assert.ok(!TAB.includes("MonthlyReviewReport") && !TAB.includes("report-sheet"));
   });
 
-  it("83. the profile page gained a branch, and lost none", () => {
-    // The Overview tab is untouched, and every other tab still renders the
-    // comp's later-sprint panel.
+  it("83. the profile page branches only for tabs a sprint has been given", () => {
+    /* WHAT THIS HAS ALWAYS PROTECTED IS UNCHANGED: a sprint does not edit a
+     * screen that is not its own. One premise inside it has changed.
+     *
+     * THE OLD FORM ASSERTED THAT REVIEWS WAS THE ONE BRANCH, and that every
+     * other tab fell through to the comp's later-sprint panel. That was correct
+     * for every sprint up to and including Sprint 12, and stops being the
+     * invariant in Sprint 13 — the sprint that gives the Attendance and Homework
+     * tabs a body (PROJECT_RULES, "Student Profile — Attendance & Homework").
+     * It is INVERTED RATHER THAN DELETED: the branch set is now BOUNDED instead
+     * of counted, so the two tabs Sprint 13 owns are permitted and nothing else
+     * is. Every other clause below is the original, word for word.
+     *
+     * IT IS BOUNDED, NOT VACUOUS. The regex is required to still match the
+     * branches that exist, so a rename that made it match nothing would fail
+     * here rather than pass silently. Classes and Finance are named NEGATIVELY,
+     * because the imported design gives them no tab body at all (Missing UI
+     * Specification) — a branch for either is a defect in any sprint, including
+     * this one.
+     *
+     * THE POSITIVE ASSERTION IS DELIBERATELY NOT HERE. That an Attendance branch
+     * and a Homework branch EXIST is Sprint 13's implementation gate to make,
+     * and cannot honestly be written at contract-banking time. It is the same
+     * division Sprint 12 used when it banked the reserved-key inversion before
+     * any reader of those keys existed. */
     assert.ok(PROFILE.includes('tab === "Overview" ? ('), "Overview still branches first");
-    assert.ok(PROFILE.includes('tab === "Reviews" ? ('), "Reviews is the one new branch");
+    assert.ok(PROFILE.includes('tab === "Reviews" ? ('), "Reviews still branches");
     assert.ok(PROFILE.includes('t("arrives in a later sprint")'), "and the placeholder is still the fallback");
     assert.ok(PROFILE.includes("Student details") && PROFILE.includes("Parent / Guardian"),
       "the Overview cards are still there");
@@ -1279,6 +1301,19 @@ describe("Student Profile Reviews — the boundary", () => {
       [...PROFILE.matchAll(/const TABS = \["Overview", "Attendance", "Homework", "Reviews", "Classes", "Finance"\]/g)].length,
       1, "the tab list itself is unchanged"
     );
+
+    /* A tab that renders its own body must be one a sprint was given. Overview
+     * belongs to Students, Reviews to Sprint 8, Attendance and Homework to
+     * Sprint 13. Nothing else may branch. */
+    const OWNED = ["Overview", "Reviews", "Attendance", "Homework"];
+    const branched = [...PROFILE.matchAll(/tab === "([A-Za-z]+)" \? \(/g)].map((m) => m[1]);
+    assert.ok(branched.length >= 2, "the branch regex still matches this page");
+    for (const tab of branched) {
+      assert.ok(OWNED.includes(tab), `${tab} has no sprint and must fall through to the placeholder`);
+    }
+    for (const unowned of ["Classes", "Finance"]) {
+      assert.ok(!branched.includes(unowned), `${unowned} has no design and must never gain a branch`);
+    }
   });
 
   it("84. the page holds no Review state, query, key or rule of its own", () => {

@@ -1,5 +1,145 @@
 # Changelog
 
+## Unreleased — Student Profile: Attendance & Homework (Sprint 13) — **contract banked, implementation not started**
+
+### Gate 1 — module designation (PASS)
+- The numbered priority list in `PROJECT_RULES.md` (`# Current Milestone`) runs
+  **1. Students … 9. Settings** and has named no successor since Sprint 11
+  consumed it. Notifications — the only module the repository had ever reserved a
+  sprint of its own — shipped and closed in Sprint 12, so **no deferred item
+  carried a sprint designation**, and the string `Sprint 13` appeared nowhere in
+  the repository. Sprint 13 was therefore designated on repository evidence, the
+  same way Sprint 12 was.
+- **Designation: Student Profile — Attendance & Homework.** The profile renders a
+  six-tab strip and answers two of it. Attendance and Homework are already
+  reachable, keyboard-operable and deep-linkable, and both dead-end on the comp's
+  *"arrives in a later sprint"* panel; the page's own header comment names the
+  precondition — those modules being closed — which Sprints 6 and 7 have met.
+- **Four independent lines of evidence.** The imported comp contains **complete
+  designs for both tab bodies**, each with its own empty state, distinct from the
+  `tabOther` placeholder branch it also draws. **Twelve Vietnamese keys** for
+  those two designs were ported and have **zero readers in `src/`** — found by
+  resolving all 764 dictionary keys against every `.ts`/`.tsx` file. The data is
+  owned by two closed modules, and the per-student derivations
+  (`studentAttendanceRate`, `studentHomeworkCompletion`) already exist in
+  `src/lib/finance.ts` and are already consumed by Reports and Reviews.
+- **Candidates considered and rejected**, each for want of a design rather than
+  want of value: **Global Search** (a full command-menu vocabulary sits dead in
+  the dictionary, but the comp draws no overlay, palette or results surface —
+  the vocabulary came from the original vanilla app, not the governing design);
+  the **Homework submission writer**; the **Finance payment UI** (three row
+  actions are drawn, no form is drawn anywhere, and `paidDate` is a required
+  choice no drawn control supplies); the **Student Profile Finance tab**; and
+  **AI review generation**. **Class Detail enrolment** was ranked second — its
+  read designs exist and `studentIds` is already writable end-to-end — but the
+  comp draws the *Assign students* trigger and never the picker it opens, so it
+  would have shipped a roster you can remove from but not add to.
+- **Excel export** was ranked third: the comp draws the control and
+  `design-reference/lib/etlms-export.js` is a complete dependency-free xlsx
+  builder, but the repository reserves it for *"its own export gate"* — a gate,
+  not a sprint.
+- Also recorded, as maintenance rather than sprint work: `ModulePlaceholder` is
+  now referenced by **zero** files in `src/` while `PROJECT_RULES.md` still says
+  modules use it; the Class Detail comment claiming "no lesson data" has been
+  false since Sprint 5; **Quick add** has no `onClick` at all and, unlike the
+  search triggers, no comment explaining why; and ~143 further dictionary keys
+  are dead beyond the clusters named above.
+
+### Gate 2 — contract and implementation plan (PASS)
+- **Five design ambiguities resolved explicitly** rather than deferred into
+  implementation: `Excused` is **not** listed under *Recent absences* (it counts
+  as attended everywhere else in the app, so filing it as an absence would
+  contradict production); the Homework **`Total` tile includes `Assigned`** work,
+  so it is legitimately larger than `Completed + Late + Missing`; a class-scoped
+  assignment shows the **student's own outcome** from `submissions[studentId]`,
+  never the assignment's top-level status; timelines cap at **20** and side cards
+  at **5**, presentation only; and the monthly chart is **six months** ending at
+  the application's current month, with a month that has no completed lesson
+  drawing the em-dash placeholder rather than `0%`.
+- **Implementation direction: two dedicated module-owned endpoints** —
+  `GET /api/attendance/student/:studentId` and
+  `GET /api/homework/student/:studentId` — mirroring the shipped
+  `GET /api/reviews/student/:studentId`. Extending `GET /api/students/:id` was
+  rejected: it would make every Overview load and every student save pay for four
+  extra collection reads, put Attendance and Homework data inside the Students
+  module's response, and place the payload under `studentKeys.detail(id)`, where
+  renaming a student would refetch their whole attendance history.
+- The plan, the QA checklist and the rollback assessment are recorded in the gate
+  report; no code, service, endpoint, component, stylesheet rule or feature test
+  was written.
+
+### Gate 2.1 — contract banked on the feature branch
+- Branch `sprint-13-student-profile` cut from `main` at `94521b3`, and the
+  contract banked as its **first commit** — never on `main` — the order every
+  sprint since Sprint 9 has used.
+- `PROJECT_RULES.md` gains a dedicated
+  `## Student Profile — Attendance & Homework` section:
+  - **read-only in the strictest sense.** No mutation, form, drawer or dirty
+    state, and opening a profile never mutates a lesson, advances a lifecycle,
+    creates a register, records an outcome or normalises a stored value.
+  - **the tabs own no data.** No model, collection, schema field, index,
+    migration, backfill, production DDL or new dependency; every figure is
+    derived at read time from entities that already own it, and nothing is copied
+    onto the Student.
+  - **the scope is the Reviews tab's scope** — the student's own classes — so the
+    attendance and homework percentages the learning journey already shows and
+    the ones these tabs show **must agree by construction**. Roster membership is
+    read as it stands today, and that limitation is stated rather than papered
+    over.
+  - **the counting rules are not restated.** `studentAttendanceRate` and
+    `studentHomeworkCompletion` state them once in `src/lib/finance.ts`; a
+    lifetime figure extends that same file rather than copying the rule.
+  - Attendance: `Present`/`Late`/`Excused` attended and `Absent` not; four raw
+    lifetime counts in the design's order; six monthly bars; **the Lesson owns
+    the date** and the legacy `AttendanceRecord.date` mirror is never read;
+    *Recent absences* is `Absent` only and *Recent late arrivals* is `Late` only.
+  - Homework: `Completed` and `Late` done, `Missing` not, **`Assigned` excluded
+    from the measure entirely**; `Total` counts all work addressed to the
+    student; an assignment with no entry for this student does not appear.
+  - deterministic newest-first ordering with source identity as the final
+    tie-breaker; presentation-only caps of 20 and 5; deleted students' entries
+    and submission keys never surfaced, counted, repaired or erased; both tab
+    empty states, with an empty side card kept as its own separate state.
+  - the responsive split is **a class the stylesheet owns, never an inline
+    `grid-template-columns`**, collapsing on a container query anchored to the
+    existing `[data-screen-label="Student profile"]`; **no new viewport
+    breakpoint**, so the 620/767/860/1099/1100 allowlist is not loosened.
+  - accessibility: nothing carried by colour alone, existing `:focus-visible`
+    treatment, existing tablist semantics unchanged — the absence of
+    `role="tabpanel"` pre-dates Sprint 13, spans two closed tabs and is **not**
+    repaired here.
+  - **Classes and Finance keep the placeholder**, `TABS` stays at six entries in
+    order, and **the Reviews tab is not touched** — Sprint 8's deliberate
+    omission of the comp's attendance and homework blocks is not reversed.
+- **One authorised test-contract inversion, and only one.**
+  `tests/reviews-ui.test.ts` #83 asserted that Reviews was the page's one branch
+  and that every other tab fell through to the later-sprint panel — correct for
+  every sprint up to and including Sprint 12, and no longer the invariant in the
+  sprint that gives two of those tabs a body. It is **inverted rather than
+  deleted**: the branch set is now **bounded instead of counted**, so Attendance
+  and Homework are permitted and **Classes and Finance can never gain a branch**.
+  Every other clause is the original, word for word — the six-entry `TABS` order,
+  the Overview branch, the Reviews branch, the `t("arrives in a later sprint")`
+  fallback and the Overview cards. **Verified by mutation:** giving Finance a
+  branch fails it, and renaming the branch expression so the regex matches
+  nothing also fails it, so it cannot pass vacuously.
+- **The positive assertion is deliberately absent.** That an Attendance branch
+  and a Homework branch *exist* is the implementation gate's to make and cannot
+  honestly be written at banking time — the same division Sprint 12 used when it
+  banked the reserved-key inversion before any reader existed. The suite is
+  therefore **green at banking time**, matching the Sprint 12 contract commit,
+  which recorded 2420 / 2420.
+- **No feature code.** The diff touches nothing under `src/` at all: no route,
+  component, service, read model, stylesheet rule, model, schema, index,
+  migration, storage key or production write, and no product behaviour changes.
+- **Finance — Class Payment Slip Printing remains deferred and untouched.** The
+  future request for printable per-class tuition notices — playful print style,
+  amount due, tuition-month content and a fixed bank QR code — is recorded at
+  product level only and **named as an explicit exclusion in the Sprint 13
+  contract**. No QR asset, bank information, print component, billing API,
+  payment UI, Settings field or print stylesheet was introduced. It has no design
+  in the imported comp and needs its own gate.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

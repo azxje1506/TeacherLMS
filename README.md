@@ -534,6 +534,58 @@ Production pass returned **A–G all PASS**, including the four high-risk widths
 lint 0 errors with the same 8 pre-existing warnings, `tsc --noEmit` clean, build
 green and `git diff --check` clean.
 
+**Sprint 13 — Student Profile: Attendance & Homework: designated, contract
+banked, implementation not started.** The numbered priority list in
+[`PROJECT_RULES.md`](./PROJECT_RULES.md) has named no successor since Sprint 11
+consumed it, and Notifications — the one module the repository had reserved a
+sprint of its own — shipped in Sprint 12, so Gate 1 designated Sprint 13 on
+repository evidence rather than from a list. The evidence is that the Student
+Profile renders a six-tab strip and answers two of it: **Attendance** and
+**Homework** are already reachable, keyboard-operable and deep-linkable, and both
+dead-end on the comp's *"arrives in a later sprint"* panel. The imported design
+draws **complete bodies for both**, each with its own empty state; twelve
+Vietnamese keys for them were ported and have had **no reader in `src/`** until
+now; and the per-student derivations — `studentAttendanceRate` and
+`studentHomeworkCompletion` — already exist and are already consumed by Reports
+and Reviews. The design, the data, the translations and the helpers are all
+present; only the two tab bodies are missing.
+
+The contract is banked in [`PROJECT_RULES.md`](./PROJECT_RULES.md) as a dedicated
+`## Student Profile — Attendance & Homework` section, before any code, the same
+order every sprint since Sprint 9 has used. **Both tabs are read-only and own no
+data** — no model, collection, schema field, index, migration, production DDL or
+new dependency, and no notification, lesson, register or outcome is ever written
+by opening a profile. Every figure is derived at read time from entities that
+already own it, at the scope the Reviews tab already uses, so the attendance and
+homework percentages on the two surfaces **must agree by construction**. The
+implementation direction chosen in Gate 2 is **two dedicated module-owned
+endpoints** — `GET /api/attendance/student/:studentId` and
+`GET /api/homework/student/:studentId` — mirroring the shipped
+`GET /api/reviews/student/:studentId`, rather than widening the Students
+endpoint, so each read stays inside the module that owns its data and no existing
+route, response type or cache key changes.
+
+**The Classes and Finance tabs keep the placeholder** — the comp gives them no
+tab body, so under *Missing UI Specification* they are not built — and the
+Reviews tab, the Overview tab and the tablist are untouched. One banked test
+expectation was inverted here and only one: `tests/reviews-ui.test.ts` #83
+asserted that Reviews was the page's one branch, which stops being the invariant
+in the sprint that gives two more tabs a body. It is **inverted rather than
+deleted** and now bounds the branch set instead of counting it, so Attendance and
+Homework are permitted while **Classes and Finance can never gain a branch**; the
+`TABS` array, the fallback and the Overview cards stay pinned exactly as written.
+The positive assertion — that those two branches exist — belongs to the
+implementation gate, so the suite is **green at banking time**, the same division
+Sprint 12 used.
+
+**No implementation has begun.** Neither tab is built, no endpoint, service, read
+model, component or responsive rule exists yet, and no product behaviour has
+changed. A separate future candidate — a **Finance class payment slip** for
+printing tuition notices, with a playful print style, an amount due, tuition-month
+content and a fixed bank QR code — is recorded at product level only and is
+**explicitly excluded from Sprint 13 by name**; it has no design in the imported
+comp and would need its own gate.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error
