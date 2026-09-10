@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, deployed to Production**
+## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery
 - The numbered priority list in `PROJECT_RULES.md` (`# Current Milestone`) runs
@@ -141,8 +141,103 @@
   it is how the deployed SHA was established.
 - **No production write of any kind.** No domain record was created or mutated
   for verification, and no DDL was performed — Notifications declare no index.
-- The browser re-pass against Production remains the user's step; it runs on
-  bytes already proven identical to the ones the Gate 6 pass verified.
+- The browser re-pass against Production was subsequently performed by the user
+  and returned A–G all PASS — on bytes already proven identical to the ones the
+  Gate 6 pass verified.
+
+### Closure audit — PASS
+- Audited against the **merged code on `main`**, not against the gate reports.
+  The shipped implementation still matches the banked `## Notifications`
+  contract in `PROJECT_RULES.md`.
+- **Surface, audience and types:** the header bell is the whole surface — no
+  `/notifications` route, no `/api/notifications`, no sidebar item, no
+  Notifications Settings card, and nothing is ever sent. Exactly three types
+  ship. A fourth `BillingStatus` is caught at **compile time** by
+  `BILLING_STATUSES_ARE_CLASSIFIED`, verified by mutation: adding a `Waived`
+  status fails `tsc --noEmit` at `notifications.ts`.
+- **Derivation:** `Unpaid` and `Partially Paid` qualify and `Paid` does not;
+  one Billing record yields at most one notification. Makeup is filtered to
+  `type === "makeup" && status === "Upcoming"` within `today … today+7`
+  inclusive, so +8 and the past are excluded and a retired lesson cannot appear
+  — retire is a hard delete, so the record is simply not in the collection.
+  Review due keeps its exact four-part bound: a completed month, the student
+  already joined, a `Completed` lesson that month in a class whose roster holds
+  the student, and no existing Review. Nothing was broadened.
+- **Read-only:** derivation calls `getAll()`, which is `find().lean()` across
+  the collections and writes nothing — notably it does **not** advance the
+  lesson lifecycle. No notification interaction writes to any domain
+  collection.
+- **Identity, ordering, cap:** ids are `type:sourceId[:context]` — no index, no
+  render order, no UUID, no presentation string. Type rank is tuition, makeup,
+  review; `sortKey` orders within a type and the stable id is the final
+  tie-breaker. Dedup is by id. The cap is 20 and presentation-only: `active` is
+  returned untruncated, item 21 stays eligible, and `unreadCount` and
+  `markableIds` both run over the whole undismissed set rather than the twenty
+  drawn.
+- **Read and dismiss stay distinct:** opening the panel marks nothing, opening
+  one row marks only that row, *Mark all read* dismisses nothing, and a stale
+  acknowledgement entry is inert — it can filter an active notification but can
+  never bring one into existence.
+- **Persistence containment:** no Notification model, collection, schema, index,
+  migration or backfill; no server-side acknowledgement; and `storageKeys`
+  still declares exactly two notification keys, unrenamed.
+- **Refresh boundary unchanged and accepted:** no `setInterval`, `WebSocket`,
+  `EventSource`, `refetchInterval`, `router.refresh` or client fetch anywhere in
+  the Notifications code or the layout that derives it.
+- **Focus fix stays local:** `releaseIfPointer` exists in exactly one file. No
+  bare `:focus` was introduced, the shared `:focus-visible` treatment is
+  untouched, and no global modality subsystem was added.
+- **Responsive rule still owns its geometry:** the panel carries no inline
+  `width`, `position`, `top`, `left` or `right`, so the stylesheet cannot lose to
+  an inline declaration — the trap this repository has shipped before.
+- **Cross-module containment:** the whole sprint touches 15 source and test
+  files plus three documents. No API route, model, schema, migration,
+  middleware, auth, JWT or cookie file, and **no dependency change**. Exactly
+  **eight** test lines were deleted across the sprint, all of them the single
+  authorised `settings.test.ts` #15 inversion — no other guard was weakened.
+- **Residue:** one item found and fixed — a trailing blank line at the end of
+  `notification-menu.tsx`, flagged by `git diff --check` over the merged range
+  and out of step with every sibling file. Whitespace only, no behaviour
+  change. No TODO, FIXME, HACK, XXX, WIP, `console.*`, `debugger`, `.only`,
+  `.skip`, dead export, commented-out alternative, temporary flag, generated
+  file, NUL byte or line-ending churn was found. Six exports that a naive scan
+  calls unused are each used inside their own module, except
+  `BILLING_STATUSES_ARE_CLASSIFIED`, whose purpose is to be referenced by
+  nothing and checked by the compiler.
+- **One recorded observation, not a defect:** a makeup moved to a different
+  *time on the same day* keeps its stable id, because the id's context is the
+  date. A move to another date correctly produces a new identity. Same-day
+  moves are the same logical "makeup on this day", so a prior dismissal
+  continuing to apply is the intended reading of the contract.
+
+### Final verification at closure
+- **2621 / 2621** tests, 409 suites, 0 failures, 0 skipped, 0 todo — unchanged
+  from the Gate 7 baseline. Targeted suites all green: notifications 63,
+  notification-state 49, notifications-ui 89, settings 122,
+  settings-propagation 50, responsive-shell 78, responsive-components 36,
+  finance 47/67/169, reports 76/40/119/137, reviews 91/42/79/130, composer 90,
+  isolation 35, recurrence 59.
+- lint 0 errors and the same 8 pre-existing warnings, `tsc --noEmit` clean,
+  production build green, `git diff --check` clean.
+
+### Human verification — authoritative
+- **Gate 6 (initial):** PASS except two findings — a stuck pointer focus ring,
+  and no per-row read/unread distinction.
+- **Gate 6.1 (fixes):** pointer modality focus release, unread accent background
+  plus dot, and a distinct unread hover treatment.
+- **Human re-test:** R1 PASS, R2 PASS.
+- **Production Gate 7 (A–G):** A PASS, B PASS, C PASS, D PASS, E PASS, F PASS,
+  G PASS. B covers the four high-risk widths **320, 360, 390 and 430** — no left
+  clipping, 20px clearance each side, no horizontal scroll, dismiss fully
+  visible.
+
+### Sprint 12 is CLOSED
+All gates complete: contract banked, headless engine, header integration,
+responsive and visual hardening, regression audit, human verification, human
+re-test, merge to `main`, Production deployment, Production browser
+verification and this closure audit. `main` is fast-forwarded and linear with no
+squash, rebase, merge commit or force push, `sprint-12-notifications` is retained
+at `b074656` and fully contained in `main`, and the working tree is clean.
 
 ## Unreleased — Settings (Sprint 11) — **shipped, human-verified, merged, CLOSED**
 

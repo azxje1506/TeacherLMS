@@ -464,7 +464,7 @@ banked contract, no blocker remains open, and no debug code, temporary comment,
 migration, test-only bypass or unfinished TODO was introduced. **Sprint 11 —
 Settings is closed.**
 
-**Sprint 12 — Notifications: implemented, human-verified, merged and deployed to Production.** The numbered
+**Sprint 12 — Notifications: implemented, human-verified, merged, production verified and CLOSED.** The numbered
 priority list in [`PROJECT_RULES.md`](./PROJECT_RULES.md) runs *1. Students … 9.
 Settings* and was fully consumed by Sprint 11, so it names no successor — but
 Notifications was the only module the repository designated for a sprint of its
@@ -513,9 +513,26 @@ commits with no squash, rebase or merge commit, and the branch is retained. That
 revision is live on **Vercel Production** — the deployed artifact was proven
 identical to a local build of `b074656` by MD5 across all 41 static chunks and the
 stylesheet. **No production record was created or mutated for verification, and no
-DDL was performed.** The remaining browser re-pass against Production is the
-user's; it runs on bytes already proven identical to the ones the Gate 6 pass
-verified.
+DDL was performed.** The browser re-pass against Production has since been
+performed and returned A–G all PASS — on bytes already proven identical to the
+ones the Gate 6 pass verified.
+
+**Sprint 12 is closed.** The closure audit was run against the merged code on
+`main` rather than against the gate reports, and it passed: the shipped module
+still matches the banked contract on surface, audience, the three types,
+derivation bounds, stable identity, ordering, the presentation-only cap of 20,
+the read/dismiss split, persistence containment and the accepted refresh
+boundary. Domain interactions remain read-only — derivation reads through
+`getAll()` and writes nothing. The one residue item found, a trailing blank line
+at the end of `notification-menu.tsx`, was trimmed; nothing else surfaced.
+
+Human verification is the authoritative layer and both rounds are recorded: the
+initial Gate 6 pass returned a stuck pointer focus ring and a missing read/unread
+distinction, the Gate 6.1 fixes were re-tested **R1 PASS / R2 PASS**, and the
+Production pass returned **A–G all PASS**, including the four high-risk widths
+320, 360, 390 and 430. Final automated state at closure: **2621 / 2621** tests,
+lint 0 errors with the same 8 pre-existing warnings, `tsc --noEmit` clean, build
+green and `git diff --check` clean.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
