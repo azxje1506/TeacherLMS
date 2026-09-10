@@ -622,16 +622,64 @@ helper's top-level `Assigned` exclusion changed nothing any test could see,
 because that exclusion and the per-student one agree on every ordinary record — so
 **#11b** was added with the one divergent fixture that isolates it.
 
-**No UI exists yet, and Sprint 13 is not complete.** Neither tab is built: no
-component, no query hook, no Student Profile branch, no `.sp-split` and no
-container query, and the profile still renders the comp's later-sprint panel for
-Attendance and Homework as well as for Classes and Finance. **No schema, index,
-migration, production DDL, new dependency or production write** was introduced,
-and a profile read advances no lesson lifecycle. A separate future candidate — a
-**Finance class payment slip** for printing tuition notices, with a playful print
-style, an amount due, tuition-month content and a fixed bank QR code — is recorded
-at product level only and is **explicitly excluded from Sprint 13 by name**; it
-has no design in the imported comp and would need its own gate.
+**Gate 4 has since built the Attendance tab — and only that tab.** The profile
+page gained exactly one branch, rendering
+`src/components/attendance/student-attendance.tsx`: the comp's headline rate
+beside its four status counts, the six-month chart, the timeline, and *Recent
+absences* / *Recent late arrivals* in the supporting column. The page passes a
+student id and nothing else, holds no attendance state and knows no attendance
+rule — the shape `StudentReviews` has had since Sprint 8.
+
+**The payload is rendered as it arrives.** The tab derives nothing: no rate, no
+monthly rate, no count, no list. It applies no filter, sort or arithmetic —
+`absences` already excludes `Excused` and the timeline already carries its
+tie-break, so a client-side filter would be a second copy of a domain rule with
+nothing testing it. `null` is never `0%`: the headline and every monthly point go
+through the shared `rateLabel`, and the one template that builds a percent from a
+rate is the bar's CSS height, pinned exactly. Loading is a skeleton in the tab's
+own shape showing no values; error is inline, retryable and decided **before**
+empty, so a failed request is never dressed as "this student has no attendance";
+the whole-tab empty state is the comp's dashed panel on the server's own
+`hasRecords`. Colour is never the only signal, the chart's bars are `aria-hidden`
+because their values are already written in text beneath them, and no chart
+library was added.
+
+**`.sp-split` is the stylesheet's**, in its own Student Profile section, with the
+desktop template in CSS and no inline `grid-template-columns` — an inline
+declaration beats every rule written against it, which this repository has shipped
+as a dead rule more than once. It collapses on a **container query** anchored to
+the existing `[data-screen-label="Student profile"]`, declared for `screen` only,
+following Reports and Settings. **No new viewport breakpoint.** The threshold is
+**600px, derived from this tab's own content and deliberately not Reports' 667** —
+borrowing that number would have broken two banked `reports-ui` guards that pin it
+as the file's single occurrence, and the block also had to sit **above** the
+Settings section because `settings-propagation` #6 reads everything after the
+Settings banner as Settings CSS. Three banked guards were found by breaking them
+first; all three were left sealed and this sprint's own CSS changed instead.
+
+**Every string already had a Vietnamese entry** — the keys Gate 1 found ported and
+unread now have their reader, and no thirteenth key was invented. The suite moves
+**2683 -> 2720**, all green, with `tests/student-attendance-ui.test.ts` (37)
+carrying the positive branch assertion Gate 2.1 deliberately left unwritten:
+Attendance branches, Homework does **not** yet, Classes and Finance never do, and
+the fallback survives. Five deliberate defects were introduced and reverted to
+prove the guards bite.
+
+**Manual browser QA has NOT been performed and is not claimed.** This repository
+has no browser automation, so the ten widths from 1440 down to 320, the density
+and theme variants, the Vietnamese/English pass and the pointer-versus-keyboard
+focus behaviour are **reserved for human QA**.
+
+**Homework UI remains unbuilt and Sprint 13 is not complete.** The Homework tab
+still renders the comp's later-sprint panel, as do Classes and Finance — which
+never gain a branch at all, because the imported design supplies them no tab body.
+The Homework read model and endpoint are untouched, as are Finance, Classes and
+Reviews. **No schema, index, migration, production DDL, new dependency or
+production write** was introduced. A separate future candidate — a **Finance class
+payment slip** for printing tuition notices, with a playful print style, an amount
+due, tuition-month content and a fixed bank QR code — is recorded at product level
+only and is **explicitly excluded from Sprint 13 by name**; it has no design in the
+imported comp and would need its own gate.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported

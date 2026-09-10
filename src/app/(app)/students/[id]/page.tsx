@@ -4,9 +4,13 @@
  * back button, profile header (avatar, name + status, summary, Edit / Archive /
  * Delete) and the tablist.
  *
- * Only the Overview tab belongs to the Students module. Attendance, Homework,
- * Classes and Finance read from modules later in the priority order, so they
- * render the comp's own "arrives in a later sprint" panel until then.
+ * Only the Overview tab belongs to the Students module. The rest read from other
+ * modules, and each arrives when its own sprint does: Reviews in Sprint 8,
+ * Attendance in Sprint 13. HOMEWORK IS STILL PENDING — Sprint 13's next gate —
+ * and CLASSES AND FINANCE NEVER GAIN A BRANCH AT ALL, because the imported design
+ * supplies them no tab body. All three render the comp's own "arrives in a later
+ * sprint" panel, which is why the fallback below is permanent rather than
+ * temporary.
  *
  * REVIEWS IS LIVE as of Sprint 8 Gate 4.4, and it is the whole of this page's
  * involvement with it: the tab renders `<StudentReviews>`, which owns its own
@@ -30,6 +34,7 @@ import { useToast } from "@/components/ui/toast";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { StudentDrawer } from "@/components/students/student-drawer";
 import { StudentReviews } from "@/components/reviews/student-reviews";
+import { StudentAttendance } from "@/components/attendance/student-attendance";
 import { Avatar, cardStyle, statusBadgeStyle, statusDotStyle, tabStyle } from "@/components/students/student-ui";
 import {
   deleteStudent, fetchStudent, saveStudentNotes, studentKeys, updateStudent,
@@ -346,6 +351,18 @@ function StudentProfile() {
         /* Sprint 8. The component owns the query, the states and the drawer;
          * this page passes it a student id and nothing else. */
         <StudentReviews studentId={id} />
+      ) : tab === "Attendance" ? (
+        /* Sprint 13. Same shape as Reviews above: the component owns its query,
+         * its states and its layout, and this page passes a student id and
+         * nothing else. It holds no attendance state and knows no attendance
+         * rule — every figure is the server's, from
+         * GET /api/attendance/student/:id.
+         *
+         * HOMEWORK IS NOT HERE YET. It is the next gate's, and until then it
+         * falls through to the comp's later-sprint panel below alongside Classes
+         * and Finance — which never gain a branch at all, because the imported
+         * design supplies them no tab body. */
+        <StudentAttendance studentId={id} />
       ) : (
         /* The comp's own placeholder for sections owned by later sprints. */
         <div style={{ background: "var(--card)", border: "1px dashed var(--border)", borderRadius: "var(--r)", padding: "52px 24px", textAlign: "center" }}>

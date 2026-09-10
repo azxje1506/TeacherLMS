@@ -250,6 +250,107 @@
 - **Sprint 13 is not complete.** The Attendance and Homework tabs are still
   unbuilt, and the profile still renders the comp's later-sprint panel for both.
 
+### Gate 4 — the Attendance tab
+- **The Attendance tab is built. Homework is not** — that is Gate 5, and it still
+  falls through to the comp's later-sprint panel alongside Classes and Finance,
+  which never gain a branch at all because the imported design supplies them no
+  tab body.
+- **`src/components/attendance/student-attendance.tsx`** renders the comp's
+  `tabAttendance` section: the headline rate beside four status counts, the
+  six-month chart, the timeline, and *Recent absences* / *Recent late arrivals* in
+  the supporting column. **`src/app/(app)/students/[id]/page.tsx` gained exactly
+  one branch** and nothing else — the page passes a student id, holds no
+  attendance state and knows no attendance rule, the same shape `StudentReviews`
+  has had since Sprint 8.
+- **The payload is rendered as it arrives.** The tab derives NOTHING: not the
+  headline rate, not a monthly rate, not a count, not one of the three lists. It
+  applies no filter, no sort and no arithmetic — `absences` is already `Absent`
+  only and `timeline` already carries its tie-break, so a client-side filter would
+  be a second copy of a domain rule with nothing testing it, and the first thing
+  it would do is let `Excused` into the absences card. A test asserts the absence
+  of `Math.round`, `reduce(`, `filter(` and `sort(` in the file.
+- **`null` is never `0%`.** Both the headline figure and every monthly point go
+  through the shared `rateLabel`, which renders `null` as the app's em dash. The
+  one template literal that builds a percent from a rate is the bar's CSS
+  **height**, and the test pins it exactly so a second one cannot appear unnoticed.
+- **Four states, kept distinct.** Loading is a skeleton in the tab's own two-column
+  shape that shows no values and reads no data, so revealing the payload does not
+  move the tablist above it. Error is inline and retryable and is decided
+  **before** empty, so a failed request can never be dressed as "this student has
+  no attendance" — a claim about their record rather than about the network. The
+  whole-tab empty state is the comp's dashed panel on the server's own
+  `hasRecords`, and it returns early: nothing partial is drawn beside it.
+- **Colour is never the only signal** — the four tiles, every timeline row and
+  every absence row name their status in text beside it, through the shared
+  `ATTENDANCE_DISPLAY_ORDER` and `ATTENDANCE_COLORS`. The chart's bars are
+  `aria-hidden` because every value they encode is already written underneath in
+  text; each of the five regions is a labelled `<section>` with a real heading. No
+  chart library was added, and the tab installs no focus handling of its own.
+
+#### The positive contract assertion Gate 2.1 left unwritten
+- `tests/reviews-ui.test.ts` #83 bounds what MAY branch and is **untouched**.
+  `tests/student-attendance-ui.test.ts` now states the other half positively:
+  Attendance branches and renders the component, **Homework does not yet**,
+  Classes and Finance never do, the fallback survives, `TABS` is unchanged, and
+  the branch set is exactly `["Overview", "Reviews", "Attendance"]`.
+- `tests/student-homework.test.ts` #29 moved once, deliberately and in the gate
+  that made it false: its Attendance clauses retired into the positive suite
+  above, and its **Homework** clauses are untouched and still bite.
+
+#### Responsive
+- **`.sp-split` is declared in `globals.css`, in its own Student Profile section**,
+  and the stylesheet owns `grid-template-columns`. The element carries a class and
+  no inline template — an inline declaration beats every media and container rule
+  written against it, which this repository has shipped as a dead rule more than
+  once.
+- It collapses on a **container query** anchored to the existing
+  `[data-screen-label="Student profile"]`, declared for `screen` only, following
+  Reports (Gate 6.4) and Settings (Gate 4). **No new viewport breakpoint**: a
+  container query is not a media query, so the allowlist in
+  `tests/finance-ui.test.ts` #122 is untouched.
+- **The threshold is 600px, derived from this tab's own content — deliberately not
+  Reports' 667.** Borrowing 667 would have broken `tests/reports-ui.test.ts` #107
+  and #116, which pin it as the file's single occurrence, and editing two banked
+  guards in a closed sprint to say something they were written not to say is the
+  wrong trade. The binding constraint here is the supporting column: a status
+  badge that must not wrap, its gap, 40px of card padding and room for a class
+  name to ellipse — about 230px, which at 1.6fr / 1fr needs about 598px of
+  container. **The block was also moved above the Settings section**, because
+  `tests/settings-propagation.test.ts` #6 slices from the Settings banner to
+  end-of-file and would otherwise have read `.sp-split` as an un-namespaced
+  Settings selector. Both guards now pass unmodified.
+
+#### Translations
+- **Every string it renders already had a Vietnamese entry.** The keys Gate 1
+  found ported and unread now have their reader, and **no thirteenth key was
+  invented**; the tab reads the one `useSettings` store and defines no local
+  dictionary. `en` continues to use the existing source-string fallback.
+
+#### Tests
+- **`tests/student-attendance-ui.test.ts` (37).** Totals move 2683 -> 2720, all
+  green, with every pre-existing guard intact.
+- **Mutation-tested, five defects introduced and reverted.** Removing the
+  Attendance branch fails #1 and #5; printing a null rate as `0%` fails #16;
+  letting `Excused` into the absences card fails #23; moving the grid template
+  inline fails #27; deleting the container-query collapse fails #28.
+- **Three banked guards were found by breaking them first, and all three were left
+  sealed** — `reports-ui` #107 and #116 on the uniqueness of 667, and
+  `settings-propagation` #6 on Settings selector namespacing. The fix was to
+  change this sprint's own CSS, not their assertions.
+
+#### Not done here, and not claimed
+- **Manual browser QA has NOT been performed.** There is no browser automation in
+  this repository — no Playwright, Puppeteer or Cypress — so the widths 1440,
+  1280, 1100, 860, 767, 620, 430, 390, 360 and 320, the density and theme
+  variants, the Vietnamese/English pass and the pointer-versus-keyboard focus
+  behaviour are **reserved for human QA** rather than reported as passing.
+- **Homework UI, the Homework read model and every Homework endpoint are
+  untouched.** Finance, Classes and Reviews are untouched. **Finance — Class
+  Payment Slip Printing remains deferred**: no QR asset, bank information, print
+  component, billing API, payment UI, Settings field or print stylesheet.
+- **No schema, index, migration, dependency or production write.** Sprint 13 is
+  not complete.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

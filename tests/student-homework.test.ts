@@ -437,18 +437,24 @@ describe("Homework read model — it writes nothing, and changes no ownership", 
     assert.ok(ROUTE.includes("export async function GET"));
   });
 
-  it("29. no UI was built in this gate", () => {
-    /* Gate 3 is backend only. The tabs, their components and their responsive
-     * rule belong to the UI gate that follows. */
-    for (const p of [
-      ["src", "components", "attendance", "student-attendance.tsx"],
-      ["src", "components", "homework", "student-homework.tsx"],
-    ]) {
-      assert.throws(() => readFileSync(path.join(process.cwd(), ...p), "utf8"), "no tab component exists yet");
-    }
+  it("29. the HOMEWORK tab is still unbuilt — this suite's own boundary", () => {
+    /* WHAT THIS GUARD IS FOR, AND WHY IT MOVED ONCE. In Gate 3 it said "no UI was
+     * built in this gate" and named both tabs, because Gate 3 was backend only.
+     * Gate 4 built the ATTENDANCE tab, so the Attendance half was retired
+     * deliberately and in the gate that made it false — the Attendance clauses
+     * now live, positively, in tests/student-attendance-ui.test.ts, so nothing
+     * was dropped. The HOMEWORK half is untouched and still bites: Homework UI is
+     * Gate 5's, and until then this file's subject has no screen.
+     *
+     * It is not vacuous: the component's absence, the branch's absence and the
+     * fallback's presence are three separate facts, and the mutation notes in
+     * the Gate 4 report record that adding a Homework branch fails this. */
+    assert.throws(
+      () => readFileSync(path.join(process.cwd(), "src", "components", "homework", "student-homework.tsx"), "utf8"),
+      "no Homework tab component exists yet"
+    );
     const profile = code("src", "app", "(app)", "students", "[id]", "page.tsx");
-    assert.ok(!profile.includes('tab === "Attendance"'), "the Attendance branch is the UI gate's");
-    assert.ok(!profile.includes('tab === "Homework"'), "the Homework branch is the UI gate's");
-    assert.ok(!code("src", "app", "globals.css").includes("sp-split"), "no Sprint 13 CSS yet");
+    assert.ok(!profile.includes('tab === "Homework"'), "the Homework branch is Gate 5's");
+    assert.ok(profile.includes('t("arrives in a later sprint")'), "and Homework still falls through to it");
   });
 });

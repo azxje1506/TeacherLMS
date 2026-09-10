@@ -2193,6 +2193,67 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 [data-theme="dark"] .hdr-theme-icon-light{display:none}
 
 /* ==========================================================================
+   STUDENT PROFILE (Sprint 13)
+   ========================================================================== */
+
+/* ---- The two-column tab split --------------------------------------------
+
+   THE STYLESHEET OWNS `grid-template-columns`, and that is why this block
+   exists. The imported comp writes the split inline, and an inline declaration
+   beats every media and container rule ever written against it — this repository
+   has shipped that exact dead rule more than once (Sprint 8 Gate 4.4D, Sprint 10
+   Gates 6.2 and 6.4). So the element states a class and nothing else, and both
+   the desktop template and its collapse live here.
+
+   1.6fr / 1fr IS THE COMP'S OWN RATIO, unchanged: a main column carrying the
+   summary, the chart and the timeline, beside a supporting column of two cards.
+   `minmax(0,…)` on both tracks is what stops a long class name or a wide row
+   from pushing the grid past its container instead of ellipsing inside it.
+
+   ---- IT COLLAPSES ON ROOM, NOT ON VIEWPORT WIDTH ------------------------
+   A container query, for the reason Reports (Sprint 10 Gate 6.4) and Settings
+   (Sprint 11 Gate 4) already use one: this tab sits inside the profile's content
+   column, whose width moves with the sidebar rail and with the density token, so
+   the viewport is a poor proxy for the space the split actually has. At a 1100px
+   viewport with the rail expanded the tab has less room than at 900px with it
+   collapsed, and a viewport rule cannot tell those two apart.
+
+   600px IS THIS TAB'S OWN NUMBER, DERIVED FROM ITS OWN CONTENT — deliberately
+   NOT Reports' 667. That figure was derived from Reports' shell arithmetic and
+   `tests/reports-ui.test.ts` #107 and #116 pin it as the file's single
+   occurrence, so borrowing it would have meant editing two banked guards in a
+   closed sprint to say something they were written not to say. The honest number
+   is the width at which THIS content stops fitting, and the binding constraint
+   is the supporting column: a status badge that must not wrap (about 66px at the
+   longest Vietnamese label), the 8px gap beside it, 40px of card padding and
+   enough left over for a class name to ellipse rather than vanish — about 230px.
+   At 1.6fr / 1fr the right track is one part in 2.6, so 230px of column needs
+   about 598px of container. Rounded to 600.
+
+   IT IS NOT A NEW BREAKPOINT. `@container` is not `@media`, so the viewport
+   allowlist in `tests/finance-ui.test.ts` #122 — 620, 767, 860, 1099, 1100 — is
+   untouched and could not be reached by this rule.
+
+   THE CONTAINER IS DECLARED FOR SCREEN ONLY, exactly as Reports and Settings
+   declare theirs: `container-type` implies layout containment, and layout
+   containment interacts with the fragmentation that paginates a printed page.
+   The Student Profile has no print path today, and scoping the declaration to
+   `screen` keeps it that way by construction rather than by care. */
+.sp-split{
+  display:grid;
+  grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
+  gap:var(--gap);
+  align-items:start;
+  min-width:0;
+}
+@media screen{
+  [data-screen-label="Student profile"]{container-type:inline-size;container-name:sp-page}
+}
+@container sp-page (max-width:600px){
+  .sp-split{grid-template-columns:minmax(0,1fr)}
+}
+
+/* ==========================================================================
    SETTINGS (Sprint 11)
    ========================================================================== */
 

@@ -14,12 +14,20 @@
 import type {
   AttendanceIndexPayload, AttendanceRegisterPayload, SubmittedEntry,
 } from "@/lib/attendance";
+import type { StudentAttendancePayload } from "@/lib/student-profile";
 
-/** Query keys — mutations invalidate `["attendance"]` to refresh every view. */
+/** Query keys — mutations invalidate `["attendance"]` to refresh every view.
+ *
+ * `student` sits UNDER `["attendance"]` deliberately, so the one
+ * `invalidateQueries({ queryKey: attendanceKeys.all })` a register save already
+ * issues also refreshes an open profile tab. It is NOT under `["students"]`:
+ * renaming a student must not refetch their whole attendance history, and
+ * marking a register must. The key follows the data's owner, not the screen's. */
 export const attendanceKeys = {
   all: ["attendance"] as const,
   index: ["attendance", "index"] as const,
   register: (lessonId: string) => ["attendance", "register", lessonId] as const,
+  student: (studentId: string) => ["attendance", "student", studentId] as const,
 };
 
 async function readError(res: Response, fallback: string): Promise<never> {
@@ -35,6 +43,18 @@ export async function fetchAttendanceIndex(): Promise<AttendanceIndexPayload> {
 
 export async function fetchAttendanceRegister(lessonId: string): Promise<AttendanceRegisterPayload> {
   const res = await fetch(`/api/attendance/${lessonId}`);
+  if (!res.ok) await readError(res, "Couldn't load attendance");
+  return res.json();
+}
+
+/** One student's whole attendance record, for the Student Profile tab.
+ *
+ * READ ONLY, and the payload is consumed AS-IS. The rate, the monthly points,
+ * the four counts and all three lists are the server's answers; the tab formats
+ * them and derives none of them again. A second copy of a counting rule in the
+ * browser is exactly how one fact becomes two numbers. */
+export async function fetchStudentAttendance(studentId: string): Promise<StudentAttendancePayload> {
+  const res = await fetch(`/api/attendance/student/${studentId}`);
   if (!res.ok) await readError(res, "Couldn't load attendance");
   return res.json();
 }
