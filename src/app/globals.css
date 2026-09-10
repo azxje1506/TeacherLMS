@@ -1767,6 +1767,38 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 .notif-markall:hover{opacity:.7}
 .notif-open:hover{opacity:.75}
 
+/* ---- Notifications: read vs unread rows ------------------------------------
+   AUTHORISED BY THE GATE 6 HUMAN PASS, and deliberately no larger than the
+   finding. The comp draws no per-row read state and Gate 4 refused to invent
+   one; verification then reported that once the panel is OPEN the badge says
+   nothing about WHICH rows are new, so the panel is the one place the
+   distinction was actually missing. This adds it and nothing else: no row is
+   hidden, collapsed, labelled, badged or re-laid-out, and read rows stay fully
+   interactive. Read is still not dismissed.
+
+   FOUR STATES, BECAUSE HOVER MUST NOT FLATTEN TWO OF THEM. A single
+   `:hover{background:var(--hover)}` would paint an unread row and a read row
+   identically the moment the cursor crossed either, which is exactly when a
+   teacher is looking hardest. So unread keeps an accent tint in both its resting
+   and hovered forms, and read uses the app's ordinary hover surface:
+
+     read           the panel's own --card, inherited, nothing declared
+     read:hover     --hover, the same surface every other row in the app uses
+     unread         --accent-soft
+     unread:hover   --accent-soft with a little more --accent mixed in
+
+   The hovered unread value is COMPUTED FROM THE SAME TWO TOKENS rather than
+   picked, so it follows every accent and both themes with nothing hard-coded and
+   no new token; `color-mix` is already how the header builds its own translucent
+   background. 12% is enough to read as "this row is under the cursor" without
+   competing with the accent dot.
+
+   The dot itself is drawn on the icon tile in the component, out of flow, so
+   none of this changes a single dimension of the row. */
+.notif-row[data-unread="1"]{background:var(--accent-soft)}
+.notif-row:hover{background:var(--hover)}
+.notif-row[data-unread="1"]:hover{background:color-mix(in srgb,var(--accent) 12%,var(--accent-soft))}
+
 /* ---- Notifications: the dropdown's geometry --------------------------------
    THESE FIVE DECLARATIONS LIVE HERE AND NOT INLINE, and that is the whole point
    of the block. Every one of them has to change below 768px, and this repository

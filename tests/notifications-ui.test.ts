@@ -225,9 +225,12 @@ describe("Notifications UI · the panel calls the engine and reimplements none o
     assert.ok(!/visible/.test(badge), "never the count of rendered rows");
     /* `view.visible.length === 0` DOES appear in the component — it is the empty
      * state, which is a different question and a legitimate one. What matters is
-     * that no unread number is ever derived from the capped list. */
-    assert.ok(!/unread\w*\s*=[^=]/.test(MENU), "and no unread count is computed here at all");
+     * that no unread NUMBER is ever derived here. The row's `unread={…}` prop is
+     * a boolean handed down from `isRead`, not a count, so it is named out of the
+     * ban rather than caught by it. */
+    assert.ok(!/unreadCount\s*=[^=]/.test(MENU), "no unread count is computed here at all");
     assert.ok(!/\.filter\(/.test(MENU), "nor any set of its own");
+    assert.ok(!/unread\w*\s*=\s*\d|unread\w*\+\+/.test(MENU), "and nothing counts by hand");
   });
 
   it("18. mark-all is given the whole live set and not the visible twenty", () => {
@@ -259,9 +262,16 @@ describe("Notifications UI · the panel calls the engine and reimplements none o
   });
 
   it("22. opening the PANEL marks nothing read", () => {
-    const toggle = /onClick=\{\(\) => setOpen\(\(o\) => !o\)\}/.test(MENU);
-    assert.ok(toggle, "the bell only toggles");
-    assert.ok(!/setOpen\([^)]*\)[\s\S]{0,80}markAllRead/.test(MENU), "no mark-all rides along with opening");
+    /* The bell's handler releases a pointer-driven focus ring and toggles. It
+     * must do those two things and no third — in particular it must not
+     * acknowledge anything, which is the difference between a badge that reflects
+     * what was looked at and one that clears itself for being glanced at. */
+    const bell = /onClick=\{\(e\) => \{([^}]*)\}\}/.exec(MENU)?.[1] ?? "";
+    assert.ok(bell.includes("setOpen((o) => !o)"), "the bell toggles");
+    assert.ok(bell.includes("releaseIfPointer(e)"), "and releases a pointer focus ring");
+    for (const banned of ["markRead", "markAllRead", "dismiss", "commit"]) {
+      assert.ok(!bell.includes(banned), `opening the panel must not ${banned}`);
+    }
   });
 
   it("23. dismiss writes only dismissal, and cannot navigate", () => {
@@ -651,15 +661,109 @@ describe("Notifications UI · interaction states", () => {
       "the app-wide ring already covers all four controls");
     assert.ok(!/:focus[^-v]/.test(NOTIF_CSS), "Notifications declares no bare :focus of its own");
     assert.ok(!/outline: *['"]?none/.test(MENU), "and removes no ring");
+    assert.ok(!/outline/.test(NOTIF_CSS), "the Notifications block declares no outline at all");
   });
 
-  it("76. read is not dismissed, and no read/unread row styling was invented", () => {
-    /* The comp draws no per-row read state — the badge is the unread signal — so
-     * inventing one would be a redesign. What must never happen is a read item
-     * being HIDDEN: read and dismissed are different acts. */
-    assert.ok(!/isRead\(|opacity.*read|data-read/.test(MENU), "no row is styled by its read state");
-    assert.ok(MENU.includes("view.visible.map("), "and the list is the engine's, unfiltered by read");
-    assert.ok(!/filter\([^)]*read/.test(MENU), "nothing hides a read notification");
+  it("75a. a pointer click releases the ring; a keyboard one keeps it", () => {
+    /* THE GATE 6 DEFECT. `:focus-visible` is re-evaluated on focus CHANGE, so
+     * clicking a control that keyboard focus already sits on fires nothing and
+     * the ring stays lit. `event.detail` is the browser's own modality signal — a
+     * real click reports its click count, an Enter/Space-synthesised one reports
+     * 0 — so this releases focus for a pointer and leaves the keyboard alone. */
+    const fn = /function releaseIfPointer\([^)]*\): void \{([\s\S]*?)\n\}/.exec(MENU)?.[1] ?? "";
+    assert.notEqual(fn, "", "the helper exists");
+    assert.ok(fn.includes("e.detail > 0"), "pointer-only, tested by the click count");
+    assert.ok(fn.includes("e.currentTarget.blur()"), "and it releases focus rather than deleting an outline");
+    assert.ok(!/preventDefault/.test(fn), "it does not suppress the click itself");
+  });
+
+  it("75b. every one of the four controls goes through it", () => {
+    for (const handler of [
+      "releaseIfPointer(e); setOpen((o) => !o);",
+      "releaseIfPointer(e); onMarkAll();",
+      "releaseIfPointer(e); onOpen();",
+      "releaseIfPointer(e); onDismiss();",
+    ]) {
+      assert.ok(MENU.includes(handler), handler);
+    }
+    assert.equal((MENU.match(/releaseIfPointer\(e\)/g) ?? []).length, 4, "bell, mark-all, open, dismiss");
+  });
+
+  it("75c. the fix is local and introduces no global focus subsystem", () => {
+    /* The contract: keep it local unless the defect is proven global. Nothing
+     * outside Notifications changed, and no listener was added to the document. */
+    for (const src of [HEADER, SHELL, LAYOUT]) {
+      assert.ok(!/releaseIfPointer|blur\(\)/.test(src), "no shell file learned about focus modality");
+    }
+    /* The component installs exactly two document listeners, and both predate
+     * this fix: the outside-click `mousedown` and the Escape `keydown`. Named
+     * exactly, because a blanket ban on `addEventListener("mousedown")` would
+     * catch the legitimate outside-click handler and prove nothing. */
+    const listeners = [...MENU.matchAll(/document\.addEventListener\("(\w+)", (\w+)\)/g)]
+      .map((m) => `${m[1]}:${m[2]}`);
+    assert.deepEqual(listeners.sort(), ["keydown:onKey", "mousedown:onDown"],
+      "no modality listener joined the two the popover already had");
+    assert.ok(!/focusin|focusout|pointerdown/.test(MENU), "and nothing tracks focus modality globally");
+  });
+
+  it("75d. Escape still returns focus to the bell, which the fix must not break", () => {
+    assert.ok(MENU.includes('if (e.key === "Escape") { setOpen(false); bellRef.current?.focus(); }'),
+      "an explicit .focus() after a keydown, so the ring comes back as it should");
+    assert.ok(!/bellRef.current\?\.blur\(\)/.test(MENU), "and nothing blurs the bell on the way out");
+  });
+
+  it("76. read rows are distinguished but never hidden", () => {
+    /* AN AUTHORISED INVERSION. Through Gate 5 this asserted that NO row was
+     * styled by its read state, because the comp draws none and Gate 4 refused to
+     * invent one. The Gate 6 human pass reported the opposite problem — with the
+     * panel open the badge says nothing about WHICH rows are new — and that
+     * finding authorises the distinction. It is inverted rather than deleted, and
+     * the half that always mattered is unchanged: read is not dismissed, and a
+     * read notification is never hidden. */
+    assert.ok(MENU.includes("unread={!isRead(ack, n.id)}"), "the row is told, by the headless layer");
+    assert.ok(MENU.includes('data-unread={unread ? "1" : undefined}'), "and publishes it for the stylesheet");
+    assert.ok(MENU.includes("view.visible.map("), "the list is still the engine's, unfiltered by read");
+    assert.ok(!/filter\([^)]*read/i.test(MENU), "nothing hides a read notification");
+    /* Scoped to the ROW, not the file: the panel's own `overflow: "hidden"` and
+     * the badge's `aria-hidden` are unrelated and would make a file-wide ban
+     * fail on correct code. */
+    const row = /function NotificationRow\([\s\S]*?\n\}/.exec(MENU)?.[0] ?? "";
+    assert.notEqual(row, "", "the row component was found");
+    assert.ok(!/display: *"none"|maxHeight: *0|visibility/.test(row), "no row is collapsed or hidden");
+  });
+
+  it("76a. the distinction is a stylesheet's, with all four states and no flattening", () => {
+    /* THE RULE THE CONTRACT SINGLES OUT: hover must not make an unread row and a
+     * read row look the same. Four rules, four appearances. */
+    const unreadBase = /\.notif-row\[data-unread="1"\]\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    const readHover = /\.notif-row:hover\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    const unreadHover = /\.notif-row\[data-unread="1"\]:hover\{([^}]*)\}/.exec(NOTIF_CSS)?.[1] ?? "";
+    assert.equal(unreadBase, "background:var(--accent-soft)");
+    assert.equal(readHover, "background:var(--hover)");
+    assert.notEqual(unreadHover, "", "an unread row has its own hover");
+    assert.notEqual(unreadHover, readHover, "which is NOT the read hover — that would flatten the two");
+    assert.ok(unreadHover.includes("var(--accent)") && unreadHover.includes("var(--accent-soft)"),
+      "and is computed from the same two tokens, so every accent and both themes follow");
+  });
+
+  it("76b. the unread indicator costs the row no width", () => {
+    /* A dot in its own flex slot would have to earn that width from the title,
+     * which is how an indicator ends up pushing text under the dismiss control in
+     * Vietnamese or at 320px. This one is out of flow on a fixed-size tile. */
+    const dot = /data-testid="notif-unread-dot"[\s\S]*?\/>/.exec(MENU_RAW)?.[0] ?? "";
+    assert.notEqual(dot, "", "the dot is drawn");
+    assert.ok(dot.includes('position: "absolute"'), "out of flow");
+    assert.ok(dot.includes('background: "var(--accent)"'), "on the accent token");
+    assert.ok(!/#[0-9a-fA-F]{3,}/.test(dot), "and hard-codes no colour");
+    /* Its host tile is the fixed 30px icon, which does not shrink. */
+    assert.ok(MENU.includes('position: "relative",\n          minWidth: 30, width: 30, height: 30'),
+      "positioned against the fixed icon tile");
+  });
+
+  it("76c. read rows stay fully interactive and keep both actions", () => {
+    /* "Read" is a visual state, not a disabled one. */
+    assert.ok(!/disabled/.test(MENU), "no row or control is ever disabled");
+    assert.ok(!/pointerEvents/.test(MENU), "and none is made unclickable");
   });
 
   it("77. accent changes reach the panel with no reload, through the token system", () => {

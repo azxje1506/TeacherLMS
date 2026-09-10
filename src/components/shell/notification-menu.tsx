@@ -47,6 +47,7 @@ import {
 } from "@/lib/notification-ack-store";
 import {
   dismiss as dismissId,
+  isRead,
   markAllRead,
   markRead,
   markableIds,
@@ -54,6 +55,41 @@ import {
 } from "@/lib/notification-state";
 import type { AcknowledgementState } from "@/lib/notification-state";
 import { rowCopy } from "./notification-copy";
+
+/** Drop the keyboard focus ring when a control was activated by POINTER, and only
+ * then.
+ *
+ * THE DEFECT THIS FIXES (Gate 6, human verification). `:focus-visible` is
+ * re-evaluated when focus CHANGES. Tab to a control and it matches — correctly.
+ * Then click that same control with a mouse: it is already the focused element,
+ * so no focus event fires, nothing re-evaluates, and the keyboard ring stays lit
+ * until a later click moves focus somewhere else. That is browser behaviour
+ * rather than a bug in the stylesheet, which is why nothing in the CSS could have
+ * been wrong.
+ *
+ * IT SHOWS UP HERE AND NOT ELSEWHERE because of what these two controls do. Most
+ * buttons in this app navigate, close, or hand focus to a drawer, so the stale
+ * ring goes with them. The bell leaves the panel OPEN underneath it and Mark all
+ * read stays mounted, so the ring sits there being looked at.
+ *
+ * `event.detail` IS THE MODALITY TEST, and it is the browser's own: a real
+ * pointer click reports its click count, one or more; a click synthesised by
+ * Enter or Space on a button reports 0. So keyboard activation keeps its ring —
+ * which the contract requires — and only a pointer clears it.
+ *
+ * WHY BLUR RATHER THAN A CSS OVERRIDE. Suppressing the outline through a
+ * `[data-pointer]:focus-visible{outline:none}` rule means adding a rule whose job
+ * is to delete a focus ring, plus the state to drive it, and getting that state
+ * wrong makes a keyboard user's ring disappear. Releasing focus is the smaller,
+ * more honest act: the control is not keyboard-focused any more, so it stops
+ * looking keyboard-focused. Nothing about `:focus-visible` is redefined and no
+ * outline rule is touched.
+ *
+ * ESCAPE IS UNAFFECTED. It returns focus with an explicit `.focus()` after a
+ * keydown, so the ring comes back exactly as it should. */
+function releaseIfPointer(e: React.MouseEvent<HTMLButtonElement>): void {
+  if (e.detail > 0) e.currentTarget.blur();
+}
 
 /** The bell, in the shape every other icon control in the header already has. */
 const iconBtn: React.CSSProperties = {
@@ -160,7 +196,7 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
             data-testid="notif-bell"
             className="btn-ghost"
             style={{ ...iconBtn, position: "relative" }}
-            onClick={() => setOpen((o) => !o)}
+            onClick={(e) => { releaseIfPointer(e); setOpen((o) => !o); }}
           >
             <IconBell size={17} />
             {/* The badge repeats a count the button's own label already carries,
@@ -221,7 +257,7 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
             </div>
             <button
               type="button"
-              onClick={onMarkAll}
+              onClick={(e) => { releaseIfPointer(e); onMarkAll(); }}
               data-testid="notif-mark-all"
               className="notif-markall"
               style={{
@@ -243,6 +279,11 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
                 <NotificationRow
                   key={n.id}
                   n={n}
+                  /* READ STATE COMES FROM THE HEADLESS LAYER, like everything
+                   * else here. The row is told whether it is unread; it does not
+                   * work it out, and there is no second notion of "read" in the
+                   * component to drift from the one the badge counts. */
+                  unread={!isRead(ack, n.id)}
                   t={t}
                   fmt={fmt}
                   onOpen={() => openNotification(n)}
@@ -264,9 +305,12 @@ export function NotificationMenu({ notifications }: { notifications: readonly Ap
  * role or key handling, and what keeps dismiss from ever triggering the row's
  * navigation — they are siblings, so there is no bubbling to stop. */
 function NotificationRow({
-  n, t, fmt, onOpen, onDismiss,
+  n, unread, t, fmt, onOpen, onDismiss,
 }: {
   n: AppNotification;
+  /** Whether this row is still unread, decided by `lib/notification-state` and
+   * passed in. The row never asks the store itself. */
+  unread: boolean;
   t: (s: string) => string;
   fmt: ReturnType<typeof useSettings>["fmt"];
   onOpen: () => void;
@@ -278,6 +322,13 @@ function NotificationRow({
 
   return (
     <div
+      className="notif-row"
+      /* THE STATE REACHES CSS AS AN ATTRIBUTE, not as an inline background. The
+       * row needs four appearances — unread, unread hovered, read, read hovered —
+       * and only a stylesheet can express the hovered two. An inline background
+       * would also outrank them, which is the trap this file has already been
+       * through once. */
+      data-unread={unread ? "1" : undefined}
       data-testid="notif-row"
       data-notif-id={n.id}
       style={{
@@ -288,17 +339,33 @@ function NotificationRow({
       <span
         aria-hidden="true"
         style={{
+          position: "relative",
           minWidth: 30, width: 30, height: 30, borderRadius: 9, background: tint.soft, color: tint.solid,
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1,
         }}
       >
         <Icon size={15} />
+        {/* THE UNREAD DOT SITS ON THE ICON TILE, and that position is the whole
+          * reason it costs nothing. Out of flow, on a tile that is already
+          * `flexShrink: 0` at a fixed 30px, so it takes no width from the title,
+          * cannot push anything into the dismiss control, and behaves the same in
+          * Vietnamese as in English and at 320px as at 1600px. A dot in its own
+          * flex slot would have had to earn that width from the text column. */}
+        {unread && (
+          <span
+            data-testid="notif-unread-dot"
+            style={{
+              position: "absolute", top: -3, right: -3, width: 8, height: 8, borderRadius: 99,
+              background: "var(--accent)", border: "1.5px solid var(--card)",
+            }}
+          />
+        )}
       </span>
 
       <button
         type="button"
         role="menuitem"
-        onClick={onOpen}
+        onClick={(e) => { releaseIfPointer(e); onOpen(); }}
         data-testid="notif-open"
         className="notif-open"
         style={{
@@ -322,7 +389,7 @@ function NotificationRow({
 
       <button
         type="button"
-        onClick={onDismiss}
+        onClick={(e) => { releaseIfPointer(e); onDismiss(); }}
         aria-label={t("Dismiss")}
         data-testid="notif-dismiss"
         className="icon-action"
