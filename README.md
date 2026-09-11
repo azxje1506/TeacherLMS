@@ -670,16 +670,67 @@ has no browser automation, so the ten widths from 1440 down to 320, the density
 and theme variants, the Vietnamese/English pass and the pointer-versus-keyboard
 focus behaviour are **reserved for human QA**.
 
-**Homework UI remains unbuilt and Sprint 13 is not complete.** The Homework tab
-still renders the comp's later-sprint panel, as do Classes and Finance — which
-never gain a branch at all, because the imported design supplies them no tab body.
-The Homework read model and endpoint are untouched, as are Finance, Classes and
-Reviews. **No schema, index, migration, production DDL, new dependency or
-production write** was introduced. A separate future candidate — a **Finance class
-payment slip** for printing tuition notices, with a playful print style, an amount
-due, tuition-month content and a fixed bank QR code — is recorded at product level
-only and is **explicitly excluded from Sprint 13 by name**; it has no design in the
-imported comp and would need its own gate.
+**Gate 5 has since built the Homework tab, and the branch set is now complete.**
+Four of the six tabs render their own body — Overview, Reviews, Attendance,
+Homework — and that is the final count: **Classes and Finance never gain a
+branch**, because the imported design supplies them no tab body, so the comp's
+later-sprint panel is their permanent state. `src/components/homework/student-homework.tsx`
+renders the completion ring beside the four summary tiles, the homework timeline,
+and *Missing homework* / *Late homework* in the supporting column; the page passes
+a student id and nothing else.
+
+**Two contract cases carry this tab, and both are pinned by tests.** *"No outcome
+yet" is not "no homework"* — a student whose work is all still `Assigned` has
+`completionRate: null` with real assignments, so the whole-tab empty state is
+decided by the server's `hasRecords` and by nothing else, and the ring shows the
+shared em dash while drawing **no arc at all**. And *`Total` includes `Assigned`*,
+so it is legitimately larger than `completed + late + missing`; each tile reads its
+own server field and summing the other three is forbidden, because that would
+delete the unmarked work from the screen.
+
+**The submissions map never crosses the wire.** Each row's status is already this
+student's own outcome, resolved on the server, so the browser is handed an outcome
+rather than a map — it cannot read another student's key, and an assignment's own
+status can never be mistaken for a person's result. `missing` and `late` are the
+server's own lists rather than the timeline filtered twice: the two are capped
+differently, so rebuilding one from the other would lose rows for a student with a
+long history. Error is decided **before** empty, so a failed request is never
+rendered as "no homework assigned".
+
+**`globals.css` is byte-identical to Gate 4** — the tab reuses `.sp-split` and the
+existing container query unchanged, adding no breakpoint, no second container
+query and no overflow escape hatch. **One translation key was added**, and it is a
+missing sibling rather than a new pattern: the comp draws `attended` under the
+Attendance ring and `completed` under this one, and only the first was in the
+dictionary.
+
+The suite moves **2720 -> 2758**, all green. Five deliberate defects were
+introduced and reverted; the third exposed a **real defect in this gate's own
+test** — a landmark-slicing assertion that passed while the defect was live — and
+it was rewritten to read the branch condition itself. One banked guard was
+updated deliberately, `tests/homework-ui.test.ts` #64, which had pinned the
+Homework client at four endpoints since Sprint 7; the fifth is the read approved
+in the banked contract, and the guard's real protection is untouched because the
+new call carries no `method`, leaving the write verbs exactly DELETE, PATCH and
+POST.
+
+**Attendance is untouched by this gate** — its component, its presentation
+helpers, its client, its endpoint, both `student-profile` library files and
+`globals.css` are all byte-identical, and both Attendance suites pass unchanged.
+The two tabs deliberately share no code beyond helpers that already existed;
+generalising them belongs after sprint closure.
+
+**Manual browser QA has NOT been performed and is not claimed.** There is no
+browser automation in this repository, so the width matrix, density and theme
+variants, the Vietnamese/English pass and focus behaviour — for **both** tabs
+together — remain reserved for the human gate, which is what Sprint 13 still needs
+before it can close. **No schema, index, migration, production DDL, new dependency
+or production write** was introduced, and no submission writer exists: the tab
+holds no mutation and cannot record an outcome. A separate future candidate — a
+**Finance class payment slip** for printing tuition notices, with a playful print
+style, an amount due, tuition-month content and a fixed bank QR code — is recorded
+at product level only and is **explicitly excluded from Sprint 13 by name**; it has
+no design in the imported comp and would need its own gate.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported

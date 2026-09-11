@@ -5,12 +5,12 @@
  * Delete) and the tablist.
  *
  * Only the Overview tab belongs to the Students module. The rest read from other
- * modules, and each arrives when its own sprint does: Reviews in Sprint 8,
- * Attendance in Sprint 13. HOMEWORK IS STILL PENDING — Sprint 13's next gate —
- * and CLASSES AND FINANCE NEVER GAIN A BRANCH AT ALL, because the imported design
- * supplies them no tab body. All three render the comp's own "arrives in a later
- * sprint" panel, which is why the fallback below is permanent rather than
- * temporary.
+ * modules, and each arrived when its own sprint did: Reviews in Sprint 8,
+ * Attendance and Homework in Sprint 13. FOUR OF THE SIX TABS NOW BRANCH, and
+ * that is the final count — CLASSES AND FINANCE NEVER GAIN A BRANCH AT ALL,
+ * because the imported design supplies them no tab body. They render the comp's
+ * own "arrives in a later sprint" panel, which is why the fallback below is
+ * permanent rather than temporary.
  *
  * REVIEWS IS LIVE as of Sprint 8 Gate 4.4, and it is the whole of this page's
  * involvement with it: the tab renders `<StudentReviews>`, which owns its own
@@ -35,6 +35,7 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { StudentDrawer } from "@/components/students/student-drawer";
 import { StudentReviews } from "@/components/reviews/student-reviews";
 import { StudentAttendance } from "@/components/attendance/student-attendance";
+import { StudentHomework } from "@/components/homework/student-homework";
 import { Avatar, cardStyle, statusBadgeStyle, statusDotStyle, tabStyle } from "@/components/students/student-ui";
 import {
   deleteStudent, fetchStudent, saveStudentNotes, studentKeys, updateStudent,
@@ -363,6 +364,16 @@ function StudentProfile() {
          * and Finance — which never gain a branch at all, because the imported
          * design supplies them no tab body. */
         <StudentAttendance studentId={id} />
+      ) : tab === "Homework" ? (
+        /* Sprint 13, and the last tab this page will gain. Same shape as the two
+         * above: the component owns its query, its states and its layout, and
+         * this page passes a student id and nothing else — no class list, no
+         * assignment, no submissions map, and no homework rule.
+         *
+         * CLASSES AND FINANCE STAY ON THE FALLBACK PERMANENTLY. The imported
+         * design supplies them no tab body, so under Missing UI Specification
+         * there is nothing to build and the panel below is their final state. */
+        <StudentHomework studentId={id} />
       ) : (
         /* The comp's own placeholder for sections owned by later sprints. */
         <div style={{ background: "var(--card)", border: "1px dashed var(--border)", borderRadius: "var(--r)", padding: "52px 24px", textAlign: "center" }}>

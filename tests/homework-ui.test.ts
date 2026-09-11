@@ -510,9 +510,26 @@ describe("The client module", () => {
     assert.ok(!CLIENT.includes("detail"), "there is no GET /api/homework/:id to key");
   });
 
-  it("64. calls exactly the four approved endpoints", () => {
+  it("64. calls exactly the five approved endpoints", () => {
+    /* Sprint 7 pinned this list at four. Sprint 13 Gate 5 adds the fifth, and
+     * only the fifth: `GET /api/homework/student/:studentId`, the read the
+     * Student Profile's Homework tab consumes. The endpoint was approved in the
+     * banked Sprint 13 contract and shipped in Gate 3 before any client touched
+     * it, so this list is being kept current rather than loosened — the same way
+     * Sprint 8 moved finance's homework exports from one to two.
+     *
+     * WHAT THIS GUARD ACTUALLY PROTECTS IS UNCHANGED, AND IS THE LINE BELOW.
+     * The new call is a READ: it carries no `method`, so the write verbs are
+     * still exactly DELETE, PATCH and POST, and #66's "no submission mutation"
+     * is untouched. A fifth WRITE would still fail here. */
     const calls = [...CLIENT.matchAll(/fetch\(([^,)]+)[,)]/g)].map((m) => m[1].trim());
-    assert.deepEqual(calls, ['"/api/homework"', '"/api/homework"', "`/api/homework/${id}`", "`/api/homework/${id}`"]);
+    assert.deepEqual(calls, [
+      '"/api/homework"',
+      "`/api/homework/student/${studentId}`",
+      '"/api/homework"',
+      "`/api/homework/${id}`",
+      "`/api/homework/${id}`",
+    ]);
     const methods = [...CLIENT.matchAll(/method:\s*"(\w+)"/g)].map((m) => m[1]).sort();
     assert.deepEqual(methods, ["DELETE", "PATCH", "POST"]);
   });

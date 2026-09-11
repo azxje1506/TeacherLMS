@@ -351,6 +351,118 @@
 - **No schema, index, migration, dependency or production write.** Sprint 13 is
   not complete.
 
+### Gate 5 — the Homework tab
+- **The Homework tab is built, and the branch set is now complete.** Four of the
+  six tabs render their own body — Overview, Reviews, Attendance, Homework — and
+  that is the final count: **Classes and Finance never gain a branch**, because
+  the imported design supplies them no tab body, so the comp's later-sprint panel
+  is their permanent state rather than a temporary one.
+- **`src/components/homework/student-homework.tsx`** renders the comp's
+  `tabHomework` section: the completion ring beside the four summary tiles, the
+  homework timeline, and *Missing homework* / *Late homework* in the supporting
+  column. The profile page gained **exactly one branch**; it passes a student id
+  and nothing else — no class list, no assignment, no submissions map.
+- **The payload is rendered as it arrives.** No `Math.round`, `reduce(`,
+  `filter(` or `sort(` appears in the tab. `missing` and `late` are the SERVER'S
+  lists, not the timeline filtered twice: the two are capped differently (20 and
+  5), so rebuilding one from the other would silently lose rows for a student
+  with a long history.
+- **The submissions map never crosses the wire.** Each row's status is already
+  this student's own outcome, resolved on the server, so the browser is handed an
+  outcome rather than a map it could read another student's key out of — and an
+  assignment's own top-level status can never be mistaken for a person's result.
+  A test asserts no `submissions[` subscript and no `.submissions` read.
+
+#### The two contract cases this tab is easiest to get wrong
+- **"No outcome yet" is not "no homework".** A student whose work is all still
+  `Assigned` has `completionRate: null` with real assignments. The whole-tab empty
+  state is decided by the server's `hasRecords` **and by nothing else** — a test
+  now pins the branch condition to exactly `!data.hasRecords` and forbids
+  `completionRate` or `counts.total` from gating any branch in the file. The ring
+  shows the shared em dash and **draws no arc at all**, because a zero-length ring
+  labelled 0% would state an assessment nobody made.
+- **`Total` includes `Assigned`**, so it is legitimately larger than
+  `completed + late + missing`. Each tile reads its own server field; a test
+  forbids summing the other three, which would delete the unmarked work from the
+  screen.
+
+#### States
+- Loading is a skeleton in the tab's own `.sp-split` shape that reads no data and
+  shows no values. **Error is decided before empty**, so a failed request can
+  never render *"No homework assigned to this student yet."* — a claim about the
+  record rather than about the network — and there is no `?? []` or `?? 0`
+  papering over a failure. The empty state carries the comp's own **Assign
+  homework** action, which opens the Homework index: there is no student-scoped
+  assign deep link and inventing a route to carry one is out of scope, so it opens
+  the narrowest existing relevant screen.
+
+#### Responsive — zero CSS changes
+- **`globals.css` is byte-identical to Gate 4.** The tab reuses `.sp-split` and
+  the existing `sp-page` container query unchanged; a test asserts there is still
+  exactly one Student Profile container query, one `container-name`, two
+  `.sp-split` rules, no new viewport breakpoint, and that Reports' 667 threshold
+  is still the file's single occurrence.
+
+#### Translations
+- **One key was added, and it is a missing sibling rather than a new pattern.**
+  The comp draws `attended` under the Attendance ring and `completed` under this
+  one; `"attended"` was already in the dictionary and `"completed"` was its absent
+  twin. Every other string reuses an existing key — including `"Due"`, which the
+  Homework index already renders the same way, rather than adding the comp's bare
+  lowercase `due`.
+
+#### Tests
+- **`tests/student-homework-ui.test.ts` (38).** Totals move 2720 -> 2758, all
+  green.
+- **Mutation-tested, five defects introduced and reverted.** Removing the Homework
+  branch fails #1/#3 here and #2/#5 in the Attendance UI suite; rendering a null
+  completion as `0%` fails #16 and #18; treating an Assigned-only payload as empty
+  fails #13, #14 and #15; deriving `Total` from the other three fails #20;
+  client-filtering the timeline to build the Missing list fails #9, #22 and #25.
+- **The third mutation exposed a real defect in this gate's own test, and it was
+  fixed.** #15 originally sliced the file between two landmarks and asked whether
+  `completionRate` appeared inside. Widening the empty-state condition moved the
+  opening landmark, the slice collapsed, and the assertion **passed while the
+  defect was live**. It now reads the branch condition itself and pins it to
+  `!data.hasRecords` exactly, which cannot fail that way.
+
+#### Guards
+- **One banked guard was updated, deliberately and in the gate that made it
+  false.** `tests/homework-ui.test.ts` #64 pinned the Homework client at four
+  endpoints since Sprint 7; Gate 5 adds the fifth — `GET
+  /api/homework/student/:studentId`, approved in the banked Sprint 13 contract and
+  shipped in Gate 3 before any client touched it. This is the same tripwire
+  Sprint 8 moved from one finance export to two. **What the guard actually
+  protects is untouched**: the new call carries no `method`, so the write verbs
+  are still exactly DELETE, PATCH and POST, and #66's "no submission mutation"
+  stands.
+- **Gate 2.1's bounded-branch guard (`tests/reviews-ui.test.ts` #83) needed no
+  change and was not touched** — it already permitted Attendance and Homework and
+  still forbids Classes and Finance.
+- Two of this sprint's own tests moved into their positive form, each in the gate
+  that made it false: `student-attendance-ui` #2 and #5 now assert four branches,
+  and `student-homework` #29 retired its "no UI yet" clauses into the new UI
+  suite while keeping its own subject — the read model as the screen's only
+  source.
+
+#### Attendance regression
+- **`student-attendance.tsx`, `attendance-ui.tsx`, the Attendance client, the
+  Attendance endpoint, both `student-profile` library files and `globals.css` are
+  all byte-identical to Gate 4.** Both Attendance suites pass unchanged (37 UI,
+  32 read model). The two components deliberately share no code beyond the
+  geometry and formatting helpers they already had — generalising them belongs
+  after sprint closure, not while the second tab is being introduced.
+
+#### Not done here, and not claimed
+- **Manual browser QA has NOT been performed.** There is still no browser
+  automation in this repository, so the width matrix, density and theme variants,
+  the Vietnamese/English pass and the focus behaviour — for **both** tabs together
+  — remain reserved for the human gate.
+- **No schema, index, migration, dependency or production write.** No submission
+  writer: the tab holds no mutation and cannot record an outcome. **Finance —
+  Class Payment Slip Printing remains deferred and untouched.** Classes, Finance
+  and Reviews are untouched.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

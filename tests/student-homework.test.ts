@@ -437,24 +437,32 @@ describe("Homework read model — it writes nothing, and changes no ownership", 
     assert.ok(ROUTE.includes("export async function GET"));
   });
 
-  it("29. the HOMEWORK tab is still unbuilt — this suite's own boundary", () => {
-    /* WHAT THIS GUARD IS FOR, AND WHY IT MOVED ONCE. In Gate 3 it said "no UI was
-     * built in this gate" and named both tabs, because Gate 3 was backend only.
-     * Gate 4 built the ATTENDANCE tab, so the Attendance half was retired
-     * deliberately and in the gate that made it false — the Attendance clauses
-     * now live, positively, in tests/student-attendance-ui.test.ts, so nothing
-     * was dropped. The HOMEWORK half is untouched and still bites: Homework UI is
-     * Gate 5's, and until then this file's subject has no screen.
+  it("29. the read model stays the UI's only source — and the UI now exists", () => {
+    /* WHAT THIS GUARD IS FOR, AND THE TWO TIMES IT MOVED. Gate 3 wrote it as "no
+     * UI was built in this gate" and named both tabs, because Gate 3 was backend
+     * only. Gate 4 retired its Attendance clauses into
+     * tests/student-attendance-ui.test.ts; Gate 5 retires its Homework clauses
+     * into tests/student-homework-ui.test.ts. Each half was retired in the gate
+     * that made it false, and each was replaced by a POSITIVE assertion rather
+     * than deleted — nothing was dropped.
      *
-     * It is not vacuous: the component's absence, the branch's absence and the
-     * fallback's presence are three separate facts, and the mutation notes in
-     * the Gate 4 report record that adding a Homework branch fails this. */
-    assert.throws(
-      () => readFileSync(path.join(process.cwd(), "src", "components", "homework", "student-homework.tsx"), "utf8"),
-      "no Homework tab component exists yet"
-    );
+     * WHAT SURVIVES HERE IS THIS FILE'S OWN SUBJECT: the boundary between the
+     * read model and the screen. The component may exist, but it must still get
+     * everything from the payload this suite proves, and the page must still own
+     * no homework rule. Those are the clauses below. */
+    const tab = code("src", "components", "homework", "student-homework.tsx");
+    assert.ok(tab.includes("fetchStudentHomework(studentId)"), "the tab reads this read model and no other");
+    /* "submissions" DOES appear in the tab, inside the copy "No late
+     * submissions." — so the check is on an ACCESS to the map, not on the word. */
+    assert.ok(!/submissions\s*\[/.test(tab), "no submissions map is indexed in the browser");
+    assert.ok(!/\.submissions\b/.test(tab), "and none is read as a property");
+    for (const forbidden of ["HomeworkModel", "studentHomeworkOutcome", "studentHomeworkCompletion"]) {
+      assert.ok(!tab.includes(forbidden), `${forbidden} must not cross into the browser`);
+    }
     const profile = code("src", "app", "(app)", "students", "[id]", "page.tsx");
-    assert.ok(!profile.includes('tab === "Homework"'), "the Homework branch is Gate 5's");
-    assert.ok(profile.includes('t("arrives in a later sprint")'), "and Homework still falls through to it");
+    assert.ok(profile.includes('tab === "Homework" ? ('), "the branch exists as of Gate 5");
+    assert.ok(profile.includes('t("arrives in a later sprint")'), "and the fallback still serves Classes and Finance");
+    assert.ok(!profile.includes("homeworkKeys") && !profile.includes("completionRate"),
+      "the page still owns no homework rule");
   });
 });

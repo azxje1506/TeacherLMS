@@ -54,8 +54,13 @@ describe("Student Profile — the Attendance branch now exists", () => {
     );
   });
 
-  it("2. Homework does NOT yet have a branch — that is Gate 5's", () => {
-    assert.ok(!PROFILE.includes('tab === "Homework"'), "Homework still falls through");
+  it("2. Homework now has its own branch too — Gate 5 built it", () => {
+    /* This clause was the inverse in Gate 4 ("Homework does NOT yet have a
+     * branch"), and it was retired in the gate that made it false. What it
+     * protected has not changed: the owned set is bounded, and #3 below still
+     * proves the two tabs that must NEVER branch do not. */
+    assert.ok(PROFILE.includes('tab === "Homework" ? ('), "the Homework branch exists");
+    assert.ok(PROFILE.includes("<StudentHomework studentId={id} />"), "and renders its component");
   });
 
   it("3. Classes and Finance never gain a branch", () => {
@@ -80,7 +85,8 @@ describe("Student Profile — the Attendance branch now exists", () => {
     /* The same bounded shape tests/reviews-ui.test.ts #83 states, asserted here
      * from the other side: #83 bounds what MAY branch, this pins what DOES. */
     const branched = [...PROFILE.matchAll(/tab === "([A-Za-z]+)" \? \(/g)].map((m) => m[1]);
-    assert.deepEqual(branched, ["Overview", "Reviews", "Attendance"]);
+    assert.deepEqual(branched, ["Overview", "Reviews", "Attendance", "Homework"],
+      "four tabs branch, and that is the final count");
   });
 
   it("6. the page gained no attendance state, query or rule of its own", () => {
