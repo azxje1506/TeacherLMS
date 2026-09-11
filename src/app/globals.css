@@ -2249,8 +2249,45 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 @media screen{
   [data-screen-label="Student profile"]{container-type:inline-size;container-name:sp-page}
 }
+
+/* ---- The four summary tiles ------------------------------------------------
+
+   THE SAME DEFECT THE TWO ATTENDANCE SCREENS ALREADY HAD, AND THE SAME FIX.
+   Both tabs draw a ring beside a four-up tile row, and the comp writes that row
+   as an inline `repeat(4,1fr)` - a hard-coded DESKTOP column count. The mobile
+   block above says what that costs, in this app, in its own words: "Both
+   Attendance screens hard-code a desktop column count inline, so the count never
+   changed on a phone ... giving each about 63px". `.att-summary`, `.att-stats`,
+   `.kpi-grid` and `.ov-grid` are all that same escape. These two tabs shipped
+   the unguarded form, so they get it too.
+
+   IT IS TWO FAULTS, AND THE FIRST IS THE ONE THAT SCROLLS THE PAGE. A `1fr`
+   track is `minmax(auto,1fr)`, and that `auto` is the grid item's AUTOMATIC
+   MINIMUM SIZE - it refuses to shrink below its own min-content. Four tiles of
+   24px padding around an unbreakable word ("Completed" is the long one) is a
+   floor the row cannot go under, so on a narrow container the grid grows past
+   the card instead of fitting inside it and the document scrolls sideways.
+   `minmax(0,1fr)` removes that floor, exactly as `.ov-grid`, `.kpi-grid` and
+   `.att-summary` already state it in their own templates. It changes NOTHING at
+   any width where the tiles already fit.
+
+   THE SECOND IS READABILITY, and it is why the COUNT collapses rather than the
+   tiles merely shrinking. Four tiles in a phone-width card are the ~63px the
+   block above calls out; two are the `.att-summary` treatment, which is this
+   app's own answer for exactly this row. 4 -> 2, never 4 -> 1: they are pairs.
+
+   NO NEW THRESHOLD AND NO NEW CONTAINER. It rides the 600px collapse already
+   declared below, so the Student Profile still has exactly one container query,
+   one container-name and one number. Above it the row is the comp's four
+   columns, unchanged. */
+.sp-tiles{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:10px;
+}
 @container sp-page (max-width:600px){
   .sp-split{grid-template-columns:minmax(0,1fr)}
+  .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 /* ==========================================================================

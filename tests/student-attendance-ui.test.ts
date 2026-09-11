@@ -395,3 +395,57 @@ describe("Attendance tab — translations, semantics and scope", () => {
     }
   });
 });
+
+/* =========================================================================
+ * 7. Gate 6 — the four-up tile row is the stylesheet's too
+ * ====================================================================== */
+
+describe("Attendance tab — the summary tiles collapse on room (Gate 6)", () => {
+  it("38. the tile row carries a CLASS and no inline grid template", () => {
+    /* THE DEFECT THIS PINS. The comp writes the row as an inline
+     * `repeat(4,1fr)` — a hard-coded DESKTOP column count — and an inline
+     * declaration beats every container rule ever written against it, so the
+     * count could never change on a narrow screen. It is the IDENTICAL fault
+     * globals.css already records against the two Attendance screens: "hard-code
+     * a desktop column count inline, so the count never changed on a phone". */
+    assert.equal([...TAB.matchAll(/className="sp-tiles"/g)].length, 2,
+      "the live row AND the skeleton, so revealing the data does not reshape the row");
+    assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template survives in this tab");
+  });
+
+  it("39. the CSS owns the tile template, and no track can refuse to shrink", () => {
+    const flat = CSS.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, "");
+    assert.ok(flat.includes(".sp-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}"),
+      "the comp's four columns, with the automatic minimum size removed");
+    /* WHY `minmax(0,…)` AND NOT `1fr`. A `1fr` track is `minmax(auto,1fr)`, and
+     * that `auto` is the grid item's AUTOMATIC MINIMUM SIZE: the track refuses to
+     * go below its own min-content, so four tiles of 24px padding around an
+     * unbreakable word are a floor the row cannot go under — it grows past the
+     * card and the document scrolls sideways instead. */
+    assert.ok(!flat.includes(".sp-tiles{display:grid;grid-template-columns:repeat(4,1fr)"),
+      "never a bare 1fr track");
+    assert.ok(/\.sp-tiles\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(CSS),
+      "4 -> 2 on a narrow container, the .att-summary treatment");
+  });
+
+  it("40. it rides the EXISTING container query and adds no threshold", () => {
+    assert.equal((CSS.match(/@container sp-page/g) ?? []).length, 1,
+      "still exactly one Student Profile container query");
+    const block = CSS.slice(CSS.indexOf("@container sp-page (max-width:600px){"));
+    const body = block.slice(0, block.indexOf("\n}"));
+    assert.ok(body.includes(".sp-split{grid-template-columns:minmax(0,1fr)}"));
+    assert.ok(body.includes(".sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}"),
+      "the tiles collapse in the same block, at the same number");
+    for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
+      assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
+    }
+  });
+
+  it("41. the tile label may break rather than push the card wide", () => {
+    /* The last line of defence, and the one that does not depend on a font
+     * metric: whatever the label resolves to in whatever language, a single long
+     * word wraps inside its tile instead of widening it. */
+    assert.ok(TAB.includes('overflowWrap: "anywhere"'),
+      "a single long word must wrap rather than overflow its tile");
+  });
+});

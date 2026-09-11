@@ -405,3 +405,49 @@ describe("Homework tab — translations, semantics and scope", () => {
     assert.ok(!ATT_TAB.includes("student-homework"), "the two tabs share no component");
   });
 });
+
+/* =========================================================================
+ * 8. Gate 6 — the four-up tile row, on BOTH tabs
+ * ====================================================================== */
+
+describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
+  it("39. the tile row carries a CLASS and no inline grid template", () => {
+    /* The comp's inline `repeat(4,1fr)` is a hard-coded DESKTOP column count,
+     * and an inline declaration beats every container rule written against it.
+     * This tab is the worse of the two: its longest label, "Completed", is a
+     * single unbreakable word, so its four tiles have the higher floor. */
+    assert.equal([...TAB.matchAll(/className="sp-tiles"/g)].length, 2,
+      "the live row AND the skeleton, so the shape does not change on reveal");
+    assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template survives in this tab");
+  });
+
+  it("40. BOTH tabs collapse, from ONE rule — the fix was not written twice", () => {
+    /* The two tabs draw the same row, so they share the one class. A second
+     * per-tab copy of the template is the duplication PROJECT_RULES forbids, and
+     * it would be free to drift. */
+    assert.ok(ATT_TAB.includes('className="sp-tiles"'), "Attendance uses it too");
+    assert.ok(!/gridTemplateColumns/.test(ATT_TAB), "and carries no inline template either");
+    assert.equal((CSS.match(/\.sp-tiles\{/g) ?? []).length, 2, "the base rule and its collapse, and no more");
+  });
+
+  it("41. no new container query, container name or viewport breakpoint", () => {
+    assert.equal((CSS.match(/@container sp-page/g) ?? []).length, 1, "one Student Profile container query");
+    assert.equal((CSS.match(/container-name:sp-page/g) ?? []).length, 1, "declared once");
+    assert.equal((CSS.match(/\.sp-split\{/g) ?? []).length, 2, "Gate 4's two rules, unchanged");
+    assert.ok(!CSS.includes("@media (max-width:600px)"), "600 stays a container width, never a viewport one");
+    for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
+      assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
+    }
+  });
+
+  it("42. still no horizontal-scroll escape hatch on either tab", () => {
+    /* The fix had to make the row FIT. Solving it with a sideways scroller would
+     * be the same defect wearing a scrollbar — the rule tests/finance-ui.test.ts
+     * #123 already holds the rest of the app to. */
+    for (const tab of [TAB, ATT_TAB]) {
+      assert.ok(!tab.includes("overflowX"), "cards must fit, not scroll sideways");
+      assert.ok(!tab.includes("100vw"), "no viewport-width element inside the shell");
+    }
+    assert.ok(TAB.includes('overflowWrap: "anywhere"'), "a long label wraps inside its tile");
+  });
+});

@@ -36,9 +36,16 @@
  * Reviews and Attendance tabs. It holds no homework state and knows no homework
  * rule.
  *
- * THE SPLIT IS GATE 4'S `.sp-split`, REUSED UNCHANGED. This gate adds no
- * responsive CSS: the container query on `[data-screen-label="Student profile"]`
- * already collapses both tabs on the room they actually have.
+ * THE SPLIT IS GATE 4'S `.sp-split`, REUSED UNCHANGED. The container query on
+ * `[data-screen-label="Student profile"]` collapses both tabs on the room they
+ * actually have.
+ *
+ * THE TILE ROW IS `.sp-tiles` (Gate 6), shared with the Attendance tab. It was
+ * the comp's inline `repeat(4,1fr)` — a hard-coded DESKTOP column count that no
+ * container rule could beat — and this tab had the worst of it, because
+ * "Completed" is a single unbreakable word and four of them are a width the row
+ * could not go under. The stylesheet owns the template and the 4 -> 2 collapse,
+ * at the SAME 600px container query: no new threshold, no second rule.
  */
 
 import Link from "next/link";
@@ -157,11 +164,11 @@ export function StudentHomework({ studentId }: { studentId: string }) {
               <div style={{ fontSize: 10, color: "var(--muted-2)" }}>{t("completed")}</div>
             </div>
           </div>
-          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, minWidth: 220 }}>
+          <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
             {TILES.map((tile) => (
               <div key={tile.key} style={{ background: tile.soft, borderRadius: 11, padding: "11px 12px" }}>
                 <div style={{ fontSize: 19, fontWeight: 600, color: tile.color }}>{data.counts[tile.key]}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)" }}>{t(tile.label)}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>{t(tile.label)}</div>
               </div>
             ))}
           </div>
@@ -253,7 +260,7 @@ function SkeletonTab() {
       <div style={column}>
         <div style={{ ...panel, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
           <div style={{ width: 104, height: 104, borderRadius: "50%", flex: "none", ...bar }} />
-          <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, minWidth: 220 }}>
+          <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
             {[0, 1, 2, 3].map((i) => <div key={i} style={{ height: 56, borderRadius: 11, ...bar }} />)}
           </div>
         </div>

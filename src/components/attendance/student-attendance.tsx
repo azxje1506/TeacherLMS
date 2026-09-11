@@ -29,6 +29,13 @@
  * owns `grid-template-columns`, because a media or container rule cannot beat an
  * inline declaration — a trap this repository has shipped more than once. See
  * the `.sp-split` block in globals.css for the container query that collapses it.
+ *
+ * AND NEITHER IS THE TILE ROW (Gate 6). The four status counts were the one
+ * layout still writing an inline `repeat(4,1fr)` — the comp's hard-coded DESKTOP
+ * column count, which no container rule could ever have overridden. It is now
+ * `.sp-tiles`, and globals.css owns both its template and its 4 -> 2 collapse on
+ * the same 600px container query. Same class on the skeleton, so the row does
+ * not change shape when the data arrives.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -115,7 +122,7 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
               </div>
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Attendance")}</div>
             </div>
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, minWidth: 220 }}>
+            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
               {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                 const c = ATTENDANCE_COLORS[status];
                 const count = status === "Present" ? data.counts.present
@@ -125,7 +132,7 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
                 return (
                   <div key={status} style={{ background: c.soft, borderRadius: 11, padding: "11px 12px" }}>
                     <div style={{ fontSize: 19, fontWeight: 600, color: c.color }}>{count}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)" }}>{t(status)}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>{t(status)}</div>
                   </div>
                 );
               })}
@@ -236,7 +243,7 @@ function SkeletonTab() {
               <div style={{ height: 34, width: 84, borderRadius: 9, ...bar }} />
               <div style={{ height: 11, width: 60, borderRadius: 6, marginTop: 6, ...bar }} />
             </div>
-            <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, minWidth: 220 }}>
+            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
               {[0, 1, 2, 3].map((i) => <div key={i} style={{ height: 56, borderRadius: 11, ...bar }} />)}
             </div>
           </div>

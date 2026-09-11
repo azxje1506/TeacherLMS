@@ -732,6 +732,62 @@ style, an amount due, tuition-month content and a fixed bank QR code — is reco
 at product level only and is **explicitly excluded from Sprint 13 by name**; it has
 no design in the imported comp and would need its own gate.
 
+**Sprint 13 Gate 6 — integrated responsive and accessibility QA, and it found a
+real defect.** Both tabs were audited together, and the fault is one this
+repository has already catalogued against itself. The comp writes the four
+summary counts as an inline `repeat(4,1fr)` — a hard-coded **desktop** column
+count — and an inline declaration beats every container rule written against it,
+so the count could never change on a narrow screen. `globals.css` states the same
+finding, in its own words, about the two **Attendance** screens: *"hard-code a
+desktop column count inline, so the count never changed on a phone ... giving
+each about 63px"*. `.att-summary`, `.att-stats`, `.kpi-grid` and `.ov-grid` are
+all that same escape; these two tabs shipped the unguarded form and had none.
+
+It is two faults, and the first is the one that scrolls the page. A `1fr` track
+is `minmax(auto,1fr)`, and that `auto` is the grid item's **automatic minimum
+size** — the track refuses to shrink below its own min-content, so four tiles of
+padding around an unbreakable word (`Completed` is the long one) are a floor the
+row cannot go under: it grows past the card and the document scrolls sideways.
+The second is readability, which is why the **count** collapses rather than the
+tiles merely shrinking.
+
+The fix is the app's own: the row is now `.sp-tiles`, **the stylesheet owns its
+template**, the tracks are `minmax(0,1fr)` so no track can refuse to shrink, and
+it collapses **4 -> 2** — the `.att-summary` treatment — on the **same 600px
+container query Gate 4 already declared**. No new threshold, no new container, no
+new viewport breakpoint, no overflow escape hatch, and above the threshold the
+row is the comp's four columns unchanged. One class serves both tabs, so the fix
+was not written twice. The label also carries `overflow-wrap:anywhere`, which is
+the guarantee that does **not** depend on a font metric.
+
+**The defect was live and the suite was green**, which is itself the finding: no
+guard covered the tile row. Eight were added (**2758 -> 2766**) and all were
+mutation-tested — restoring the inline template, using bare `1fr` tracks,
+deleting the collapse, dropping the label guard, collapsing with a **viewport**
+media query instead, and fixing only the live row while leaving the skeleton
+inline each fail a named assertion, the last proving the skeleton clause is not
+vacuous. `src/lib/student-profile.ts` and `src/lib/student-profile-service.ts`
+are **byte-identical**: no backend semantics, API shape, ordering, cap or count
+changed, and the fix is presentation-only.
+
+Also verified and **unchanged**: all thirty-two Vietnamese strings both tabs
+render resolve, including `"completed": "đã hoàn thành"`; every colour is a token
+defined in **both** `:root` and `[data-theme="dark"]`, with no hex literal in
+either tab; Classes and Finance still have no profile branch and `TABS` is still
+its six entries in order. One item is recorded rather than fixed: the card
+headings are `<h3>` under the profile's `<h1>` with no `<h2>` between them, a
+skipped level that is **not** a regression — those headings did not exist before
+Sprint 13 — and repairing it is left out of a gate told not to open an ARIA
+refactor.
+
+**The browser matrix is still NOT claimed.** There is no browser automation in
+this repository, so the ten widths, the sidebar/density permutations, both
+themes, both languages, pointer-versus-keyboard focus and the live data spot
+check remain **HUMAN REQUIRED**, and Sprint 13 needs a **Gate 6.1 human re-test**
+before it can close. The **Finance class payment slip** remains deferred and
+untouched: no QR asset, bank information, print component, billing API, payment
+UI, Settings field or print stylesheet.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased — Student Profile: Attendance & Homework (Sprint 13) — **contract banked, implementation not started**
+## Unreleased — Student Profile: Attendance & Homework (Sprint 13) — **both tabs shipped, integrated QA done, human re-test pending**
 
 ### Gate 1 — module designation (PASS)
 - The numbered priority list in `PROJECT_RULES.md` (`# Current Milestone`) runs
@@ -462,6 +462,86 @@
   writer: the tab holds no mutation and cannot record an outcome. **Finance —
   Class Payment Slip Printing remains deferred and untouched.** Classes, Finance
   and Reviews are untouched.
+
+### Gate 6 — integrated responsive + accessibility QA (both tabs together)
+
+#### The defect this gate found, and the app had already named it
+- **The four summary tiles could not collapse.** Both tabs draw a ring beside a
+  four-up count row, and the comp writes that row as an inline `repeat(4,1fr)` —
+  a hard-coded **desktop** column count. An inline declaration beats every media
+  and container rule ever written against it, so the count was fixed at four at
+  every width. This is the **identical fault `globals.css` already records
+  against the two Attendance screens**: *"Both Attendance screens hard-code a
+  desktop column count inline, so the count never changed on a phone ... giving
+  each about 63px"*. `.att-summary`, `.att-stats`, `.kpi-grid` and `.ov-grid` are
+  all that same escape; these two tabs shipped the unguarded form and had none.
+- **It is two faults, and the first one scrolls the page.** A `1fr` track is
+  `minmax(auto,1fr)`, and that `auto` is the grid item's **automatic minimum
+  size** — a track refuses to shrink below its own min-content. Four tiles of
+  24px padding around an unbreakable word (`Completed` is the long one) are a
+  floor the row cannot go under, so on a narrow container the grid grows past the
+  card and the **document** scrolls sideways. The second fault is readability,
+  which is why the count collapses rather than the tiles merely shrinking.
+
+#### The fix, which is the app's own and adds no new number
+- **`.sp-tiles`, and the stylesheet owns the template.** The inline
+  `gridTemplateColumns` is gone from **both** tabs — live row and skeleton, so the
+  shape does not change when the data arrives — exactly as Gate 4 did for
+  `.sp-split` and for the same stated reason.
+- **`minmax(0,1fr)` tracks**, removing the automatic minimum size, as `.ov-grid`,
+  `.kpi-grid` and `.att-summary` already state in their own templates. It changes
+  nothing at any width where the tiles already fit.
+- **4 -> 2 on the SAME 600px container query Gate 4 declared.** No new threshold,
+  no new container, no new `container-name`, and **no new viewport breakpoint** —
+  the 620/767/860/1099/1100 allowlist is untouched. Above the threshold the row is
+  the comp's four columns, unchanged. **One class serves both tabs**, so the fix
+  exists once and cannot drift.
+- **`overflow-wrap:anywhere` on the tile label** — the one guarantee that does not
+  depend on a font metric this repository has no browser to measure.
+- **No overflow escape hatch.** Nothing gained `overflowX`, and the app still has
+  exactly the three horizontal scroll regions `tests/finance-ui.test.ts` #123 pins.
+
+#### The test gap was the real finding
+- **The defect was live and the suite was green.** No guard covered the tile row
+  at all. Eight were added — **2758 -> 2766** — and every one was mutation-tested:
+  restoring the inline template, using bare `1fr` tracks, deleting the collapse,
+  dropping the label guard, collapsing with a **viewport** media query instead,
+  and fixing only the live row while leaving the skeleton inline each fail a named
+  assertion. The last proves the "live row **and** skeleton" clause is not
+  vacuous; the viewport mutation is also caught by Gate 4 #30 and Gate 5 #29.
+
+#### Verified unchanged
+- **`src/lib/student-profile.ts` and `src/lib/student-profile-service.ts` are
+  byte-identical.** No backend semantics, API response shape, ordering rule, cap
+  or count changed — the fix is presentation-only. Classes and Finance still have
+  no profile branch, `TABS` is still its six entries in order, and Overview and
+  Reviews were not touched.
+- **Localization.** All **thirty-two** strings the two tabs render resolve in
+  Vietnamese, including `"completed": "đã hoàn thành"`; no key is missing and no
+  thirteenth key was invented.
+- **Theme and accent.** Every colour either tab uses is a token defined in **both**
+  `:root` and `[data-theme="dark"]`; **neither tab contains a single hex literal**,
+  so theme, accent, surface and density all reach them through tokens.
+
+#### Recorded, not fixed
+- **Heading level skip.** The card titles are `<h3>` under the profile's `<h1>`
+  with no `<h2>` between. It is **not a regression** — those headings did not exist
+  before Sprint 13, which added them — and this gate was told not to open an ARIA
+  refactor, so it is recorded for a later sprint rather than churned here.
+- **The comp's dynamic rate colours** (`attHist.pctColor`, `m.barColor`,
+  `hwStudent.rateColor`) are resolved to one static token, which is the precedent
+  Reviews' shipped `MetricCard` already set for `perf.attColor`. Inventing a
+  threshold colour scale would be design this sprint may not do.
+
+#### Not done here, and not claimed
+- **The browser matrix is HUMAN REQUIRED.** There is still no browser automation
+  in this repository, so the ten widths, the sidebar-expanded/collapsed and density
+  permutations, both themes, both languages, pointer-versus-keyboard focus, and the
+  live data/UI spot check against real backend values are **not claimed as PASS**.
+  Sprint 13 needs a **Gate 6.1 human re-test** before closure.
+- **Finance — Class Payment Slip Printing remains deferred and untouched.** No QR
+  asset, bank information, print component, billing API, payment UI, Settings field
+  or print stylesheet.
 
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
