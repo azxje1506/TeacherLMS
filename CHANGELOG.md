@@ -616,6 +616,97 @@
   component, read model, endpoint, dependency, schema, index or migration was
   touched, and the suite stays at **2766 / 2766**.
 
+### Gate 6.2 — Attendance reconciliation (no Sprint 13 defect; the comparison number is a stored seed literal)
+
+#### What the two reports actually compared against
+- Human QA read **92%** for Henry Clark and **99%** for Isabella Wong on the
+  profile and found the Attendance tab disagreeing. That number is
+  **`Student.attendance`** — a **stored field on the Student document**, rendered
+  in exactly one place in the whole application:
+  `src/app/(app)/students/[id]/page.tsx`, the **Overview** tab's
+  `<Stat label={t("Attendance")} value={`${student.attendance}%`} />`.
+- **Nothing derives it from attendance records.** Its only write in the codebase
+  is the pass-through `attendance: base.attendance ?? 0` in `src/lib/students.ts`,
+  and the frozen demo dataset ships the values literally:
+  `seed-data.json` carries `s15 Henry Clark → attendance: 92` and
+  `s11 Isabella Wong → attendance: 99`. It is a decorative constant from the
+  design reference, not a measurement — the same shape of stale stored aggregate
+  that *Finance & Billing* already forbids Finance from trusting
+  (`Student.balance` is "never read and never written … a stored copy would be a
+  second answer free to drift from the first"). Isabella's sibling field is
+  visibly stale in the same way: `classes: 2` where her roster membership is 1.
+
+#### What the data actually says — read-only diagnostic, both students end to end
+Run over the canonical dataset (lessons and attendance are **derived** from the
+frozen seed by `generate.ts`), calling **both** code paths:
+
+| | Henry Clark `s15` | Isabella Wong `s11` |
+|---|---|---|
+| current classes | `c7 Creative Writers · B2` — **Archived** | `c6 … KET Prep` — Active |
+| lessons in those classes | **0** | 28 |
+| completed lessons | **0** | 20 |
+| registers naming the student **anywhere** | **0** | 20 |
+| numerator / denominator | 0 / 0 | 20 / 20 |
+| `studentAttendanceRate` (**the reference helper**) | **`null`** | **100** |
+| Sprint 13 read model | **`null`, `hasRecords: false`** | **100**, 20 Present |
+| agreement | **exact** | **exact** |
+| stored `Student.attendance` | 92 | 99 |
+
+- **Henry's empty state is correct.** An Archived class generates no lessons, so
+  no completed lesson exists, no register names him, and there is nothing to rate.
+  The shipped helper returns `null` for him too.
+- **Isabella is genuinely 100%.** Every completed lesson is registered and every
+  entry is `Present`. The missing 1% has no observation behind it — there is no
+  lesson, date or status that the reference metric counts and Sprint 13 drops,
+  because the two read the same records through the same helper.
+
+#### Both reports are one root cause, and it is not in Sprint 13
+- The Sprint 13 headline **is** `studentAttendanceRate` summed — the helper is
+  *called*, not reimplemented — so the two cannot diverge on any dataset. The
+  divergence the human saw was against a third number that measures nothing.
+- The banked contract's agreement clause names **the Reviews learning journey**
+  (which is that helper), and it holds. **`PROJECT_RULES.md` was not changed and
+  no contract conflict exists.**
+- **No source file was modified.** `student-profile.ts`,
+  `student-profile-service.ts` and `student-attendance.tsx` are byte-identical.
+
+#### The guards this gate adds anyway (the test gap was real)
+The previous agreement test proved the identity on one hand-written fixture. Four
+tests now model the two shapes human QA actually hit, as **domain conditions and
+never as names or ids** — suite **2766 → 2770**:
+- **#33** the "Archived-only class" shape: no lessons, both paths `null`,
+  `hasRecords: false` — the empty state is reached because the record is empty.
+- **#34** the empty-state contract: a student with **any** entry is never reported
+  empty, and `0%` is a real answer rather than emptiness.
+- **#35** the "spotless record" shape: 20 Present is exactly 100 on both paths.
+- **#36** a sweep of 27 mixed shapes asserting rate, numerator, denominator **and**
+  emptiness match the helper on every one.
+
+Mutation-tested, four defects introduced and reverted: inferring emptiness from
+**current class count** — the exact misdiagnosis these reports invite — fails
+#33/#36; a denominator off-by-one fails #35/#36; forcing `hasRecords: false` fails
+#34/#36; a numerator off-by-one fails #35/#36.
+
+#### Two findings recorded, neither fixed here
+- **`Student.attendance` is a stale stored aggregate displayed as if live.** It is
+  the Students module's field, closed since its own sprint, and repairing or
+  removing the Overview tile is **outside Sprint 13's scope** — it needs its own
+  authorisation. Recorded as a backlog item, not actioned.
+- **Saving a register gives no visible confirmation** — reported by human QA.
+  **Sprint 13 did not cause it**: the register screen still calls
+  `toast(t("Attendance saved"))` on success, `"Attendance saved"` resolves in
+  Vietnamese (`Đã lưu điểm danh`), and
+  `src/app/(app)/attendance/[lessonId]/page.tsx`, `attendance-ui.tsx`, `draft.ts`,
+  `attendance.ts` and `attendance-service.ts` are **all byte-identical to `main`**.
+  Sprint 13's only change to that module is an **additive** read key and reader in
+  `api.ts`. Classified **PRE-EXISTING ATTENDANCE UX BACKLOG**; no toast was
+  implemented.
+
+#### Untouched
+- **Homework is byte-identical** — no component, read model, endpoint or test
+  changed. No production data was read, repaired, backfilled or seeded; the
+  diagnostic ran entirely against the frozen seed and opened no database.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

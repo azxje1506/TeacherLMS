@@ -828,6 +828,50 @@ against real records, and whether any of it looks right to a person. The harness
 has no real data, no React and **not the app's Geist font**, so production text
 metrics differ somewhat from what was measured.
 
+**Sprint 13 Gate 6.2 — the two reported Attendance defects are not Sprint 13
+defects, and the code was not changed.** Human QA compared the Attendance tab
+against **92%** (Henry Clark) and **99%** (Isabella Wong). That number is
+`Student.attendance`, a **stored field** rendered in exactly one place — the
+profile's **Overview** tab — and **nothing derives it from attendance records**:
+its only write is the pass-through `attendance: base.attendance ?? 0` in
+`students.ts`, and `seed-data.json` ships the values literally (`s15 → 92`,
+`s11 → 99`). It is a frozen demo constant, the same shape of stale stored
+aggregate that *Finance & Billing* already forbids Finance from trusting in
+`Student.balance`. Isabella's sibling `classes: 2` is stale in the same way
+against a roster membership of 1.
+
+A read-only diagnostic over the canonical dataset ran **both** code paths for both
+students. Henry's only class is **Archived**, which generates **no lessons**, so he
+has no completed lesson and **no register names him anywhere** — the reference
+helper `studentAttendanceRate` returns `null` for him exactly as the tab does, and
+**the empty state is correct**. Isabella has 20 completed lessons, 20 registers,
+every entry `Present` — **both** paths say **100**, and there is no lesson, date or
+status behind the missing 1%. The Sprint 13 headline *is* `studentAttendanceRate`
+summed — the helper is called, not reimplemented — so the two cannot diverge on any
+dataset. The contract's agreement clause names the Reviews learning journey, and it
+holds; **`PROJECT_RULES.md` was not changed and no contract conflict exists**.
+
+**No source file was modified** — `student-profile.ts`,
+`student-profile-service.ts` and `student-attendance.tsx` are byte-identical, and
+Homework is untouched. The test gap was real, though, so four guards were added
+(**2766 → 2770**) modelling the two shapes as **domain conditions, never names**:
+the Archived-only-class shape (both paths `null`, `hasRecords: false`), the
+empty-state contract (a student with any entry is never reported empty, and `0%` is
+a real answer), the spotless record (exactly 100 on both paths), and a sweep of 27
+mixed shapes asserting rate, numerator, denominator and emptiness all match the
+helper. Mutation-tested: inferring emptiness from **current class count** — the
+exact misdiagnosis these reports invite — fails the new guards, as do numerator and
+denominator off-by-ones.
+
+Two findings are **recorded and deliberately not actioned**. `Student.attendance`
+is a stale stored aggregate displayed as if live; it belongs to the closed Students
+module and repairing the Overview tile needs its own authorisation. And **saving a
+register gives no visible confirmation** — but Sprint 13 did not cause it: the
+register screen still calls `toast(t("Attendance saved"))`, the string resolves in
+Vietnamese, and every file in that flow is byte-identical to `main`, Sprint 13's
+only change there being an additive read key. Classified **PRE-EXISTING ATTENDANCE
+UX BACKLOG**; no toast was implemented.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

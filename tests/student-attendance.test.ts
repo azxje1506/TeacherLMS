@@ -455,3 +455,82 @@ describe("Attendance read model — it writes nothing", () => {
     assert.ok(SERVICE.includes('import "server-only"'), "the service stays off the client");
   });
 });
+
+/* =========================================================================
+ * 7. Gate 6.2 — the two shapes human QA actually hit
+ *
+ * Both reports compared this tab against `Student.attendance`, a STORED seed
+ * field that no code derives from attendance records (its only write is the
+ * pass-through in `students.ts`, and the seed ships Henry at 92 and Isabella at
+ * 99). The contract's agreement clause names `studentAttendanceRate`, not that
+ * field, and these tests pin the agreement against the helper under the exact
+ * structural conditions the two students have — modelled as domain shapes, never
+ * as names or ids.
+ * ====================================================================== */
+
+describe("Attendance read model — the shapes Gate 6.1 human QA hit", () => {
+  it("33. a student whose only class is Archived has NO lessons, and both paths say null", () => {
+    /* THE "HENRY" SHAPE. An Archived class generates no lessons, so the student
+     * has no completed lesson, no register names them, and there is nothing to
+     * rate. The empty state here is CORRECT — and it must be reached because the
+     * record is genuinely empty, not because a stored percentage disagrees. */
+    const r = build([], []);
+    assert.equal(r.rate, null, "no entries is no percentage, never 0%");
+    assert.equal(r.hasRecords, false, "and the tab may show its empty state");
+    assert.equal(r.entries, 0);
+
+    const ref = studentAttendanceRate("s1", APP_MONTH, { lessons: [], attendance: [] });
+    assert.equal(ref.pct, null, "the shipped helper says the same thing");
+    assert.equal(r.rate, ref.pct, "the two surfaces agree: both have no answer");
+  });
+
+  it("34. a student with entries is NEVER reported empty, whatever any stored field says", () => {
+    /* The §13 empty-state contract, stated as a guard: emptiness follows the
+     * ENTRIES, and nothing else. One register naming the student is enough. */
+    const lessons = [lesson({ id: "l1", date: "2026-07-03" })];
+    const r = build(lessons, [register("l1", { s1: "Absent" })]);
+    assert.equal(r.hasRecords, true, "one stored entry is a record, even an Absent one");
+    assert.equal(r.entries, 1);
+    assert.equal(r.rate, 0, "0% is a real answer here — it is not the empty state");
+  });
+
+  it("35. a spotless record is exactly 100, on both paths", () => {
+    /* THE "ISABELLA" SHAPE. Every completed lesson registered, every entry
+     * Present. The helper and this tab must both say 100 — the reported 99 came
+     * from the stored seed field, which measures nothing. */
+    const lessons = Array.from({ length: 20 }, (_, i) =>
+      lesson({ id: `l${i}`, date: `2026-07-${String((i % 28) + 1).padStart(2, "0")}` }));
+    const attendance = lessons.map((l) => register(l.id, { s1: "Present" }));
+    const r = build(lessons, attendance);
+    assert.equal(r.rate, 100);
+    assert.equal(r.counts.present, 20);
+    assert.equal(r.entries, 20);
+
+    const ref = studentAttendanceRate("s1", APP_MONTH, { lessons, attendance });
+    assert.equal(ref.pct, 100);
+    assert.equal(r.rate, ref.pct, "no off-by-one between the two surfaces");
+  });
+
+  it("36. the two paths agree on EVERY mixed shape, not just the fixture's", () => {
+    /* The guard that would have caught a real divergence. The previous agreement
+     * test proved the identity on one hand-written fixture; this walks a spread
+     * of shapes — all-present, all-absent, one-of-each, unregistered lessons,
+     * and a student named by no register at all. */
+    const STATUSES: AttendanceStatus[] = ["Present", "Late", "Absent", "Excused"];
+    for (let n = 0; n <= 8; n++) {
+      for (let skip = 0; skip <= 2; skip++) {
+        const lessons = Array.from({ length: n }, (_, i) =>
+          lesson({ id: `l${i}`, date: `2026-07-${String((i % 28) + 1).padStart(2, "0")}` }));
+        const attendance = lessons
+          .filter((_, i) => i % (skip + 1) === 0)
+          .map((l, i) => register(l.id, { s1: STATUSES[i % 4] }));
+        const r = build(lessons, attendance);
+        const ref = studentAttendanceRate("s1", APP_MONTH, { lessons, attendance });
+        assert.equal(r.rate, ref.pct, `rate disagreed at n=${n} skip=${skip}`);
+        assert.equal(r.attended, ref.attended, `numerator disagreed at n=${n} skip=${skip}`);
+        assert.equal(r.entries, ref.total, `denominator disagreed at n=${n} skip=${skip}`);
+        assert.equal(r.hasRecords, ref.total > 0, `emptiness disagreed at n=${n} skip=${skip}`);
+      }
+    }
+  });
+});
