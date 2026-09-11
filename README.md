@@ -872,6 +872,53 @@ Vietnamese, and every file in that flow is byte-identical to `main`, Sprint 13's
 only change there being an additive read key. Classified **PRE-EXISTING ATTENDANCE
 UX BACKLOG**; no toast was implemented.
 
+**Sprint 13 Gate 6.3 — one attendance answer per profile, and a ring that fits its
+translation.** Two human-found issues, both presentation.
+
+**The Overview tile now reads the authoritative figure.** This is **not** an
+Attendance backend correction — Gate 6.2 proved the read model correct, since it
+*calls* `studentAttendanceRate` and sums it. What was wrong was the other number on
+the same screen: the Overview tile rendered `Student.attendance`, a **stored field
+no code derives from a register**, so one profile stated two different attendance
+facts ten pixels apart. The page now runs one query against
+**`attendanceKeys.student(id)` — the key the Attendance tab already uses** — so both
+surfaces come from **one cache entry**: opening the tab costs no second request, and
+the register save that already invalidates `["attendance"]` refreshes the tile for
+free. The tile shows `rateLabel(rate)`: the server's figure through the app's
+existing formatter, with the **em dash for no value — never `0%`**, which also
+stands in while the figure is loading. A spotless record now reads **100% on both
+surfaces**; a student whose only class is Archived reads **—** beside the tab's
+empty state instead of a stale `92%`. **No attendance arithmetic exists on the
+page.**
+
+**The completion ring's label was measured, not guessed.** Driving Chrome over CDP
+and taking the *per-line inked extent* of the text — not the box, whose corners a
+centred line never inks — the ring leaves **36.9px of clear interior**. English
+`completed` inks 47px, worst corner **30.3px**, clear. `đã hoàn thành` inked **64px
+on one line, worst corner 37.3px — past the stroke**, exactly what human QA saw. The
+label now carries `maxWidth: 64, textAlign: "center", lineHeight: 1.2`: Vietnamese
+wraps to two centred lines inking 36px, worst corner **28.1px**, and **English is
+unchanged at 30.3px — identical to the shipped value**, because the bound only acts
+when a translation needs it. It is a **geometric bound, not a language branch**, so
+the next long translation is covered. Ring geometry, `ringDash`, the null-arc case
+and the 21px percentage are untouched.
+
+Eight guards added (**2770 → 2778**), all mutation-tested: restoring
+`student.attendance`, feeding the stale value through the *correct* formatter,
+rendering `null` as `0%`, restoring the unbounded label, and fixing Vietnamese with a
+**language branch** each fail a named assertion. Gate 4's #6 was **inverted rather
+than deleted** in the gate that made it false — the page may now name the module's
+reader, key and formatter, and still may not name a status, reach `/api/attendance`
+directly, or carry the counting rule.
+
+**Scope held:** `student-profile.ts`, `student-profile-service.ts`, `students.ts`,
+the Student model and `globals.css` are **all unchanged**; no attendance or homework
+semantics moved; **no schema migration** and the stored field stays on the model,
+simply no longer presented as authoritative. `Student.classes` and the other stale
+aggregates are **not** repaired here — only Attendance was authorised. The
+save-attendance toast keeps its **PRE-EXISTING ATTENDANCE UX BACKLOG**
+classification.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

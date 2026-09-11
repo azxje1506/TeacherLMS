@@ -161,7 +161,24 @@ export function StudentHomework({ studentId }: { studentId: string }) {
               <div style={{ fontSize: 21, fontWeight: 700, fontFamily: "'Geist Mono',monospace", color: "var(--green)" }}>
                 {rateLabel(data.completionRate)}
               </div>
-              <div style={{ fontSize: 10, color: "var(--muted-2)" }}>{t("completed")}</div>
+              {/* THE LABEL IS CONSTRAINED TO THE RING'S CLEAR INTERIOR, AND WRAPS.
+                * The comp writes one English word here, and `completed` is narrow
+                * enough that it never needed a bound. `đã hoàn thành` is not: at
+                * the comp's own font size it is wider than the circle is clear,
+                * so it ran under the stroke.
+                *
+                * THE GEOMETRY IS THE CONSTRAINT, NOT THE LANGUAGE. The ring is
+                * r=40 with a 9-wide stroke on a 100 viewBox rendered at 104px,
+                * so the clear interior is about 74px across — but a second line
+                * sits low enough that its chord is narrower, about 60px. 64px is
+                * that bound, and any label longer than it wraps and stays inside
+                * instead of colliding.
+                *
+                * ONE LAYOUT PATH FOR EVERY LANGUAGE. There is no locale branch
+                * and no per-language markup: English still renders on one line at
+                * exactly the comp's size, because the bound only does something
+                * when a translation actually needs it. */}
+              <div style={{ fontSize: 10, color: "var(--muted-2)", maxWidth: 64, textAlign: "center", lineHeight: 1.2 }}>{t("completed")}</div>
             </div>
           </div>
           <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>

@@ -23,6 +23,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
+/* EXECUTED, not scanned: #45 runs the shipped formatter so "no records" and
+ * "attended nothing" are proved distinct rather than asserted to be. */
+import { rateLabel } from "../src/components/attendance/attendance-ui";
 
 function raw(...parts: string[]): string {
   return readFileSync(path.join(process.cwd(), ...parts), "utf8");
@@ -89,13 +92,34 @@ describe("Student Profile — the Attendance branch now exists", () => {
       "four tabs branch, and that is the final count");
   });
 
-  it("6. the page gained no attendance state, query or rule of its own", () => {
+  it("6. the page gained no attendance RULE of its own", () => {
+    /* INVERTED IN GATE 6.3, DELIBERATELY, AND IN THE GATE THAT MADE IT FALSE.
+     *
+     * As banked in Gate 4 this also forbade `attendanceKeys`,
+     * `fetchStudentAttendance` and `rateLabel`, because at that point the page
+     * had no business knowing the tab existed. Gate 6.3 gave the Overview tile
+     * the authoritative figure — it had been rendering the stale stored
+     * `Student.attendance` beside the tab's derived one — and doing that means
+     * naming the module's own reader and key. That is a READER and a FORMATTER,
+     * not a rule.
+     *
+     * WHAT THIS GUARD HAS ALWAYS PROTECTED IS UNCHANGED: the page knows no
+     * attendance SEMANTICS. It cannot name a status, cannot reach the endpoint
+     * except through the module's client, and cannot carry the counting rule or
+     * the status colours. Those clauses are the original, word for word. */
     for (const forbidden of [
-      "attendanceKeys", "fetchStudentAttendance", "useQuery(\n", "/api/attendance",
-      "Present", "Excused", "rateLabel", "ATTENDANCE_COLORS",
+      "/api/attendance",
+      "Present", "Excused", "ATTENDANCE_COLORS", "ATTENDANCE_DISPLAY_ORDER",
+      "studentAttendanceRate", "Math.round",
     ]) {
       assert.ok(!PROFILE.includes(forbidden), `${forbidden} belongs to the tab, not the page`);
     }
+    /* And the positive half of the same invariant: what the page DOES hold is the
+     * module's own reader, on the tab's own key, formatted by the shared helper —
+     * never a second copy of any of the three. */
+    assert.ok(PROFILE.includes("attendanceKeys.student(id)"));
+    assert.ok(PROFILE.includes("fetchStudentAttendance(id)"));
+    assert.ok(PROFILE.includes("rateLabel("));
   });
 });
 
@@ -449,5 +473,56 @@ describe("Attendance tab — the summary tiles collapse on room (Gate 6)", () =>
      * word wraps inside its tile instead of widening it. */
     assert.ok(TAB.includes('overflowWrap: "anywhere"'),
       "a single long word must wrap rather than overflow its tile");
+  });
+});
+
+/* =========================================================================
+ * 8. Gate 6.3 — the Overview tile reads the SAME answer the tab does
+ *
+ * The profile used to show two different attendance numbers ten pixels apart:
+ * the Overview tile rendered `Student.attendance`, a STORED field nothing derives
+ * from a register, while the tab rendered the derived figure. Gate 6.2 proved the
+ * tab was right. This section pins that the tile now asks the same question.
+ * ====================================================================== */
+
+describe("Student Profile — one attendance answer, not two (Gate 6.3)", () => {
+  it("42. the Overview tile NO LONGER reads the stale stored field", () => {
+    /* THE DEFECT THIS PINS. `Student.attendance` is written in exactly one place
+     * in the codebase — the pass-through in `students.ts` — and the demo dataset
+     * ships it frozen. Rendering it as live attendance is what made one screen
+     * state two different facts. The FIELD may stay on the model; presenting it
+     * as an attendance measurement may not. */
+    assert.ok(!/student\.attendance/.test(PROFILE),
+      "the page must not read Student.attendance for the attendance metric");
+    assert.ok(!/\$\{student\.attendance\}/.test(PROFILE), "and certainly not interpolate it");
+  });
+
+  it("43. it reads the authoritative read model, on the TAB'S OWN query key", () => {
+    /* ONE CACHE ENTRY, NOT TWO REQUESTS. Sharing `attendanceKeys.student(id)`
+     * with the tab is what makes the two surfaces incapable of disagreeing, and
+     * it is also why opening the tab costs no second fetch and why the register
+     * save that already invalidates ["attendance"] refreshes this tile. */
+    assert.ok(PROFILE.includes("attendanceKeys.student(id)"), "the tab's key, reused");
+    assert.ok(PROFILE.includes("fetchStudentAttendance(id)"), "and the tab's reader");
+    assert.ok(/<Stat label=\{t\("Attendance"\)\} value=\{rateLabel\(attendance\.data\?\.rate \?\? null\)\}/.test(PROFILE),
+      "the tile renders the server's rate through the shared formatter, and nothing else");
+  });
+
+  it("44. the page derives NO attendance arithmetic of its own", () => {
+    /* A second copy of the counting rule in the page is exactly how one fact
+     * becomes two numbers again. The page may format; it may not compute. */
+    for (const f of ["Math.round", "reduce(", "/ 100", "* 100", "studentAttendanceRate"]) {
+      assert.ok(!PROFILE.includes(f), `${f} is the read model's business, not the page's`);
+    }
+  });
+
+  it("45. null renders as the app's no-value mark — never 0%", () => {
+    /* `rateLabel` is the shipped formatter and it is executed here rather than
+     * described: "nothing was recorded" and "they attended nothing" are different
+     * facts and must not collapse into the same glyph. */
+    assert.equal(rateLabel(null), "—", "no records is the em dash");
+    assert.equal(rateLabel(0), "0%", "a real zero is still a real answer");
+    assert.equal(rateLabel(100), "100%");
+    assert.notEqual(rateLabel(null), "0%", "the two must never coincide");
   });
 });

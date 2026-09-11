@@ -707,6 +707,93 @@ Mutation-tested, four defects introduced and reverted: inferring emptiness from
   changed. No production data was read, repaired, backfilled or seeded; the
   diagnostic ran entirely against the frozen seed and opened no database.
 
+### Gate 6.3 — one attendance answer per profile, and a ring that fits its translation
+
+#### A. The Overview tile now reads the authoritative figure
+- **This is a presentation-consistency fix, NOT an Attendance backend correction.**
+  Gate 6.2 proved the Sprint 13 Attendance read model correct — it *calls*
+  `studentAttendanceRate` and sums it, so it cannot disagree with Reports or the
+  Reviews learning journey. What was wrong was the **other** number on the same
+  screen: the Overview tile rendered `Student.attendance`, a **stored field no
+  code derives from a register** (its only write is the pass-through in
+  `students.ts`, and the demo dataset ships it frozen). One profile stated two
+  different attendance facts ten pixels apart.
+- **The fix is Option A — reuse the Sprint 13 read model on its own query key.**
+  The page now runs one `useQuery` against **`attendanceKeys.student(id)`**, the
+  key the Attendance tab already uses, so React Query serves **both surfaces from
+  one cache entry**: opening the tab issues no second request, and the register
+  save that already invalidates `["attendance"]` refreshes the tile for free. The
+  tile renders `rateLabel(attendance.data?.rate ?? null)` — the server's own rate
+  through the app's existing formatter. **No attendance arithmetic exists on the
+  page**, and none was added anywhere.
+- **No-value, never `0%`.** `rate` is `null` when no register names the student,
+  and `rateLabel` renders that as the app's em dash — which also stands in while
+  the figure is loading or failed to load, because an unknown number is not a
+  number and certainly not the stale one the tile used to show.
+- **Expected results:** a student with a spotless record reads **100%** on both
+  surfaces; a student whose only class is Archived reads **—** on Overview beside
+  the tab's empty state, in place of a stale `92%`; any mixed record reads the
+  same percentage on both, by construction rather than by coincidence.
+
+#### B. The completion ring tolerates a long localized label
+- **Measured, not guessed.** Driving Chrome over CDP and taking the *per-line
+  inked extent* of the label (`Range.getClientRects()`, not the box, whose corners
+  a centred line never inks): the ring is r=40 with a 9-wide stroke on a 100
+  viewBox rendered at 104px, leaving **36.9px of clear interior**. English
+  `completed` inks 47px on one line, worst corner **30.3px** — clear.
+  `đã hoàn thành` inked **64px on one line, worst corner 37.3px** — **past the
+  stroke**, which is exactly what human QA saw.
+- **The fix is a geometric bound, not a language branch.** The label takes
+  `maxWidth: 64, textAlign: "center", lineHeight: 1.2`. Vietnamese wraps to two
+  centred lines inking 36px, worst corner **28.1px** — comfortably inside.
+  **English is unchanged: one line, 47px, worst corner 30.3px — identical to the
+  shipped value**, because the bound only does anything when a translation needs
+  it. There is no locale check and no per-language markup, so the next long
+  translation is covered too.
+- **Everything else about the ring is Gate 5's and untouched**: `r=40`, stroke 9,
+  `ringDash`, the null case drawing **no arc at all**, the shared em dash, and the
+  21px percentage — the hierarchy was not traded away to make room.
+
+#### Guards added (2770 → 2778)
+- **#42** the page no longer reads `Student.attendance` for the metric; **#43** it
+  reads the module's own reader on the **tab's own key**, and the tile expression
+  is pinned exactly; **#44** the page carries no attendance arithmetic or rule;
+  **#45** executes `rateLabel` to prove `null → "—"` and `0 → "0%"` can never
+  collapse into each other.
+- **#43–#46 (Homework)** the label is bounded, centred and wrappable; **one layout
+  path for every language** (no `lang ===`, no `"vi"`, no Vietnamese literal); ring
+  geometry, `ringDash`, the null-arc case and the 21px percentage are unchanged;
+  the fix moves no completion semantics.
+- **One banked guard was inverted deliberately, in the gate that made it false.**
+  Gate 4's #6 forbade the page from naming `attendanceKeys`, `fetchStudentAttendance`
+  or `rateLabel` — correct while the page had no business knowing the tab existed,
+  and false the moment the tile had to show the authoritative figure. It is
+  **inverted, not deleted**: what it has always protected is unchanged — the page
+  still cannot name a status (`Present`, `Excused`), reach `/api/attendance`
+  directly, or carry `ATTENDANCE_COLORS`, `studentAttendanceRate` or `Math.round`
+  — and a positive half was added pinning that it uses the module's reader, key
+  and formatter rather than a second copy of any of them.
+- **Mutation-tested, five defects introduced and reverted:** restoring
+  `student.attendance` fails #6/#42/#43; feeding the stale value through the
+  *correct* formatter fails #42/#43; rendering the authoritative `null` as `0%`
+  fails #6/#43; restoring the unbounded ring label fails Homework #43; and fixing
+  Vietnamese with a **language branch** fails Homework #43/#44.
+
+#### Scope held
+- **`src/lib/student-profile.ts`, `src/lib/student-profile-service.ts`,
+  `src/lib/students.ts`, the Student model/schema and `globals.css` are all
+  UNCHANGED.** No attendance semantics moved: Present/Late/Excused/Absent, the
+  denominator, the `Lesson.date` source and the current-class scope are exactly as
+  Gate 6.2 found them correct. No Homework read model, endpoint or completion rule
+  changed. **No schema migration, and the stored field remains on the model** — it
+  is simply no longer presented as authoritative attendance.
+- **`Student.classes` and the other stale stored aggregates are NOT repaired here.**
+  Only Attendance was authorised, because Sprint 13 is what exposed its
+  contradiction. The rest stay recorded as future cleanup.
+- **The save-attendance toast keeps its Gate 6.2 classification —
+  PRE-EXISTING ATTENDANCE UX BACKLOG.** No new evidence implicates Sprint 13 and
+  nothing was implemented for it.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

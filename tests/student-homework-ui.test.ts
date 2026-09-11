@@ -451,3 +451,51 @@ describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
     assert.ok(TAB.includes('overflowWrap: "anywhere"'), "a long label wraps inside its tile");
   });
 });
+
+/* =========================================================================
+ * 9. Gate 6.3 — the completion ring tolerates a long localized label
+ * ====================================================================== */
+
+describe("Homework tab — the ring label stays inside the ring (Gate 6.3)", () => {
+  it("43. the label is BOUNDED and may wrap, so a long translation cannot reach the stroke", () => {
+    /* THE DEFECT THIS PINS, measured in Chrome before the fix: the comp's single
+     * English word inks 47px and clears the ring easily, but `đã hoàn thành`
+     * inks 64px on one line and its corners reach 37.3px from the ring centre —
+     * past the 36.9px of clear interior an r=40 ring with a 9-wide stroke
+     * leaves. It ran under the green stroke. Bounded, it wraps to two centred
+     * lines inking 36px, worst corner 28.1px, comfortably inside. */
+    const label = TAB.slice(TAB.indexOf('{t("completed")}') - 400, TAB.indexOf('{t("completed")}') + 40);
+    assert.ok(/maxWidth: 64/.test(label), "a width bound derived from the ring's own geometry");
+    assert.ok(/textAlign: "center"/.test(label), "wrapped lines stay centred on the ring");
+    assert.ok(/lineHeight: 1\.2/.test(label), "and two lines stay tight enough to fit");
+  });
+
+  it("44. ONE layout path for every language — no locale branch", () => {
+    /* The trap this forbids: fixing Vietnamese with Vietnamese-specific markup,
+     * which leaves English on a different code path and the next translation
+     * broken again. The bound is geometric and applies to whatever the
+     * dictionary returns. */
+    for (const forbidden of ['lang ===', 'lang ==', '"vi"', "'vi'", "đã hoàn thành", "locale"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} would make the ring language-specific`);
+    }
+    assert.equal([...TAB.matchAll(/\{t\("completed"\)\}/g)].length, 1,
+      "one label, rendered once, through the dictionary");
+  });
+
+  it("45. the ring's geometry and its no-value behaviour are UNCHANGED", () => {
+    /* Gate 6.3 is a label-layout fix. The arc, its maths and the null case are
+     * Gate 5's and must not move. */
+    assert.ok(TAB.includes('r="40"'), "the comp's r=40");
+    assert.ok(TAB.includes('strokeWidth="9"'), "and its stroke");
+    assert.ok(TAB.includes("ringDash(data.completionRate)"), "the shared donut maths, still");
+    assert.ok(TAB.includes("data.completionRate !== null &&"), "null draws NO arc at all");
+    assert.ok(TAB.includes("rateLabel(data.completionRate)"), "and shows the shared em dash");
+    assert.ok(/fontSize: 21/.test(TAB), "the percentage keeps its size — hierarchy is not traded away");
+  });
+
+  it("46. the fix is presentation only — no completion semantics moved", () => {
+    for (const forbidden of ["Math.round", "reduce(", ".filter(", "completed +", "+ late"]) {
+      assert.ok(!TAB.includes(forbidden), `${forbidden} would recompute the measure`);
+    }
+  });
+});

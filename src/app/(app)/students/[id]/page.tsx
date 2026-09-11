@@ -35,6 +35,8 @@ import { ConfirmDialog } from "@/components/ui/dialog";
 import { StudentDrawer } from "@/components/students/student-drawer";
 import { StudentReviews } from "@/components/reviews/student-reviews";
 import { StudentAttendance } from "@/components/attendance/student-attendance";
+import { attendanceKeys, fetchStudentAttendance } from "@/components/attendance/api";
+import { rateLabel } from "@/components/attendance/attendance-ui";
 import { StudentHomework } from "@/components/homework/student-homework";
 import { Avatar, cardStyle, statusBadgeStyle, statusDotStyle, tabStyle } from "@/components/students/student-ui";
 import {
@@ -116,6 +118,27 @@ function StudentProfile() {
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: studentKeys.detail(id),
     queryFn: () => fetchStudent(id),
+  });
+
+  /* THE OVERVIEW ATTENDANCE TILE READS THE SAME ANSWER THE ATTENDANCE TAB DOES.
+   *
+   * It used to render `Student.attendance`, a STORED field that no code derives
+   * from a register: its only write is the pass-through in `students.ts`, and the
+   * demo dataset ships it frozen. The tile therefore stated a number the records
+   * had never produced, and Sprint 13 — by putting the derived figure on the next
+   * tab along — made that contradiction visible on a single screen.
+   *
+   * THIS IS THE SAME QUERY KEY THE TAB USES, not a second copy of the question.
+   * React Query serves both surfaces from ONE cache entry, so opening the
+   * Attendance tab issues no further request, and the register save that already
+   * invalidates `["attendance"]` refreshes this tile for free.
+   *
+   * NO ATTENDANCE ARITHMETIC HAPPENS HERE. `rate` is the server's own figure, and
+   * `rateLabel` is the formatter the rest of the app already uses for it. This
+   * page still knows no attendance rule. */
+  const attendance = useQuery({
+    queryKey: attendanceKeys.student(id),
+    queryFn: () => fetchStudentAttendance(id),
   });
 
   const student = data?.student;
@@ -290,7 +313,13 @@ function StudentProfile() {
               </div>
               <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
                 <Stat label={t("Classes")} value={String(student.classes)} />
-                <Stat label={t("Attendance")} value={`${student.attendance}%`} />
+                {/* `rate` is null when no register names this student, and the em
+                  * dash is what this app shows for "no value" everywhere else —
+                  * never 0%, which would assert an absence the data never
+                  * recorded. It also stands in while the figure is loading or
+                  * failed to load: an unknown number is not a number, and it is
+                  * certainly not the stale one this tile used to show. */}
+                <Stat label={t("Attendance")} value={rateLabel(attendance.data?.rate ?? null)} />
                 <Stat label={t("Balance")} value={fmt.vnd(student.balance)} color={student.balance > 0 ? "var(--accent)" : "var(--fg)"} />
               </div>
             </div>
