@@ -747,7 +747,9 @@ It is two faults, and the first is the one that scrolls the page. A `1fr` track
 is `minmax(auto,1fr)`, and that `auto` is the grid item's **automatic minimum
 size** — the track refuses to shrink below its own min-content, so four tiles of
 padding around an unbreakable word (`Completed` is the long one) are a floor the
-row cannot go under: it grows past the card and the document scrolls sideways.
+row cannot go under: the tracks come out **unequal** and the row spills out of
+its own box. (Gate 6.1 measured this and **corrected the severity** stated here:
+the spill lands in the card padding and does **not** scroll the page.)
 The second is readability, which is why the **count** collapses rather than the
 tiles merely shrinking.
 
@@ -787,6 +789,44 @@ check remain **HUMAN REQUIRED**, and Sprint 13 needs a **Gate 6.1 human re-test*
 before it can close. The **Finance class payment slip** remains deferred and
 untouched: no QR asset, bank information, print component, billing API, payment
 UI, Settings field or print stylesheet.
+
+**Sprint 13 Gate 6.1 — measured in a real browser, and it corrected Gate 6.**
+Chrome was driven over the DevTools Protocol from a script using **Node built-ins
+only** (Node 24 ships a global `WebSocket`), so **no dependency was added**. The
+live app was not driven — reading `.env.local` is blocked, and booting a server
+against its database to log in as admin was not something to do unasked — so the
+target was a harness that **extracts the real rules out of `globals.css`** (the
+token blocks, `.sp-split`, `.sp-tiles`, the `sp-page` container and its collapse),
+reproduces the real shell and tab markup, and carries the app's own
+`width=device-width, initial-scale=1`.
+
+**120 combinations** — 2 tabs × {en, vi} × {light, dark} plus two density variants
+— at all ten required widths showed **zero page-level horizontal overflow** and
+zero elements crossing the viewport edge. The layout tracks the **container**
+rather than the viewport exactly as the contract intends (1128px of container at a
+1440px viewport, 292px at 320px), `.sp-split` collapses at or under 600px of
+container — which includes the 860px and 767px viewports, where the rail leaves
+only 576px and 483px — and `.sp-tiles` resolves to 4 columns above the threshold
+and 2 below it in every language, theme and density.
+
+**Gate 6 claimed the pre-fix inline `repeat(4,1fr)` made the document scroll
+sideways. A like-for-like control shows it did not**, at any width, in either
+language. That claim was reasoning rather than measurement, and it has been
+corrected in place — here, in the changelog, in the `globals.css` comment and in
+the test comment. What the defect **actually** was, measured at 320px on Homework
+in English: tracks of **47/78/44/61px** instead of four equal ones, and a row whose
+content overflowed its own box (**scrollWidth 260 against clientWidth 250**),
+spilling into the card's 20px padding. The fix is kept on the two grounds that
+survive measurement — **comp fidelity** (four equal tiles, now 120/120/120/120 at
+320px) and **containment** (grid scrollWidth now equals clientWidth at every width
+tested) — but it was not repairing a page-breaking bug.
+
+**Still HUMAN REQUIRED, and not claimed:** keyboard navigation, the
+pointer-versus-keyboard focus ring, the live sidebar toggle, the other four profile
+tabs, the empty / Assigned-only / error states, the data-versus-UI spot check
+against real records, and whether any of it looks right to a person. The harness
+has no real data, no React and **not the app's Geist font**, so production text
+metrics differ somewhat from what was measured.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported

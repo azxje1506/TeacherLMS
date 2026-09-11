@@ -2265,8 +2265,12 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    track is `minmax(auto,1fr)`, and that `auto` is the grid item's AUTOMATIC
    MINIMUM SIZE - it refuses to shrink below its own min-content. Four tiles of
    24px padding around an unbreakable word ("Completed" is the long one) is a
-   floor the row cannot go under, so on a narrow container the grid grows past
-   the card instead of fitting inside it and the document scrolls sideways.
+   floor the row cannot go under, so on a narrow container the tracks come out
+   UNEQUAL and the row spills out of its own box. Measured in Chrome at 320px
+   (Gate 6.1): tracks of 47/78/44/61px instead of four equal ones, and a grid
+   whose scrollWidth (260px) exceeds its clientWidth (250px). The spill lands in
+   the card padding rather than scrolling the page, so this is a containment and
+   comp-fidelity fault, not a page-breaking one.
    `minmax(0,1fr)` removes that floor, exactly as `.ov-grid`, `.kpi-grid` and
    `.att-summary` already state it in their own templates. It changes NOTHING at
    any width where the tiles already fit.

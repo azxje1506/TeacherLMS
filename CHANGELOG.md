@@ -479,9 +479,11 @@
   `minmax(auto,1fr)`, and that `auto` is the grid item's **automatic minimum
   size** — a track refuses to shrink below its own min-content. Four tiles of
   24px padding around an unbreakable word (`Completed` is the long one) are a
-  floor the row cannot go under, so on a narrow container the grid grows past the
-  card and the **document** scrolls sideways. The second fault is readability,
-  which is why the count collapses rather than the tiles merely shrinking.
+  floor the row cannot go under, so the tracks come out **unequal** and the row
+  spills out of its own box. The second fault is readability, which is why the
+  count collapses rather than the tiles merely shrinking. **Gate 6.1 measured
+  this and corrected the severity claimed here — see its entry: the spill lands
+  in the card padding and does NOT scroll the page.**
 
 #### The fix, which is the app's own and adds no new number
 - **`.sp-tiles`, and the stylesheet owns the template.** The inline
@@ -542,6 +544,77 @@
 - **Finance — Class Payment Slip Printing remains deferred and untouched.** No QR
   asset, bank information, print component, billing API, payment UI, Settings field
   or print stylesheet.
+
+### Gate 6.1 — browser re-test (measured, not human; see the limits below)
+
+#### How this was tested, and what that is worth
+- **There is still no human browser QA in this record, and none is claimed.** What
+  this gate adds is *measurement*: Chrome (already on the machine) was driven over
+  the DevTools Protocol from a script using **Node built-ins only** — Node 24 ships
+  a global `WebSocket`, so **no dependency was added** and `package.json` is
+  untouched.
+- **It measured a harness, not the running app.** The live app could not be driven:
+  reading `.env.local` is blocked, so booting a server against its database and
+  logging in as admin was not something to do unasked. Instead a harness page was
+  built that **extracts the real rules out of `src/app/globals.css`** — the `:root`
+  and `[data-theme="dark"]` token blocks, `.sp-split`, `.sp-tiles`, the
+  `sp-page` container declaration and its collapse — reproduces the real shell
+  (248px sidebar / 64px rail, `.app-main` 1400px cap and its three paddings) and
+  the real tab markup, and carries the app's own
+  `width=device-width, initial-scale=1`.
+- **What that cannot tell you:** it has no real data, no React, no React Query, and
+  **not the app's Geist font** (it falls back to a system stack), so text metrics
+  differ somewhat from production. It says nothing about keyboard behaviour, the
+  pointer-versus-keyboard focus ring, the live sidebar toggle, the other four
+  profile tabs, the empty / Assigned-only / error states, or whether any of it
+  *looks right* to a person. **Those remain HUMAN REQUIRED.**
+
+#### What was measured
+- **120 combinations**: 2 tabs x {en, vi} x {light, dark} plus two density variants
+  (`--gap` 11px and 26px), each at all ten required widths — 1440, 1280, 1100, 860,
+  767, 620, 430, 390, 360, 320.
+- **Zero page-level horizontal overflow in all 120**, and zero elements crossing the
+  viewport edge. The container behaves as the contract intends: it tracks the
+  **container**, not the viewport — 1128px of container at a 1440px viewport,
+  592px at 620px, 292px at 320px — and `.sp-split` collapses whenever the container
+  is at or under 600px, which includes 860px and 767px viewports (rail present,
+  container 576px and 483px). `.sp-tiles` resolves to 4 columns above the threshold
+  and 2 below it, at every language, theme and density.
+
+#### THE GATE 6 SEVERITY CLAIM WAS WRONG, AND IS CORRECTED HERE
+- Gate 6 stated that the pre-fix inline `repeat(4,1fr)` made **the document scroll
+  sideways**. A like-for-like control — the same harness rebuilt with the inline
+  template and no `overflow-wrap`, measured the same way — shows **it did not**, at
+  any of the ten widths, in either language. That claim was reasoning, not
+  measurement, and it was overstated. The `globals.css` comment, the test comment,
+  the README and the Gate 6 changelog entry have all been corrected in place.
+- **What the defect actually was**, measured in Chrome at 320px on the Homework tab
+  in English: `repeat(4,1fr)` produced tracks of **47 / 78 / 44 / 61px** — not four
+  equal columns, because the `auto` minimum floored the `Completed` tile while its
+  neighbours were squeezed — and the row's content overflowed its own box,
+  **scrollWidth 260 against clientWidth 250**. At 430px the card's own scrollWidth
+  exceeded its clientWidth. The spill landed in the card's 20px padding, so the
+  page never gained a scrollbar.
+- **The fix remains correct and is kept**, on the two grounds that survive
+  measurement: **comp fidelity** — the design draws four *equal* tiles and now gets
+  them (120/120/120/120 at 320px, 2-up) — and **containment** — grid scrollWidth
+  now equals clientWidth at every width tested. It was not, as Gate 6 implied,
+  repairing a page-breaking bug.
+
+#### Verified visually (screenshots inspected)
+- Both tabs at 320px in English/light, Vietnamese/dark: 2x2 tiles with equal
+  widths and full labels; the six-month chart fits with readable labels; **the
+  monthly point with no data renders the em dash and the design's minimum-height
+  stub, never `0%`**; timeline rows stay inside their card with class names
+  ellipsing; the longest Vietnamese badge (`Đã hoàn thành`) does not push its row;
+  `đã hoàn thành` resolves under the ring; every dark-theme token resolves with
+  legible contrast.
+
+#### Unchanged
+- **No source behaviour changed in this gate.** `src/app/globals.css` changed only
+  inside a comment; `tests/student-attendance-ui.test.ts` only inside a comment. No
+  component, read model, endpoint, dependency, schema, index or migration was
+  touched, and the suite stays at **2766 / 2766**.
 
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 

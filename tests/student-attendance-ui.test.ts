@@ -420,8 +420,10 @@ describe("Attendance tab — the summary tiles collapse on room (Gate 6)", () =>
     /* WHY `minmax(0,…)` AND NOT `1fr`. A `1fr` track is `minmax(auto,1fr)`, and
      * that `auto` is the grid item's AUTOMATIC MINIMUM SIZE: the track refuses to
      * go below its own min-content, so four tiles of 24px padding around an
-     * unbreakable word are a floor the row cannot go under — it grows past the
-     * card and the document scrolls sideways instead. */
+     * unbreakable word are a floor the row cannot go under. Gate 6.1 MEASURED
+     * what that costs, in Chrome, at 320px: tracks of 47/78/44/61px instead of
+     * four equal ones, and grid scrollWidth 260 over clientWidth 250. The spill
+     * lands in the card padding — it does NOT scroll the page. */
     assert.ok(!flat.includes(".sp-tiles{display:grid;grid-template-columns:repeat(4,1fr)"),
       "never a bare 1fr track");
     assert.ok(/\.sp-tiles\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(CSS),
