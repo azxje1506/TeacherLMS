@@ -36,15 +36,6 @@
  * `.sp-tiles`, and globals.css owns both its template and its 4 -> 2 collapse on
  * the same 600px container query. Same class on the skeleton, so the row does
  * not change shape when the data arrives.
- *
- * THE SUMMARY READS TOP-DOWN (Gate 6.4): the overall rate, then the four counts
- * underneath it. It used to be one flex ROW, which put the headline figure in a
- * 96px column beside its own breakdown and left the rest of that card's height
- * empty. `.sp-summary` is a plain column in globals.css — no template, no
- * threshold, no container of its own — so the four cards keep riding the ONE
- * responsive rule `.sp-tiles` already owns. Purely a composition change: the
- * rate, its formatting, its `null` behaviour, the labels, the order, the colours
- * and the accessible text are all exactly as they were.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -122,8 +113,8 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
       <div style={column}>
         {/* ---- Summary: the headline rate and the four counts ---------------- */}
         <section style={panel} aria-label={t("Attendance")}>
-          <div className="sp-summary">
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: 96 }}>
               {/* The server's own figure. `rateLabel` renders `null` as the app's
                 * em dash rather than as 0%. */}
               <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-.02em", color: "var(--green)", fontFamily: "'Geist Mono',monospace" }}>
@@ -131,7 +122,7 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
               </div>
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Attendance")}</div>
             </div>
-            <div className="sp-tiles">
+            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
               {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                 const c = ATTENDANCE_COLORS[status];
                 const count = status === "Present" ? data.counts.present
@@ -237,8 +228,7 @@ function noteLine(dateLabel: string, entry: StudentAttendanceEntry): string {
  *
  * IT IS THE TAB'S SHAPE, NOT A SPINNER, and it shows no values — no `0`, no
  * `0%`, no placeholder month. It occupies the same two-column split the loaded
- * tab does — and, since Gate 6.4, the same stacked `.sp-summary` — so revealing
- * the data does not move the tablist above it. */
+ * tab does, so revealing the data does not move the tablist above it. */
 function SkeletonTab() {
   const bar: React.CSSProperties = {
     background: "linear-gradient(90deg,var(--border-2) 25%,var(--hover) 37%,var(--border-2) 63%)",
@@ -248,12 +238,12 @@ function SkeletonTab() {
     <div className="sp-split" aria-hidden="true">
       <div style={column}>
         <div style={panel}>
-          <div className="sp-summary">
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 96 }}>
               <div style={{ height: 34, width: 84, borderRadius: 9, ...bar }} />
               <div style={{ height: 11, width: 60, borderRadius: 6, marginTop: 6, ...bar }} />
             </div>
-            <div className="sp-tiles">
+            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
               {[0, 1, 2, 3].map((i) => <div key={i} style={{ height: 56, borderRadius: 11, ...bar }} />)}
             </div>
           </div>

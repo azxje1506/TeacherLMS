@@ -794,7 +794,12 @@ Mutation-tested, four defects introduced and reverted: inferring emptiness from
   PRE-EXISTING ATTENDANCE UX BACKLOG.** No new evidence implicates Sprint 13 and
   nothing was implemented for it.
 
-### Gate 6.4 — the Attendance summary reads top-down
+### Gate 6.4 — the Attendance summary reads top-down — **REVERTED by Gate 6.5**
+
+> **This change did not ship.** It was applied to the Student Profile Attendance
+> tab, which is not the surface the request named, and Gate 6.5 reverted it in
+> full. The record is kept because the measurements below are still the evidence
+> about that card, and because what went wrong is the point. See Gate 6.5.
 
 #### The change, and its whole extent
 - **A composition move inside one card.** The overall attendance figure and the
@@ -866,6 +871,54 @@ Mutation-tested, four defects introduced and reverted: inferring emptiness from
   token, no breakpoint, no Homework/Classes/Finance/Reviews change, and the
   **payment slip stays deferred**. Files changed: `globals.css` (one new block),
   `student-attendance.tsx` (the summary and its skeleton) and its test file.
+
+### Gate 6.5 — Gate 6.4 reverted: it was applied to the wrong surface
+
+#### The revert is complete and byte-exact
+- **`src/` is byte-identical to Gate 6.3 (`67ed574`).** `.sp-summary` was removed
+  from `globals.css`, and `student-attendance.tsx` — the live summary card **and**
+  its skeleton — is restored to the comp's horizontal composition
+  (`display:flex; align-items:center; gap:20; flex-wrap:wrap`, the metric's
+  `minWidth:96`, and `.sp-tiles` with `flex:1; minWidth:220`). `git diff 67ed574
+  -- src/` is empty.
+- **Nothing else was reverted.** Gate 6.3's Overview fix (the tile reads
+  `attendanceKeys.student(id)` and no longer `Student.attendance`), the Homework
+  ring's localized-label bound, Gate 6's `.sp-tiles` hardening and its 4 → 2
+  container collapse, both Sprint 13 tabs and every backend/read-model change are
+  untouched. Three guards pin exactly that.
+
+#### The `/reviews` half is BLOCKED — there is no such metric there
+- **Audited, not guessed.** Every `/reviews` surface was read: the list page
+  (`src/app/(app)/reviews/page.tsx`, `data-screen-label="Reviews"`) is a student
+  **card grid** and renders no attendance figure of any kind; the report
+  (`monthly-review-report.tsx`) and the composer (`review-composer.tsx`) each show
+  **three flat tiles** — Overall, Attendance, Homework — with no ring; the Student
+  Profile Reviews tab's `MetricCard` is a flat 28px number. Reviews' only donut is
+  `ScoreDonut` in `charts.tsx`, whose subject is the **1–5 score distribution**,
+  not attendance.
+- **Exactly one surface in the application matches the description** — a circular
+  attendance percentage with **four** status cards beside it and empty space under
+  the ring: `src/app/(app)/attendance/page.tsx`, the "This month" card of the
+  **`/attendance`** index (96px SVG ring, `ringDash(summary.rate)`, `{rate}%` over
+  "attended", beside a 2×2 inline grid of `ATTENDANCE_DISPLAY_ORDER` —
+  Present / Late / Absent / Excused).
+- **No layout change was applied to either surface.** The gate forbids guessing
+  from filenames and requires the shipped UI as the source of truth; the route in
+  the clarification and the one surface matching its description disagree, and
+  `/attendance` belongs to a closed earlier sprint. Choosing between them is the
+  user's call, not an assumption to be made twice.
+
+#### Guards: 2787 → 2781, and the drop is the revert working
+- **Gate 6.4's nine guards went with the layout they pinned.** They asserted the
+  stacked composition; keeping them would have meant keeping the change. Three new
+  guards replace them, so the suite is Gate 6.3's 2778 plus 3.
+- **#46** `.sp-summary` appears in neither the tab, its comments, nor the
+  stylesheet; **#47** the summary is pinned as the Gate 6.3 markup byte for byte,
+  so a stack arriving under any other class name fails too; **#48** the revert
+  disturbed neither Gate 6.3's Overview fix nor Gate 6's tile hardening.
+- **M1 (reapply the stack to the Student Profile Attendance tab) fails #46 and
+  #47**, and was reverted. **M2 and M3 could not be run**: both mutate a
+  `/reviews` layout that does not exist.
 
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 

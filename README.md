@@ -919,7 +919,10 @@ aggregates are **not** repaired here — only Attendance was authorised. The
 save-attendance toast keeps its **PRE-EXISTING ATTENDANCE UX BACKLOG**
 classification.
 
-**Sprint 13 Gate 6.4 — the Attendance summary reads top-down.** Presentation only.
+**Sprint 13 Gate 6.4 — the Attendance summary reads top-down. REVERTED by Gate 6.5 —
+this change did not ship;** it was applied to the Student Profile Attendance tab
+rather than to the surface the request named. Kept here because the measurements
+below remain the evidence about that card. Presentation only.
 The overall attendance figure and the four status counts sat in one flex ROW, so the
 headline number was a 96px column **beside** its own breakdown with the rest of that
 card's height left blank. The summary is now a **column**: the metric on its own
@@ -943,6 +946,28 @@ landmarks, heading semantics and focus behaviour unchanged; the **Homework tab i
 byte-identical** and a guard pins it so, since the two tabs share `.sp-tiles`. Nine
 guards added (**2778 → 2787**), mutation-tested: restoring the side-by-side row
 fails #46/#51, and a fixed inline `repeat(4,1fr)` grid fails #38/#47/#49.
+
+**Sprint 13 Gate 6.5 — Gate 6.4 reverted; it was applied to the wrong surface.** The
+clarification names the **circular attendance percentage metric**, and the Student
+Profile Attendance tab has no ring — its headline is the comp's large text
+percentage. The Gate 6.4 polish is therefore **fully reverted**: `src/` is
+byte-identical to Gate 6.3 (`67ed574`), `.sp-summary` is gone from `globals.css`,
+and the summary card and its skeleton are back to the comp's horizontal
+composition. Gate 6.3's Overview fix, the Homework ring's label bound, Gate 6's
+`.sp-tiles` hardening, both Sprint 13 tabs and all backend work are untouched, and
+three guards pin that.
+
+**The `/reviews` half is blocked, on evidence rather than on doubt.** Every
+`/reviews` surface was read: the list page is a student card grid with no
+attendance figure at all; the monthly report and the composer each show **three
+flat tiles** (Overall, Attendance, Homework) and no ring; the Reviews tab's
+`MetricCard` is a flat number. Reviews' only donut is `ScoreDonut`, whose subject is
+the 1–5 **score distribution**. Exactly one surface in the application matches the
+description — a circular attendance percentage beside **four** status cards with
+empty space under the ring — and it is **`/attendance`**'s "This month" card
+(`src/app/(app)/attendance/page.tsx`), not a Reviews screen. The route named and the
+surface described disagree, so no layout was applied to either: that choice is the
+user's, and this gate exists because it was assumed once already.
 
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
