@@ -39,6 +39,9 @@ function code(...parts: string[]): string {
 const TAB = code("src", "components", "attendance", "student-attendance.tsx");
 const TAB_RAW = raw("src", "components", "attendance", "student-attendance.tsx");
 const PROFILE = code("src", "app", "(app)", "students", "[id]", "page.tsx");
+/* Read only so Gate 6.4 can prove it did NOT change: the two tabs share
+ * `.sp-tiles`, so a careless change here would have moved Homework too. */
+const HW = code("src", "components", "homework", "student-homework.tsx");
 const API = code("src", "components", "attendance", "api.ts");
 const CSS = raw("src", "app", "globals.css");
 const VI = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
@@ -524,5 +527,109 @@ describe("Student Profile — one attendance answer, not two (Gate 6.3)", () => 
     assert.equal(rateLabel(0), "0%", "a real zero is still a real answer");
     assert.equal(rateLabel(100), "100%");
     assert.notEqual(rateLabel(null), "0%", "the two must never coincide");
+  });
+});
+/* =========================================================================
+ * 9. Gate 6.4 — the summary reads top-down: overall metric, then breakdown
+ *
+ * The rate and the four status counts used to sit in ONE FLEX ROW, so the
+ * headline figure was a narrow column BESIDE its own breakdown and the card
+ * below its two short lines was empty. Gate 6.4 stacks them. It is a
+ * composition change and nothing else: this section pins the new order AND
+ * that the data, the labels, the colours and the ONE responsive rule are all
+ * untouched by it.
+ * ====================================================================== */
+
+describe("Attendance tab — metric above, breakdown below (Gate 6.4)", () => {
+  const SUMMARY = TAB.slice(TAB.indexOf('aria-label={t("Attendance")}'), TAB.indexOf("Monthly attendance"));
+
+  it("46. the summary is a COLUMN, and the stylesheet says so", () => {
+    /* M1 GUARD. Restoring the side-by-side composition means dropping
+     * `.sp-summary` for the old inline row, and every assertion here fails. */
+    assert.equal([...TAB.matchAll(/className="sp-summary"/g)].length, 2,
+      "the live summary AND the skeleton, so the shape does not change on load");
+    const flat = CSS.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, "");
+    assert.ok(flat.includes(".sp-summary{display:flex;flex-direction:column;gap:var(--gap);}"),
+      "the stack is the stylesheet's, and its gap is the existing density token");
+    assert.ok(!/flexWrap/.test(SUMMARY), "the wrapping row it replaces is gone");
+    assert.ok(!/flexDirection: "row"/.test(SUMMARY), "and was not merely renamed");
+  });
+
+  it("47. the rate is rendered BEFORE the four counts", () => {
+    const rate = SUMMARY.indexOf("rateLabel(data.rate)");
+    const tiles = SUMMARY.indexOf('className="sp-tiles"');
+    assert.ok(rate > -1 && tiles > -1, "both are in the summary card");
+    assert.ok(rate < tiles, "overall metric first, breakdown second");
+    assert.ok(SUMMARY.indexOf('className="sp-summary"') < rate, "both inside the stack");
+  });
+
+  it("48. all four counts survive, in the shared order", () => {
+    /* The order is `ATTENDANCE_DISPLAY_ORDER`'s, not this file's, so moving the
+     * row cannot have reordered it — but the counts must still all be read. */
+    assert.ok(SUMMARY.includes("ATTENDANCE_DISPLAY_ORDER.map"), "Present, Late, Absent, Excused");
+    for (const c of ["data.counts.present", "data.counts.late", "data.counts.absent", "data.counts.excused"]) {
+      assert.ok(SUMMARY.includes(c), `${c} is still rendered`);
+    }
+    assert.ok(SUMMARY.includes("ATTENDANCE_COLORS[status]"), "and keeps its semantic colour");
+    assert.ok(SUMMARY.includes("{t(status)}"), "and its own label");
+  });
+
+  it("49. the four cards still ride the ONE approved responsive rule", () => {
+    /* M2 GUARD. Giving the row its own fixed inline 4-column grid would beat
+     * every container rule written against it — the exact defect Gate 6 fixed
+     * — and this fails the moment such a template appears. */
+    assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template anywhere in the tab");
+    assert.ok(!/grid-template-columns/.test(TAB), "not in a style string either");
+    assert.ok(!/\.sp-summary\{[^}]*grid-template-columns/.test(CSS.replace(/\s+/g, "")),
+      "the new block declares no column count of its own");
+    assert.equal((CSS.match(/@container sp-page/g) ?? []).length, 1,
+      "still exactly one Student Profile container query");
+    assert.ok(/\.sp-tiles\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(CSS),
+      "4 -> 2 is still declared once, and still only there");
+  });
+
+  it("50. no viewport breakpoint was added for this layout", () => {
+    for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
+      assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
+    }
+    assert.ok(!CSS.includes("@media (max-width:600px)"), "600 stays a container query");
+  });
+
+  it("51. nothing is stretched to match anything, and nothing scrolls sideways", () => {
+    /* The tiles were `flex:1;minWidth:220` INSIDE a row; in a column those would
+     * stretch the grid to the card's leftover height and hold a 220px floor at
+     * 320px. Both are gone with the row that needed them. */
+    assert.ok(!/className="sp-tiles" style=/.test(TAB), "the tile row carries no inline sizing at all");
+    assert.ok(!/minWidth: 220/.test(TAB), "no width floor that a phone cannot meet");
+    assert.ok(!SUMMARY.includes("height:"), "the metric is as tall as its own lines");
+    assert.ok(!TAB.includes("overflowX"), "cards fit, they do not scroll sideways");
+  });
+
+  it("52. it is presentation only — the read model and its formatting are untouched", () => {
+    /* The layout move may not have become a data change. Same single endpoint,
+     * same server figure through the same formatter, still no arithmetic. */
+    assert.ok(SUMMARY.includes("rateLabel(data.rate)"), "the server's own rate, through the shared formatter");
+    assert.ok(!/\bMath\.round/.test(TAB) && !/\.filter\(/.test(TAB) && !/\.sort\(/.test(TAB),
+      "the tab still derives nothing");
+    assert.ok(!/\b0%/.test(SUMMARY), "null is still the em dash, never 0%");
+  });
+
+  it("53. the accessible names and the heading semantics did not move", () => {
+    assert.ok(TAB.includes('<section style={panel} aria-label={t("Attendance")}>'),
+      "the summary is still a labelled section");
+    for (const label of ["Monthly attendance", "Attendance timeline", "Recent absences", "Recent late arrivals"]) {
+      assert.ok(TAB.includes(`aria-label={t("${label}")}`), `${label} keeps its landmark`);
+    }
+    assert.ok(!/<h[1-6]/.test(SUMMARY), "the summary gained no heading it never had");
+  });
+
+  it("54. the HOMEWORK tab was not touched by this gate", () => {
+    /* `.sp-tiles` is shared, so an over-broad change here would have moved a tab
+     * this gate does not own. Homework keeps the comp's ring-beside-tiles row. */
+    assert.ok(!HW.includes("sp-summary"), "Homework did not adopt the Attendance stack");
+    assert.ok(/className="sp-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/.test(HW),
+      "its tile row keeps the inline sizing it had inside its own flex row");
+    assert.ok(/display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap"/.test(HW),
+      "and its summary is still the comp's horizontal composition");
   });
 });

@@ -919,6 +919,31 @@ aggregates are **not** repaired here — only Attendance was authorised. The
 save-attendance toast keeps its **PRE-EXISTING ATTENDANCE UX BACKLOG**
 classification.
 
+**Sprint 13 Gate 6.4 — the Attendance summary reads top-down.** Presentation only.
+The overall attendance figure and the four status counts sat in one flex ROW, so the
+headline number was a 96px column **beside** its own breakdown with the rest of that
+card's height left blank. The summary is now a **column**: the metric on its own
+line, centred, then `Present / Late / Absent / Excused` underneath — overall figure
+first, breakdown second.
+
+**`.sp-tiles` was reused, and no responsive rule was duplicated.** The stack is one
+new stylesheet class, `.sp-summary` (`display:flex; flex-direction:column;
+gap:var(--gap)` — the existing density token, so the space above the cards follows
+the `tight`/`airy` preference), and the four cards keep the **same 4 → 2 collapse on
+the same `@container sp-page (max-width:600px)` query**. **No new template, token,
+threshold, container or media query**; the Student Profile still has exactly one
+container query. Two inline properties went with the row that needed them —
+`flex:1` would have stretched the grid to the card's leftover height, and
+`minWidth:220` held a floor a 320px container cannot meet. The skeleton carries the
+same class, so the card does not reshape when the data lands.
+
+**Nothing else moved.** Same endpoint, same `data.rate` through the same
+`rateLabel`, same `null → —` (never `0%`), same order, labels and semantic colours;
+landmarks, heading semantics and focus behaviour unchanged; the **Homework tab is
+byte-identical** and a guard pins it so, since the two tabs share `.sp-tiles`. Nine
+guards added (**2778 → 2787**), mutation-tested: restoring the side-by-side row
+fails #46/#51, and a fixed inline `repeat(4,1fr)` grid fails #38/#47/#49.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

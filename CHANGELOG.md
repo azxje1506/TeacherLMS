@@ -794,6 +794,79 @@ Mutation-tested, four defects introduced and reverted: inferring emptiness from
   PRE-EXISTING ATTENDANCE UX BACKLOG.** No new evidence implicates Sprint 13 and
   nothing was implemented for it.
 
+### Gate 6.4 — the Attendance summary reads top-down
+
+#### The change, and its whole extent
+- **A composition move inside one card.** The overall attendance figure and the
+  four status counts sat in a single flex ROW (`gap:20, flex-wrap:wrap`), so the
+  headline number — the answer the tab exists to give — was a 96px column
+  **beside** its own breakdown, and the card below its two short lines was empty.
+  The summary is now a **column**: the metric on its own line, centred, then the
+  four counts underneath. Reading order is **overall figure first, breakdown
+  second**.
+- **`.sp-summary` is a stylesheet class, not an inline style** —
+  `display:flex; flex-direction:column; gap:var(--gap)` — added to `globals.css`
+  **before** the Settings banner, because everything after that banner is treated
+  as Settings CSS by `tests/settings-propagation.test.ts` #6. The gap is the
+  **existing density token**, so the breathing room above the cards follows the
+  `tight`/`airy` preference like every other stack on the tab instead of ignoring
+  it. No new token, no new number.
+- **The same class is on the skeleton**, so the summary does not change shape when
+  the data arrives.
+
+#### `.sp-tiles` was REUSED, and the responsive rule was not duplicated
+- The four cards are still `.sp-tiles`, with the same **4 → 2 collapse on the same
+  `@container sp-page (max-width:600px)` query** Gate 6 declared. This gate added
+  **no template, no threshold, no container and no media query** — the Student
+  Profile still has exactly one container query and one number. That is the payoff
+  of having moved the tile row into the stylesheet: the composition around it
+  changed without the responsive rule being restated anywhere.
+- **Two inline properties were dropped with the row that needed them**:
+  `flex: 1` and `minWidth: 220` on the tile row. Inside a flex ROW they sized the
+  row; inside a COLUMN `flex:1` would stretch the grid to the card's leftover
+  height (the gate explicitly forbids stretching one side to match the other) and
+  `minWidth:220` would hold a floor a 320px-wide container cannot meet. The tile
+  row now carries **no inline sizing at all**. `minWidth: 96` on the metric block
+  went the same way: in a full-width column it did nothing.
+
+#### Nothing else moved
+- **No data, API, counting or formatting change.** Same single endpoint, same
+  `data.rate` through the same `rateLabel`, same `null → em dash` (never `0%`),
+  same `ATTENDANCE_DISPLAY_ORDER`, same `ATTENDANCE_COLORS`, same
+  **Present → Late → Absent → Excused** order, same counts, same labels.
+- **No accessibility change.** The summary is still a `<section aria-label>`; the
+  other four landmarks are untouched; no heading was added or removed; nothing
+  focusable was introduced, moved or reordered. The metric remains text, read once.
+- **The Homework tab is byte-identical.** It shares `.sp-tiles`, so a careless
+  change here would have moved a tab this gate does not own — its ring-beside-tiles
+  row and its `flex:1, minWidth:220` are pinned unchanged by a new guard.
+
+#### Guards added (2778 → 2787)
+- **#46** the summary is a column and the stylesheet says so (`.sp-summary` on
+  **both** the live card and the skeleton, and the exact CSS declaration);
+  **#47** `rateLabel(data.rate)` is rendered **before** `.sp-tiles`; **#48** all
+  four counts, their shared order and their semantic colours survive; **#49** the
+  cards ride the one approved responsive rule — no inline `gridTemplateColumns`
+  anywhere, no column count in the new block, still one container query; **#50**
+  no viewport breakpoint was added (the allowlist in `tests/finance-ui.test.ts`
+  #122 is not loosened); **#51** nothing is stretched and no width floor or
+  sideways scroll was introduced; **#52** presentation only — no arithmetic, no
+  `filter`/`sort`, no `0%`; **#53** landmarks and heading semantics did not move;
+  **#54** the Homework tab was not touched.
+- **Mutation-tested, both reverted.** **M1** restoring the side-by-side row fails
+  **#46 and #51**. **M2** replacing the cards with a fixed inline
+  `repeat(4,1fr)` grid fails **#38** (Gate 6's banked guard), **#47** and **#49**.
+  *#47 survives M1 by design*: DOM order was already metric-then-cards, so #47
+  pins the required **order** while #46 pins the **stacking** — they are different
+  claims and the pair is deliberate.
+
+#### Scope held
+- **Attendance data, API, counting and the read model are untouched**, as are the
+  Overview metric, the monthly chart, the timeline and both side cards. No design
+  token, no breakpoint, no Homework/Classes/Finance/Reviews change, and the
+  **payment slip stays deferred**. Files changed: `globals.css` (one new block),
+  `student-attendance.tsx` (the summary and its skeleton) and its test file.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

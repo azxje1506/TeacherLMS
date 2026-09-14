@@ -2294,6 +2294,39 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
   .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+/* ---- The summary: the metric first, the breakdown second (Gate 6.4) --------
+
+   THE HIERARCHY WAS SIDEWAYS. The overall attendance figure and the four status
+   counts sat in one flex ROW, so the number this tab exists to answer was a
+   96px column BESIDE its own breakdown rather than above it, and the card below
+   its two short lines was blank. Gate 6.4 stacks them - metric on its own line,
+   the four counts underneath - so the reading order is overall figure, then
+   detail.
+
+   IT IS A COLUMN, NOT A SECOND GRID. The row it replaces was `display:flex`
+   with `flex-wrap:wrap`, which is the shape that produced the sideways
+   hierarchy in the first place. A column with one gap gives the same reading
+   order at every width and needs no threshold of its own to do it.
+
+   AND IT OWNS NO COLUMN COUNT. The four cards are still `.sp-tiles` above, with
+   the same 4 -> 2 collapse on the same 600px container query. This block adds
+   no template, no breakpoint and no container - which is the whole point of
+   having moved the tile row into the stylesheet in Gate 6: the composition
+   around it can change without the responsive rule being restated anywhere.
+
+   THE GAP IS `--gap`, NOT A NEW NUMBER. The breathing room above the cards is
+   the same token every other stack on this tab already uses, so it follows the
+   density preference instead of ignoring it.
+
+   NOTHING IS STRETCHED TO MATCH ANYTHING. The metric is as tall as its own two
+   lines and the tiles are as tall as theirs; neither is padded out to the
+   other's height. */
+.sp-summary{
+  display:flex;
+  flex-direction:column;
+  gap:var(--gap);
+}
+
 /* ==========================================================================
    SETTINGS (Sprint 11)
    ========================================================================== */
