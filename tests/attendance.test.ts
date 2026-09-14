@@ -40,6 +40,9 @@ import {
   draftFrom, isDirty, signatureOf, submitFrom, withAllPresent, withNote, withStatus,
   type Draft,
 } from "../src/components/attendance/draft";
+/* EXECUTED, not scanned: Gate 6.6 asserts the tile order against the shipped
+ * constant the card maps over, so a reorder cannot hide in the component. */
+import { ATTENDANCE_DISPLAY_ORDER } from "../src/components/attendance/attendance-ui";
 import { ATTENDANCE_STATUSES, attendanceSaveSchema } from "../src/lib/schemas";
 import { computeRevenue, attendanceRate } from "../src/lib/finance";
 import { resolvedStatusFor } from "../src/lib/lifecycle";
@@ -111,6 +114,12 @@ const INDEX_PAGE = code("src", "app", "(app)", "attendance", "page.tsx");
 const FINANCE = code("src", "lib", "finance.ts");
 const LESSONS = code("src", "lib", "lessons.ts");
 const MODELS = code("src", "lib", "models.ts");
+/* Gate 6.6 reads these three as well: the stylesheet that now owns the
+ * /attendance summary layout, and the two Student Profile tabs this gate must
+ * prove it did NOT touch. */
+const CSS_RAW = readFileSync(path.join(process.cwd(), "src", "app", "globals.css"), "utf8");
+const SP_TAB = code("src", "components", "attendance", "student-attendance.tsx");
+const HW_TAB = code("src", "components", "homework", "student-homework.tsx");
 
 /* ========================================================== 1-11 eligibility */
 
@@ -930,5 +939,173 @@ describe("Attendance stays inside its own module", () => {
     // A duplicate-key race converges instead of surfacing as a user error.
     assert.ok(!Object.keys(ATTENDANCE_ERROR).includes("save_conflict"));
     assert.ok(SERVICE.includes("isDupKey"));
+  });
+});
+/* ==========================================================================
+ * Gate 6.6 — the /attendance "This month" card reads top-down
+ *
+ * The month's ring and the four counts that decompose it sat in ONE FLEX ROW,
+ * and the tile row wrote its column count INLINE as a flat 2-up. This section
+ * pins the new composition, pins that the stylesheet — not the markup — owns
+ * every column count, and pins that NOTHING about the data moved.
+ *
+ * It is presentation only, so the loudest assertions here are the ones that
+ * would fail if it had quietly become anything else.
+ * ====================================================================== */
+
+describe("/attendance This month — metric above, breakdown below (Gate 6.6)", () => {
+  /* Everything between the card's title and the card that follows it. */
+  const CARD = INDEX_PAGE.slice(
+    INDEX_PAGE.indexOf('{t("This month")}'),
+    INDEX_PAGE.indexOf('{t("Attendance by class")}'),
+  );
+
+  it("the ring is rendered BEFORE the four counts, inside one stacked body", () => {
+    /* M1 GUARD. Restoring the side-by-side row means dropping `.att-month-body`
+     * for an inline flex row, and these clauses fail. */
+    assert.ok(CARD.includes('className="att-month-body"'), "the stack is a class, not an inline style");
+    assert.ok(CARD.includes('className="att-month-ring"'), "and the ring sits in its own centred row");
+    const ring = CARD.indexOf('className="att-month-ring"');
+    const tiles = CARD.indexOf('className="att-month-tiles"');
+    assert.ok(ring > -1 && tiles > -1, "both halves are present");
+    assert.ok(ring < tiles, "overall monthly figure first, breakdown second");
+    assert.ok(!/display: "flex", alignItems: "center", gap: 18/.test(CARD),
+      "the horizontal composition it replaces is gone");
+  });
+
+  it("the COLUMN COUNT is the stylesheet's — no inline grid survives on this card", () => {
+    /* M2 GUARD, and the defect it pins: the tile row used to declare
+     * `minmax(0,1fr) minmax(0,1fr)` inline, a flat 2-up at every width that no
+     * media or container rule could ever have beaten. */
+    assert.ok(!/gridTemplateColumns: "minmax\(0,1fr\) minmax\(0,1fr\)"/.test(CARD),
+      "the inline 2-up template must not come back");
+    assert.ok(!/gridTemplateColumns/.test(CARD), "no inline grid template at all inside the card");
+    assert.ok(!/minWidth: \d/.test(CARD), "and no arbitrary width floor for a phone to overflow");
+    /* `.att-stats` keeps its own inline template — it is NOT this gate's, and the
+     * 620 block already overrides it with `!important`. */
+    assert.ok(INDEX_PAGE.includes('gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)"'),
+      "the statistics PAIR is untouched by this gate");
+  });
+
+  it("the stylesheet declares the stack, the centring and both column counts", () => {
+    const flat = CSS_RAW.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, "");
+    assert.ok(flat.includes(".att-month-body{display:flex;flex-direction:column;gap:18px}"),
+      "a column, at the gap the row already used");
+    assert.ok(flat.includes(".att-month-ring{display:flex;justify-content:center}"), "the ring is centred");
+    assert.ok(flat.includes(".att-month-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"),
+      "four columns wide, with the automatic minimum size removed");
+    /* `minmax(0,…)`, never a bare `1fr`: a `1fr` track is `minmax(auto,1fr)` and
+     * that `auto` floor is what makes four tiles come out unequal and spill. */
+    assert.ok(!flat.includes("grid-template-columns:repeat(4,1fr)"), "never a bare 1fr track");
+  });
+
+  it("it collapses to 2 columns on the card's own width AND on the phone", () => {
+    /* TWO RULES, AND BOTH ARE NEEDED — this is the whole reason the gate could
+     * not be served by a media query alone. `.att-stats` is two-up above 620px
+     * and one-up below, so the card gets WIDER as the viewport gets NARROWER
+     * across that boundary: measured through the real shell, the card is 279px
+     * at a 1099px viewport but 550px at a 620px one. No single `max-width` can
+     * say "two columns at 1099 and four at 430". */
+    assert.ok(/@container att-month \(max-width:320px\)\{\s*\.att-month-tiles\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/.test(CSS_RAW),
+      "the card's own width decides it above the phone breakpoint");
+    assert.ok(CSS_RAW.includes(".att-month-body{container-type:inline-size;container-name:att-month}"),
+      "and the card is the container that is read");
+    const phone = CSS_RAW.slice(CSS_RAW.indexOf("@media (max-width:620px){"));
+    assert.ok(phone.includes(".att-month-tiles{grid-template-columns:repeat(2,minmax(0,1fr)) !important}"),
+      "the phone case rides the Attendance module's EXISTING 620px breakpoint");
+  });
+
+  it("NO new viewport breakpoint was introduced by any of it", () => {
+    /* The allowlist banked in tests/finance-ui.test.ts is not loosened, and could
+     * not be by this block: 320 is a CONTAINER width, not a viewport one. */
+    for (const m of CSS_RAW.matchAll(/@media \(max-width:(\d+)px\)/g)) {
+      assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
+    }
+    assert.ok(!CSS_RAW.includes("@media (max-width:320px)"), "320 is a container query, not a media one");
+    assert.equal((CSS_RAW.match(/@container att-month/g) ?? []).length, 1,
+      "exactly one container query for this card");
+  });
+
+  it("the container is declared for SCREEN only", () => {
+    /* `container-type` implies layout containment, which has no business
+     * reaching a printed page — the same reason Reports, the Student Profile and
+     * Settings all scope theirs. */
+    const at = CSS_RAW.indexOf(".att-month-body{container-type");
+    assert.ok(at > -1, "the container declaration exists");
+    const before = CSS_RAW.slice(0, at);
+    assert.ok(before.lastIndexOf("@media screen{") > before.lastIndexOf("}\n@media"),
+      "the container declaration sits inside @media screen");
+  });
+
+  it("the four counts, their order and their colours are exactly as they were", () => {
+    /* M4 GUARD. The order is `ATTENDANCE_DISPLAY_ORDER`'s, not this file's, so a
+     * reorder has to happen in the shared constant — where the next clause
+     * catches it. */
+    assert.ok(CARD.includes("ATTENDANCE_DISPLAY_ORDER.map"), "rendered from the shared order");
+    assert.ok(CARD.includes("ATTENDANCE_COLORS[status]"), "and the shared semantic colours");
+    assert.deepEqual([...ATTENDANCE_DISPLAY_ORDER], ["Present", "Late", "Absent", "Excused"],
+      "Present -> Late -> Absent -> Excused, and that is the order the card draws");
+    assert.ok(CARD.includes("{t(status)}"), "each count is still NAMED, not colour-only");
+    assert.ok(CARD.includes('borderRadius: 9, padding: "8px 10px"'), "the card styling is untouched");
+  });
+
+  it("each count still reads its OWN summary field", () => {
+    /* M3 GUARD (counts half). A layout move must not have re-pointed a tile at a
+     * different number — the classic silent defect of a refactor like this. */
+    for (const f of ["summary.present", "summary.late", "summary.absent", "summary.excused"]) {
+      assert.ok(CARD.includes(f), `${f} is still the source for its own tile`);
+    }
+  });
+
+  it("the ring still draws summary.rate through the shared helper, and nothing else", () => {
+    /* M3 GUARD (rate half). Geometry, the percentage, the label and the colour
+     * are earlier gates' code and are pinned verbatim: this gate only MOVED the
+     * ring. */
+    assert.ok(CARD.includes("strokeDasharray={ringDash(summary.rate)}"), "the shared dash helper");
+    assert.ok(CARD.includes("{summary.rate}%"), "the server's own figure, not a derived one");
+    assert.ok(CARD.includes('t("attended")'), "the label is unchanged");
+    assert.ok(CARD.includes('cx="50" cy="50" r="40"') && CARD.includes('strokeWidth="9"'), "ring geometry unchanged");
+    assert.ok(CARD.includes('viewBox="0 0 100 100"') && CARD.includes('width="96" height="96"'), "and its size");
+    assert.ok(CARD.includes('transform="rotate(-90 50 50)"'), "and its start angle");
+  });
+
+  it("the card derives no arithmetic of its own", () => {
+    for (const f of ["Math.round", "reduce(", "/ 100", "* 100", "toFixed"]) {
+      assert.ok(!CARD.includes(f), `${f} is the read model's business, not the card's`);
+    }
+    assert.ok(!/\.filter\(|\.sort\(/.test(CARD), "no client re-bucketing of the four counts");
+  });
+
+  it("the loading skeleton settles into the card without moving", () => {
+    /* A flat height cannot match a card that is 236px tall with one row of counts
+     * and 296px with two, so the skeleton carries the SAME three classes and the
+     * same type metrics and derives both heights from the same rules. Measured
+     * in Chrome through the real shell: jump = 0 at every width from 1440 to 320. */
+    const skel = INDEX_PAGE.slice(INDEX_PAGE.indexOf("function SkeletonIndex"));
+    assert.ok(skel.includes('className="att-month-body"'), "the skeleton uses the same stack");
+    assert.ok(skel.includes('className="att-month-tiles"'), "and the same tile row");
+    assert.ok(skel.includes('className="att-month-ring"'), "and the same centred ring row");
+    assert.ok(!/height: 160[\s\S]{0,120}height: 160/.test(skel),
+      "the old pair of flat 160px placeholders is gone");
+    assert.ok(!/gridTemplateColumns: "minmax\(0,1fr\) minmax\(0,1fr\)"/.test(skel),
+      "and the skeleton did not keep the inline 2-up either");
+  });
+
+  it("no horizontal-scroll escape hatch was added", () => {
+    assert.ok(!CARD.includes("overflowX"), "the counts must fit, not scroll sideways");
+    assert.ok(!CARD.includes("100vw"), "no viewport-width element inside the shell");
+  });
+
+  it("this gate touched the /attendance INDEX and nothing else", () => {
+    /* The register screen shares the module and the `.att-` prefix, and the two
+     * Student Profile tabs share the shape — none of them is this gate's. */
+    assert.ok(!TAKE_PAGE.includes("att-month"), "the register screen is untouched");
+    assert.ok(!SP_TAB.includes("att-month") && !SP_TAB.includes("sp-summary"),
+      "the Student Profile Attendance tab keeps its Gate 6.3 composition");
+    assert.ok(/className="sp-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/.test(SP_TAB),
+      "including the inline sizing its own flex row needs");
+    assert.ok(!HW_TAB.includes("att-month"), "and Homework is untouched");
+    assert.ok(/display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap"/.test(HW_TAB),
+      "Homework keeps the comp's horizontal composition and its Gate 6.3 ring");
   });
 });

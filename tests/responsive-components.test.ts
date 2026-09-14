@@ -156,23 +156,56 @@ describe("Attendance — KPI grids state a mobile column count", () => {
     assert.equal(uses, 2, "the real grid and the skeleton must both opt in");
   });
 
-  it("9. the This month card can fit its ring beside its tiles on a phone", () => {
-    /* The arithmetic the stack exists for. The card is 20px padded a side, the
-     * ring is a 96px non-shrinking element and the gap beside it is 18px; what
-     * remains has to hold two tiles. Unstacked, the card was ~40% of the content
-     * box and this came out negative — which is what "the card breaks" was. */
-    const RING = 96, GAP = 18, CARD_PAD = 20 * 2, TILE_GAP = 8;
+  it("9. the This month card gives its tiles the WHOLE card width on a phone", () => {
+    /* REWRITTEN IN GATE 6.6, THE GATE THAT MADE THE OLD FORM FALSE — and it was
+     * rewritten rather than deleted because it would otherwise have gone on
+     * PASSING while meaning nothing, which is worse than failing.
+     *
+     * As banked, this subtracted a 96px ring and an 18px gap from the row before
+     * dividing what was left between two tiles, because the ring sat BESIDE the
+     * counts. Gate 6.6 stacks them — ring above, counts below — so the ring
+     * takes no row width at all and the arithmetic is simply the card. The
+     * invariant is untouched: each count must still have a readable tile at
+     * every supported phone width. It is now satisfied with far more room, and
+     * this states the real figure rather than the one the old row produced. */
+    const CARD_PAD = 20 * 2, TILE_GAP = 8;
     for (const phone of PHONES) {
-      const tiles = contentWidth(phone) - CARD_PAD - RING - GAP;
-      const perTile = (tiles - TILE_GAP) / 2;
+      const perTile = (contentWidth(phone) - CARD_PAD - TILE_GAP) / 2;
       assert.ok(perTile >= 80, `at ${phone}px each KPI tile gets ${perTile}px`);
     }
+    /* And the premise itself, so this can never drift back into arithmetic about
+     * a row that is not there: on a phone the counts are two columns, stated in
+     * the stylesheet, and the ring is in its own centred row above them. */
+    assert.match(MOBILE, /\.att-month-tiles\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\) !important\}/);
+    /* Counted, not merely found — exactly as #8 counts `.att-stats`. The
+     * skeleton carries the same class, so a bare `includes` would still pass
+     * with the loaded card restored to a row and only the placeholder stacked. */
+    assert.equal(ATT_INDEX.split('className="att-month-ring"').length - 1, 2,
+      "the real card and the skeleton must both put the ring in its own row");
+    assert.equal(ATT_INDEX.split('className="att-month-body"').length - 1, 2,
+      "and both must stack, or the skeleton jumps on load");
   });
 
-  it("10. the tile grid is a flex child that may shrink", () => {
-    // Without min-width:0 a flex child is floored at its content's size, so the
-    // tiles — not the space available — would decide the card's width.
-    assert.ok(ATT_INDEX.includes('flex: 1, minWidth: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)"'));
+  it("10. nothing lets the tiles decide the card's width", () => {
+    /* ALSO REWRITTEN IN GATE 6.6. As banked this pinned the literal inline
+     * `flex: 1, minWidth: 0, display:"grid", gridTemplateColumns:"minmax(0,1fr)
+     * minmax(0,1fr)"` — correct while the tile grid was a FLEX CHILD beside the
+     * ring, where without `min-width:0` it would have been floored at its own
+     * content size.
+     *
+     * It is not a flex child any more: it is a block-level grid in a column, so
+     * it takes the card's width by construction and there is no flex floor left
+     * to remove. WHAT THE GUARD PROTECTS IS UNCHANGED — the tiles must never be
+     * what decides the card's width — so it is now asserted at the two places
+     * that can still break it: no inline sizing on the row, and no track with an
+     * automatic minimum size in the template that replaced it. */
+    assert.ok(ATT_INDEX.includes('<div className="att-month-tiles">'),
+      "the tile row carries a class and no inline sizing at all");
+    assert.ok(!ATT_INDEX.includes('gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)"'),
+      "the inline 2-up template is gone, from the card and from the skeleton");
+    const flat = CSS.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, "");
+    assert.ok(flat.includes(".att-month-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"),
+      "and every track is minmax(0,…) — a bare 1fr is minmax(auto,1fr), which IS the content floor");
   });
 
   it("11. the register's five KPI cards go to two columns", () => {

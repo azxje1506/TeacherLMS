@@ -920,6 +920,115 @@ Mutation-tested, four defects introduced and reverted: inferring emptiness from
   #47**, and was reverted. **M2 and M3 could not be run**: both mutate a
   `/reviews` layout that does not exist.
 
+### Gate 6.6 — /attendance "This month" reads top-down
+
+#### The change
+- **The surface is `src/app/(app)/attendance/page.tsx`**, the "This month" card of
+  the Attendance index — the one surface Gate 6.5's audit found that actually
+  matches the request: a circular attendance percentage with **four** status cards
+  beside it. The ring and the counts that decompose it were one flex row
+  (`align-items:center; gap:18`), so the month's headline figure read as a sibling
+  of its own breakdown and the card's height under the ring was empty. It is now a
+  column: **ring centred on its own row, the four counts underneath.**
+- **Presentation only.** `summary.rate`, `ringDash(summary.rate)`, the four
+  counts' own fields, the `attended` label, ring geometry (`r=40`, stroke 9, 96px
+  on a 100 viewBox, `rotate(-90)`), the semantic colours, the labels and the
+  **Present → Late → Absent → Excused** order are all untouched, and the card
+  still derives no arithmetic of its own.
+
+#### The inline column count is gone, and `.att-*` owns the layout
+- The tile row declared `gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)"`
+  **inline** — a flat 2-up at every width that no media or container rule could
+  ever have overridden. It is the same escape this stylesheet already records
+  against `.att-summary`, `.att-stats`, `.kpi-grid` and `.ov-grid`.
+- Three Attendance-owned classes replace it: **`.att-month-body`** (the column,
+  at the 18px gap the row already used), **`.att-month-ring`** (centring) and
+  **`.att-month-tiles`** (the template). No Student Profile class was reused —
+  `.sp-tiles` and `.sp-split` stay the Student Profile's.
+
+#### Why the collapse needs BOTH a container query and the existing breakpoint
+- **This card's width is not a function of the viewport.** It is the `1fr` track
+  of `.att-stats`, which is two-up above 620px and one-up below it, so the card
+  gets **wider as the viewport gets narrower** across that boundary. Measured in
+  Chrome through the real shell:
+
+  | viewport | 1440 | 1280 | 1101 | 1099 | 860 | 767 | 620 | 430 | 390 | 320 |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | card width | 421 | 355 | 280 | 279 | 268 | 229 | **550** | 360 | 320 | 250 |
+
+- No single `max-width` can say "two columns at 1099 and four at 430". The
+  existing 1100px breakpoint would not have helped either: **at a 1101px viewport
+  the card is 280px**, which is four tiles of 64px — the ~63px squeeze this
+  stylesheet already names as the defect.
+- So the phone case rides the Attendance module's **existing 620px breakpoint**
+  (no new viewport breakpoint was added anywhere), and one container query reads
+  the card's real width for everything above it.
+- **320 is measured, not picked.** The four labels stop fitting on one line at
+  **262px** of card width — the bound is `Có phép` / `Có mặt`, and it is a
+  **geometric bound with no language branch**, exactly like the Homework ring's
+  label bound. 320 sits at the midpoint of the measured gap between 279 (the
+  widest card that must collapse) and 355 (the narrowest that must not), clearing
+  the real layout by ~41px on **both** sides and the text floor by 58.
+- `container-type` is declared inside `@media screen`, like Reports', the Student
+  Profile's and Settings' — it implies layout containment, which has no business
+  on a printed page.
+
+#### Measured result (MEASURED, not a human pass)
+Headless Chrome over CDP, harness generated **from the shipped `globals.css`** and
+the real shell chain: **4 columns in one row at 1440 and 1280** (tiles 99.3 and
+82.7px), **2×2 from 1101 down to 320**, ring centre offset **0.0px at every
+width**, tiles always equal, **no wrapped label in Vietnamese**, and **zero
+document overflow at all eleven widths**. Monotonic — four on the desktop, two
+everywhere else, with no flip-flop on resize.
+
+#### The skeleton now settles without moving
+A flat height cannot match a card that is **236px** tall with one row of counts and
+**296px** with two, and which of those it is depends on the card's own width. The
+skeleton carries the **same three classes and the same type metrics**, so both
+heights come from the same rules: measured jump **0px at every width**, against
+14px before this gate. It stays the blank placeholder it has always been.
+
+#### Two banked guards were REWRITTEN in the gate that made them false
+- **`tests/responsive-components.test.ts` #10** pinned the literal inline
+  `flex: 1, minWidth: 0, … "minmax(0,1fr) minmax(0,1fr)"` — correct while the tile
+  grid was a flex child beside the ring, where without `min-width:0` it would have
+  been floored at its own content size. It is not a flex child any more. The
+  invariant is unchanged — the tiles must never decide the card's width — and is
+  now asserted where it can still break: no inline sizing on the row, and no track
+  with an automatic minimum in the template that replaced it.
+- **#9 was worse: it would have gone on PASSING while meaning nothing.** It
+  subtracted a 96px ring and an 18px gap from the row before dividing what was
+  left between two tiles. The ring takes no row width any more, so the arithmetic
+  was about a layout that no longer exists. Rewritten to the real figure, plus the
+  premise itself — and the class counts are counted, not merely found, because the
+  skeleton carries the same classes and a bare `includes` would have passed with
+  only the placeholder stacked.
+
+#### Guards added (2781 → 2794)
+- Thirteen in `tests/attendance.test.ts`: ring before the counts inside one
+  stacked body; no inline grid template or width floor anywhere on the card; the
+  stylesheet's three declarations pinned exactly, including `minmax(0,…)` on every
+  track; both collapse rules, each in its own place; no new viewport breakpoint and
+  exactly one container query; the container declared for screen only; the four
+  counts, their shared order (asserted against the **executed** constant) and their
+  colours; each count reading its own `summary.*` field; the ring's helper,
+  figure, label and full geometry; no arithmetic; the skeleton's shared classes;
+  no overflow hatch; and that the register screen, the Student Profile Attendance
+  tab and Homework were all left alone.
+- **Mutations, all four run and reverted:** **M1** (restore the side-by-side row)
+  fails the composition guard and rewritten #9; **M2** (restore inline 2×2
+  ownership) fails the ownership guard and rewritten #10; **M3** (derive the
+  percentage in the card instead of rendering `summary.rate`) fails the ring guard
+  and the no-arithmetic guard; **M4** (reorder the status cards at the shared
+  constant) fails the order guard.
+
+#### Scope held
+- Changed: `src/app/(app)/attendance/page.tsx`, `src/app/globals.css` and two test
+  files. **`student-attendance.tsx`, `student-homework.tsx`, `student-profile.ts`
+  and `student-profile-service.ts` are all UNCHANGED**, as is the register screen;
+  **no backend file changed**, no endpoint, no read model, no schema, no register
+  or save behaviour, and no new data state. The payment slip stays deferred.
+
 ## Unreleased — Notifications (Sprint 12) — **shipped, human-verified, merged, production verified, CLOSED**
 
 ### Gate 1 — roadmap discovery

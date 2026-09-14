@@ -969,6 +969,47 @@ empty space under the ring — and it is **`/attendance`**'s "This month" card
 surface described disagree, so no layout was applied to either: that choice is the
 user's, and this gate exists because it was assumed once already.
 
+**Sprint 13 Gate 6.6 — /attendance "This month" reads top-down.** The surface Gate
+6.5's audit identified, now authorised: the Attendance index's "This month" card,
+the app's only circular attendance percentage with four status cards beside it. The
+ring and the counts that decompose it were one flex row, so the month's headline
+figure read as a sibling of its own breakdown and the card below the ring was empty.
+It is now a column — **ring centred on its own row, `Present / Late / Absent /
+Excused` underneath.** Presentation only: `summary.rate`, `ringDash`, the four
+counts' own fields, the `attended` label, ring geometry, the semantic colours, the
+labels and the order are all untouched.
+
+**The inline column count is gone.** The tile row declared `minmax(0,1fr)
+minmax(0,1fr)` **inline** — a flat 2-up at every width that no rule could override,
+the same escape this stylesheet already records against `.att-summary`,
+`.att-stats`, `.kpi-grid` and `.ov-grid`. Three Attendance-owned classes replace it
+(`.att-month-body`, `.att-month-ring`, `.att-month-tiles`); no Student Profile class
+was reused.
+
+**The collapse needs a container query *and* the module's existing breakpoint,
+because this card's width is not a function of the viewport.** It is the `1fr`
+track of `.att-stats`, two-up above 620px and one-up below, so the card gets *wider*
+as the viewport gets *narrower* across that boundary — measured through the real
+shell: 421px at 1440, 279px at 1099, but **550px at 620**. No single `max-width`
+can say "two columns at 1099 and four at 430", and the existing 1100px breakpoint
+would not help either: at a 1101px viewport the card is 280px, four tiles of 64px —
+the ~63px squeeze this stylesheet already names as the defect. So the phone case
+rides the **existing 620px Attendance breakpoint** (no new viewport breakpoint
+anywhere) and one container query reads the card's real width above it. **320 is
+measured**: the four labels stop fitting on one line at 262px of card width — the
+bound is the Vietnamese `Có phép`/`Có mặt`, geometric and with no language branch —
+and 320 is the midpoint of the measured gap between 279 and 355, clearing the real
+layout by ~41px on both sides.
+
+**Measured (not a human pass):** 4 columns in one row at 1440/1280, 2×2 from 1101
+down to 320, ring centre offset **0.0px at every width**, equal tiles, no wrapped
+Vietnamese label, **zero horizontal overflow at all eleven widths**. The skeleton
+now carries the same classes and type metrics, so it settles with a **0px jump**
+(14px before). Two banked guards were **rewritten in the gate that made them
+false** — one pinned the inline flex sizing this gate removes, and the other would
+have gone on passing while computing arithmetic about a row that no longer exists.
+Thirteen guards added (**2781 → 2794**), all four mutations run and reverted.
+
 **In progress (incremental):** Students, Parents, Classes, Lessons and
 Calendar screens — each ported
 from the design comp with its create/edit drawer, list/empty/loading/error

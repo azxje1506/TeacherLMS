@@ -78,22 +78,36 @@ export default function AttendancePage() {
             <div className="att-stats" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)", marginBottom: "var(--gap)" }}>
               <div style={{ ...cardStyle, padding: "18px 20px" }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 12 }}>{t("This month")}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
-                  <div style={{ position: "relative", flexShrink: 0, width: 96, height: 96 }}>
-                    <svg width="96" height="96" viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="9" />
-                      <circle
-                        cx="50" cy="50" r="40" fill="none" strokeWidth="9" strokeLinecap="round"
-                        strokeDasharray={ringDash(summary.rate)} strokeDashoffset="0"
-                        transform="rotate(-90 50 50)" style={{ stroke: "var(--green)" }}
-                      />
-                    </svg>
-                    <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.05 }}>
-                      <span style={{ fontSize: 20, fontWeight: 600, color: "var(--fg)" }}>{summary.rate}%</span>
-                      <span style={{ fontSize: 8.5, color: "var(--muted-2)" }}>{t("attended")}</span>
+                {/* THE RATE FIRST, THE BREAKDOWN UNDER IT (Gate 6.6). This was one
+                  * flex ROW — a 96px ring beside its own four counts — so the
+                  * month's headline figure read as a sibling of its breakdown
+                  * rather than as its heading, and the card's height below the
+                  * ring was empty. `.att-month-body` is a column in globals.css.
+                  *
+                  * THE COLUMN COUNT IS THE STYLESHEET'S NOW. The tile row used to
+                  * write `minmax(0,1fr) minmax(0,1fr)` INLINE — a hard 2-up at
+                  * every width, which no media or container rule could ever have
+                  * overridden. See the `.att-month-*` block in globals.css for
+                  * the two rules that own it and why one of them has to be a
+                  * container query. */}
+                <div className="att-month-body">
+                  <div className="att-month-ring">
+                    <div style={{ position: "relative", flexShrink: 0, width: 96, height: 96 }}>
+                      <svg width="96" height="96" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="9" />
+                        <circle
+                          cx="50" cy="50" r="40" fill="none" strokeWidth="9" strokeLinecap="round"
+                          strokeDasharray={ringDash(summary.rate)} strokeDashoffset="0"
+                          transform="rotate(-90 50 50)" style={{ stroke: "var(--green)" }}
+                        />
+                      </svg>
+                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.05 }}>
+                        <span style={{ fontSize: 20, fontWeight: 600, color: "var(--fg)" }}>{summary.rate}%</span>
+                        <span style={{ fontSize: 8.5, color: "var(--muted-2)" }}>{t("attended")}</span>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 8 }}>
+                  <div className="att-month-tiles">
                     {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                       const c = ATTENDANCE_COLORS[status];
                       const count = status === "Present" ? summary.present
@@ -238,7 +252,28 @@ function SkeletonIndex() {
   return (
     <div style={{ display: "grid", gap: "var(--gap)" }}>
       <div className="att-stats" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.4fr)", gap: "var(--gap)" }}>
-        <div style={{ ...cardStyle, height: 160 }} />
+        {/* THE SAME CLASSES AND THE SAME TYPE METRICS AS THE LOADED CARD, so this
+          * settles into the real one without moving (Gate 6.6). A flat `height`
+          * could not: the card is 236px tall while the counts are one row and
+          * 296px once they are two, and which of those it is depends on the
+          * card's own width. Empty boxes carrying the real font sizes and
+          * padding derive both heights from the same rules the loaded card uses,
+          * so nothing here needs updating when those change — and the card stays
+          * the blank placeholder it has always been. */}
+        <div style={{ ...cardStyle, padding: "18px 20px" }}>
+          <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 12 }}>&nbsp;</div>
+          <div className="att-month-body">
+            <div className="att-month-ring"><div style={{ width: 96, height: 96 }} /></div>
+            <div className="att-month-tiles">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} style={{ borderRadius: 9, padding: "8px 10px" }}>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>&nbsp;</div>
+                  <div style={{ fontSize: 10.5 }}>&nbsp;</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
         <div style={{ ...cardStyle, height: 160 }} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "var(--gap)" }}>

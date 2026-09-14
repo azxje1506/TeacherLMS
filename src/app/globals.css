@@ -563,6 +563,13 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
      .ov-grid above already use — a mobile column count, stated once, here. */
   .att-stats{grid-template-columns:minmax(0,1fr) !important}
   .att-summary{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+  /* The index's "This month" counts join the same rule (Gate 6.6). Collapsing
+     .att-stats hands that card the FULL content width — 550px at a 620px
+     viewport — so its own container query would happily keep four columns here;
+     this states the phone case the container cannot see. `!important` for the
+     reason every rule in this block carries it: the base template is declared
+     later in the file, so plain weight would lose on source order. */
+  .att-month-tiles{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
   /* Five cards in two columns leave one alone on the last row. The odd card is
      the Attendance rate — the only one carrying --card-2, the design's own
      "this is the total" surface — so it spans the row rather than sitting at
@@ -2292,6 +2299,60 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 @container sp-page (max-width:600px){
   .sp-split{grid-template-columns:minmax(0,1fr)}
   .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* ---- /attendance "This month": the rate first, the breakdown second ---------
+   (Sprint 13 Gate 6.6)
+
+   THE CARD READ SIDEWAYS. The month's attendance ring and the four counts that
+   decompose it sat in one flex row, so the headline figure was a 96px column
+   BESIDE its own breakdown instead of above it, and the card's height under the
+   ring was empty. `.att-month-body` is a column: ring, then counts.
+
+   AND THE TILE ROW HARD-CODED ITS COLUMN COUNT INLINE — `minmax(0,1fr)
+   minmax(0,1fr)`, a flat 2-up at EVERY width, which no media or container rule
+   could ever have overridden. It is the same escape this stylesheet already
+   records against `.att-summary`, `.att-stats`, `.kpi-grid` and `.ov-grid`, and
+   it is fixed the same way: the count lives here now.
+
+   ---- WHY THE COLLAPSE NEEDS A CONTAINER QUERY AND A MEDIA QUERY ------------
+
+   BECAUSE THIS CARD'S WIDTH IS NOT A FUNCTION OF THE VIEWPORT. It is the 1fr
+   track of `.att-stats`, which is two-up above 620px and one-up below it, so the
+   card gets WIDER as the viewport gets narrower across that boundary. Measured,
+   in Chrome, through the real shell:
+
+       viewport   1440   1280   1099    860    767  | 620    430    390    320
+       card       421    355    279     268    229  | 550    360    320    250
+
+   A single `max-width` media rule cannot express that — at 1099px the card is
+   279px and needs two columns, while at 430px it is 360px and comfortably holds
+   four. Worse, the existing 1100px breakpoint would not even help: at a 1101px
+   viewport the card is 282px, which is four tiles of 64px — the ~63px squeeze
+   this stylesheet already calls out as the defect.
+
+   So the viewport rule states the PHONE case, in the Attendance module's own
+   existing 620px breakpoint (see P2 there — no new breakpoint was added), and a
+   container query states the rest, reading the card's real width.
+
+   320 IS MEASURED, NOT PICKED. The four labels stop fitting on one line at 262px
+   of card width — the bound is `Có phép`/`Có mặt`, the Vietnamese labels, and it
+   is a GEOMETRIC bound with no language branch anywhere, exactly as the Homework
+   ring's label bound is. 320 sits at the midpoint of the measured gap between
+   279 (the widest card that must collapse) and 355 (the narrowest that must not),
+   so it clears the real layout by ~41px on BOTH sides and the text floor by 58.
+
+   `container-type` IS DECLARED FOR SCREEN ONLY, like Reports', the Student
+   Profile's and Settings' — it implies layout containment, which has no business
+   reaching a printed page. */
+.att-month-body{display:flex;flex-direction:column;gap:18px}
+.att-month-ring{display:flex;justify-content:center}
+.att-month-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media screen{
+  .att-month-body{container-type:inline-size;container-name:att-month}
+}
+@container att-month (max-width:320px){
+  .att-month-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
 /* ==========================================================================
