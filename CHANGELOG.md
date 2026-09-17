@@ -1,3 +1,57 @@
+## Sprint 13 — Student Profile: Attendance & Homework — DEPLOYED, PRODUCTION-VERIFIED AND CLOSED (2026-09-17)
+
+Merged to `main` by fast-forward at `5746df4`, deployed to production as
+`dpl_6grVYefw4FF6zdfjXLDneu12PDjg`, and closed after the closure audit was
+re-derived from the merged code on `main` rather than from the gate reports.
+
+**Shipped**
+
+- **Student Profile Attendance tab** — read-only, server-derived. Headline rate,
+  the four status counts, the six-month chart, the timeline, recent absences and
+  recent lates, plus the contract's own empty state. The component derives
+  nothing: it formats what `GET /api/attendance/student/:studentId` returns.
+- **Student Profile Homework tab** — read-only, server-derived. Completion ring,
+  Total / Completed / Late / Missing, the timeline and the Missing and Late
+  panels. Assigned-only remains the server's rule: outcome-bearing rows decide
+  the rate, so production reads `done 2 / outcomeTotal 3 = 67%`.
+- **One authoritative Attendance answer per profile.** The Overview tile and the
+  Attendance tab now read the same `attendanceKeys.student(id)` query. The stale
+  stored `Student.attendance` aggregate is no longer read by that tile.
+- **Responsive hardening.** Both tabs share `.sp-metric-summary`,
+  `.sp-metric-value` and `.sp-metric-tiles`. The Student Profile container query
+  moved from `600px` to the measured `725px`, so the tablet state that failed at
+  a `768px` viewport (a `668px` container) now stacks the metric above a 2x2 KPI
+  grid and centres it. It stays a container query: the sidebar changes available
+  width, so the viewport was never the real constraint.
+- **Localized Homework ring label.** `đã hoàn thành` wraps to two centred lines
+  inside a 64px bound, clear of the stroke, through one layout path shared by
+  every language — verified on production at 390px.
+- **`/attendance` monthly summary polish** (authorised cross-sprint,
+  presentation-only). Ring above the breakdown, 128px on desktop and 104px on
+  mobile with proportional internal type, four statuses always rendered, and the
+  4 -> 2x2 responsive collapse. `summary.rate`, `ringDash` and the stroke
+  arithmetic are untouched.
+
+**Verification**
+
+- Automated at the merged SHA: **2801 / 2801 tests**, lint 0 errors (8
+  pre-existing warnings), `tsc --noEmit` clean, production build clean,
+  `git diff --check` clean — run once before the merge and again after it.
+- Human re-test: all seven Gate 7 checks PASS.
+- Production smoke on `teacher-lms-lake.vercel.app`: login, shell and 12 nav
+  items; Overview, Attendance, Homework and Reviews load; Classes and Finance
+  still fall back; unauthenticated `/api/students` still answers 401; measured
+  offsets 0px at 768 and 390 with 2x2 KPIs; `/attendance` 128px/104px with the
+  ring above the cards; zero document overflow at every width measured.
+
+**Deferred, recorded and deliberately not fixed here**
+
+- Attendance save-confirmation UX — pre-existing; the register screen
+  (`/attendance/[lessonId]`) is untouched by this sprint's diff.
+- Finance Class Payment Slip printing — remains deferred; no payment-slip, bank
+  QR or printing code entered the merge.
+- Remaining stale `Student` aggregates such as `Student.classes` — out of scope.
+
 ## Sprint 13 — Gate 6.8: Student Profile tablet summary layout (2026-09-17)
 
 - Root cause: the single Student Profile container query waited until `600px`; at a `768px` viewport the measured profile container was `668px`, leaving the summary in its horizontal desktop row and compressing Homework KPI cards to about `50.8px`.

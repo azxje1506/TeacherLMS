@@ -484,6 +484,43 @@ banked contract, no blocker remains open, and no debug code, temporary comment,
 migration, test-only bypass or unfinished TODO was introduced. **Sprint 11 —
 Settings is closed.**
 
+**Sprint 13 — Student Profile: Attendance & Homework: implemented, human-verified, merged, production verified and CLOSED.** The two
+placeholder tabs on the Student Profile become real, and that is the whole
+surface: **no Classes tab, no Finance tab, no payment UI, no payment slip, no
+homework submission writer** — those remain the fallback the earlier sprints
+shipped, and Payment Slip printing stays deferred. Both new tabs are
+**read-only**: they own no model, collection, schema, index or migration, add no
+write path, and each reads exactly one GET endpoint. The client derives
+**nothing** — not the rate, not a count, not a ring's geometry input — it
+formats what the server already decided.
+
+The sprint also settled a disagreement the profile had with itself. The Overview
+Attendance tile read a stored `Student.attendance` aggregate while the new tab
+derived the truth, so the same screen could show two numbers; the tile now reads
+the same authoritative query as the tab, and **one profile gives one attendance
+answer**.
+
+Presentation was hardened where measurement — not opinion — showed it was wrong.
+The Student Profile summary is owned by a **container query, not a viewport
+rule**, because the sidebar changes the available width; that threshold moved
+from `600px` to a measured `725px`, the point at which a metric plus four
+readable KPI cards stops fitting. Below it both tabs stack the metric on its own
+centred row above a 2x2 KPI grid. The Homework ring's Vietnamese label
+`đã hoàn thành` wraps to two centred lines inside a 64px bound through one
+layout path shared by every language — no locale branch, no fixed offset, no
+`margin-left` centring anywhere in the sprint. The authorised cross-sprint
+polish on `/attendance` puts the monthly ring above its breakdown at 128px on
+desktop and 104px on mobile, with all four statuses always rendered and the
+4 -> 2x2 collapse intact, and changes no attendance arithmetic.
+
+Closed at `5746df4` on `main` after **2801 / 2801** tests, a clean lint, `tsc`,
+build and diff-check, all seven human re-tests PASS, and a production smoke test
+of login, the shell, every profile tab, both fallbacks, the 401 on an
+unauthenticated API read, and the measured responsive behaviour at 1440, 768 and
+390. Known backlog carried forward, unfixed and recorded: the pre-existing
+Attendance save-confirmation UX, Finance Class Payment Slip printing, and the
+remaining stale `Student` aggregates such as `Student.classes`.
+
 **Sprint 12 — Notifications: implemented, human-verified, merged, production verified and CLOSED.** The numbered
 priority list in [`PROJECT_RULES.md`](./PROJECT_RULES.md) runs *1. Students … 9.
 Settings* and was fully consumed by Sprint 11, so it names no successor — but
