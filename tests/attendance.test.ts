@@ -1123,8 +1123,8 @@ describe("/attendance This month — hierarchy and responsive metric scale (Gate
     assert.ok(!TAKE_PAGE.includes("att-month"), "the register screen is untouched");
     assert.ok(!SP_TAB.includes("att-month") && !SP_TAB.includes("sp-summary"),
       "the Student Profile Attendance tab keeps its Gate 6.3 composition");
-    assert.ok(/className="sp-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/.test(SP_TAB),
-      "including the inline sizing its own flex row needs");
+    assert.ok(/className="sp-tiles sp-metric-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/.test(SP_TAB),
+      "including the inline sizing its wide flex row needs");
     assert.ok(!HW_TAB.includes("att-month"), "Homework does not inherit Attendance sizing");
     assert.ok(HW_TAB.includes("ringDash(data.completionRate)"), "Homework's completion semantics remain shared and unchanged");
   });

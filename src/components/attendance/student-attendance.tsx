@@ -1,3 +1,4 @@
+// Student Attendance tab UI — renders the authoritative student attendance read model.
 "use client";
 
 /* The Student Profile's Attendance tab — the comp's "TAB: ATTENDANCE" section
@@ -113,8 +114,8 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
       <div style={column}>
         {/* ---- Summary: the headline rate and the four counts ---------------- */}
         <section style={panel} aria-label={t("Attendance")}>
-          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: 96 }}>
+          <div className="sp-metric-summary" style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <div className="sp-metric-value" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minWidth: 96 }}>
               {/* The server's own figure. `rateLabel` renders `null` as the app's
                 * em dash rather than as 0%. */}
               <div style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-.02em", color: "var(--green)", fontFamily: "'Geist Mono',monospace" }}>
@@ -122,7 +123,7 @@ export function StudentAttendance({ studentId }: { studentId: string }) {
               </div>
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t("Attendance")}</div>
             </div>
-            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
+            <div className="sp-tiles sp-metric-tiles" style={{ flex: 1, minWidth: 220 }}>
               {ATTENDANCE_DISPLAY_ORDER.map((status) => {
                 const c = ATTENDANCE_COLORS[status];
                 const count = status === "Present" ? data.counts.present
@@ -238,12 +239,12 @@ function SkeletonTab() {
     <div className="sp-split" aria-hidden="true">
       <div style={column}>
         <div style={panel}>
-          <div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 96 }}>
+          <div className="sp-metric-summary" style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <div className="sp-metric-value" style={{ minWidth: 96 }}>
               <div style={{ height: 34, width: 84, borderRadius: 9, ...bar }} />
               <div style={{ height: 11, width: 60, borderRadius: 6, marginTop: 6, ...bar }} />
             </div>
-            <div className="sp-tiles" style={{ flex: 1, minWidth: 220 }}>
+            <div className="sp-tiles sp-metric-tiles" style={{ flex: 1, minWidth: 220 }}>
               {[0, 1, 2, 3].map((i) => <div key={i} style={{ height: 56, borderRadius: 11, ...bar }} />)}
             </div>
           </div>

@@ -576,8 +576,6 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
     --att-month-rate-size:22px !important;
     --att-month-label-size:9px !important;
   }
-  .sp-homework-summary{justify-content:center}
-  .sp-homework-tiles{flex-basis:100% !important}
   /* Five cards in two columns leave one alone on the last row. The odd card is
      the Attendance rate — the only one carrying --card-2, the design's own
      "this is the total" surface — so it spans the row rather than sitting at
@@ -2233,17 +2231,15 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    viewport with the rail expanded the tab has less room than at 900px with it
    collapsed, and a viewport rule cannot tell those two apart.
 
-   600px IS THIS TAB'S OWN NUMBER, DERIVED FROM ITS OWN CONTENT — deliberately
-   NOT Reports' 667. That figure was derived from Reports' shell arithmetic and
-   `tests/reports-ui.test.ts` #107 and #116 pin it as the file's single
-   occurrence, so borrowing it would have meant editing two banked guards in a
-   closed sprint to say something they were written not to say. The honest number
-   is the width at which THIS content stops fitting, and the binding constraint
-   is the supporting column: a status badge that must not wrap (about 66px at the
-   longest Vietnamese label), the 8px gap beside it, 40px of card padding and
-   enough left over for a class name to ellipse rather than vanish — about 230px.
-   At 1.6fr / 1fr the right track is one part in 2.6, so 230px of column needs
-   about 598px of container. Rounded to 600.
+   725px IS THIS SCREEN'S OWN NUMBER, DERIVED FROM BOTH SUMMARY ROWS. At the
+   failed 768px viewport Chrome measured 668px of profile container: the 1.6fr
+   summary card became 401px and each Homework KPI only 50.8px wide. The shared
+   row needs 104px for the larger ring, 22px gap, four readable ~60px tiles with
+   three 10px gaps, and 40px card padding: 436px for the first track. Reversing
+   the 1.6fr / 1fr split puts that requirement at about 725px of profile
+   container. At the next measured desktop state (860px viewport) the container
+   is 760px and the approved horizontal composition still fits, so 725 separates
+   the failing tablet state without redesigning desktop.
 
    IT IS NOT A NEW BREAKPOINT. `@container` is not `@media`, so the viewport
    allowlist in `tests/finance-ui.test.ts` #122 — 620, 767, 860, 1099, 1100 — is
@@ -2295,20 +2291,21 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    block above calls out; two are the `.att-summary` treatment, which is this
    app's own answer for exactly this row. 4 -> 2, never 4 -> 1: they are pairs.
 
-   NO NEW THRESHOLD AND NO NEW CONTAINER. It rides the 600px collapse already
-   declared below, so the Student Profile still has exactly one container query,
-   one container-name and one number. Above it the row is the comp's four
-   columns, unchanged. */
+   ONE SHARED THRESHOLD AND NO NEW CONTAINER. Gate 6.8 moves the existing
+   Student Profile query to the measured 725px content bound and lets both tabs
+   share `.sp-metric-summary` / `.sp-metric-tiles`. Above it the approved desktop
+   row remains unchanged; at and below it the metric owns a centred row and the
+   four cards become the existing 2x2 tile system. */
 .sp-tiles{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
   gap:10px;
 }
-@container sp-page (max-width:600px){
+@container sp-page (max-width:725px){
   .sp-split{grid-template-columns:minmax(0,1fr)}
   .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .sp-homework-summary{justify-content:center}
-  .sp-homework-tiles{flex-basis:100% !important}
+  .sp-metric-summary{justify-content:center}
+  .sp-metric-tiles{flex-basis:100% !important}
 }
 
 /* ---- /attendance "This month": the rate first, the breakdown second ---------

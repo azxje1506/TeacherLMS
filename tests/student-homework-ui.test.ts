@@ -416,7 +416,7 @@ describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
      * and an inline declaration beats every container rule written against it.
      * This tab is the worse of the two: its longest label, "Completed", is a
      * single unbreakable word, so its four tiles have the higher floor. */
-    assert.equal([...TAB.matchAll(/className="sp-tiles sp-homework-tiles"/g)].length, 2,
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-metric-tiles"/g)].length, 2,
       "the live row AND the skeleton share the responsive Homework tile class");
     assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template survives in this tab");
   });
@@ -425,7 +425,7 @@ describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
     /* The two tabs draw the same row, so they share the one class. A second
      * per-tab copy of the template is the duplication PROJECT_RULES forbids, and
      * it would be free to drift. */
-    assert.ok(ATT_TAB.includes('className="sp-tiles"'), "Attendance uses it too");
+    assert.ok(ATT_TAB.includes('className="sp-tiles sp-metric-tiles"'), "Attendance uses it too");
     assert.ok(!/gridTemplateColumns/.test(ATT_TAB), "and carries no inline template either");
     assert.equal((CSS.match(/\.sp-tiles\{/g) ?? []).length, 2, "the base rule and its collapse, and no more");
   });
@@ -434,7 +434,7 @@ describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
     assert.equal((CSS.match(/@container sp-page/g) ?? []).length, 1, "one Student Profile container query");
     assert.equal((CSS.match(/container-name:sp-page/g) ?? []).length, 1, "declared once");
     assert.equal((CSS.match(/\.sp-split\{/g) ?? []).length, 2, "Gate 4's two rules, unchanged");
-    assert.ok(!CSS.includes("@media (max-width:600px)"), "600 stays a container width, never a viewport one");
+    assert.ok(!CSS.includes("@media (max-width:725px)"), "725 stays a container width, never a viewport one");
     for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
       assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
     }
@@ -505,40 +505,37 @@ describe("Homework tab — the ring label stays inside the ring (Gate 6.3)", () 
  * 10. Gate 6.7 — mobile completion metric is centred by its container
  * ====================================================================== */
 
-describe("Homework tab — mobile completion ring alignment (Gate 6.7)", () => {
+describe("Homework tab — tablet and mobile completion alignment (Gate 6.8)", () => {
   it("47. the loaded summary and skeleton share one narrow-layout owner", () => {
-    assert.equal([...TAB.matchAll(/className="sp-homework-summary"/g)].length, 2,
-      "loaded and loading states use the same summary container");
-    assert.equal([...TAB.matchAll(/className="sp-homework-ring"/g)].length, 2,
+    assert.equal([...TAB.matchAll(/className="sp-metric-summary"/g)].length, 2,
+      "loaded and loading states use the shared metric summary container");
+    assert.equal([...TAB.matchAll(/className="sp-homework-ring sp-metric-value"/g)].length, 2,
       "and the same ring item class");
-    assert.equal([...TAB.matchAll(/className="sp-tiles sp-homework-tiles"/g)].length, 2,
-      "with the tile row taking the same path after reveal");
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-metric-tiles"/g)].length, 2,
+      "with the shared tile row taking the same path after reveal");
   });
 
-  it("48. the existing Student Profile container query centres only the narrow layout", () => {
-    const query = /@container sp-page \(max-width:600px\)\{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
-    assert.ok(query.includes(".sp-homework-summary{justify-content:center}"),
+  it("48. the measured Student Profile container query centres the tablet and mobile layout", () => {
+    const query = /@container sp-page \(max-width:725px\)\{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+    assert.ok(query.includes(".sp-metric-summary{justify-content:center}"),
       "the flex container, not the ring geometry, owns centering");
-    assert.ok(query.includes(".sp-homework-tiles{flex-basis:100% !important}"),
+    assert.ok(query.includes(".sp-metric-tiles{flex-basis:100% !important}"),
       "tiles occupy their own row so their width cannot push the ring off centre");
-    const phone = CSS.slice(CSS.indexOf("@media (max-width:620px){"));
-    assert.ok(phone.includes(".sp-homework-summary{justify-content:center}"),
-      "the existing phone breakpoint also guarantees centering across the full mobile range");
-    assert.ok(phone.includes(".sp-homework-tiles{flex-basis:100% !important}"),
-      "and gives the mobile tiles their own row without a new breakpoint");
     const base = CSS.slice(CSS.indexOf(".sp-tiles{"), CSS.indexOf("@container sp-page"));
     assert.ok(!base.includes(".sp-homework-summary{") && !base.includes(".sp-homework-tiles{"),
       "the base desktop composition receives no override and remains Gate 6.3-equivalent");
   });
 
   it("49. centering uses no fixed offset, transform or language branch", () => {
-    const summary = TAB.slice(TAB.indexOf('className="sp-homework-summary"'), TAB.indexOf("{/* ---- Homework timeline"));
+    const summary = TAB.slice(TAB.indexOf('className="sp-metric-summary"'), TAB.indexOf("{/* ---- Homework timeline"));
     for (const forbidden of ["marginLeft", "translateX", "left:", "right:", "100vw", "overflowX"]) {
       assert.ok(!summary.includes(forbidden), `${forbidden} must not position the ring`);
     }
     for (const forbidden of ['lang ===', 'lang ==', '"vi"', "'vi'", "đã hoàn thành", "locale"]) {
       assert.ok(!summary.includes(forbidden), `${forbidden} would split localization layout`);
     }
+    assert.ok(!/\.sp-(metric-value|homework-ring)[^{]*\{[^}]*?(margin-left|transform|translate)/i.test(CSS),
+      "ring CSS contains no offset or transform escape hatch");
   });
 
   it("50. Gate 6.3 label geometry and completion semantics survive intact", () => {

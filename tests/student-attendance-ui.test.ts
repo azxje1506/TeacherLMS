@@ -41,6 +41,7 @@ const TAB_RAW = raw("src", "components", "attendance", "student-attendance.tsx")
 const PROFILE = code("src", "app", "(app)", "students", "[id]", "page.tsx");
 const API = code("src", "components", "attendance", "api.ts");
 const CSS = raw("src", "app", "globals.css");
+const ATT_INDEX = code("src", "app", "(app)", "attendance", "page.tsx");
 const VI = JSON.parse(raw("src", "lib", "i18n-vi.json")) as Record<string, string>;
 
 /* =========================================================================
@@ -330,12 +331,11 @@ describe("Attendance tab — the split is the stylesheet's", () => {
 
   it("28. it collapses on a CONTAINER query anchored to the profile screen", () => {
     assert.ok(CSS.includes('[data-screen-label="Student profile"]{container-type:inline-size;container-name:sp-page}'));
-    assert.ok(/@container sp-page \(max-width:600px\)\{[\s\S]*?\.sp-split\{grid-template-columns:minmax\(0,1fr\)\}/.test(CSS),
+    assert.ok(/@container sp-page \(max-width:725px\)\{[\s\S]*?\.sp-split\{grid-template-columns:minmax\(0,1fr\)\}/.test(CSS),
       "one column when the tab's own width is short");
-    /* 600 IS THIS TAB'S OWN NUMBER, not Reports'. Borrowing 667 would have
-     * broken tests/reports-ui.test.ts #107 and #116, which pin it as the file's
-     * single occurrence — so the threshold is derived from this content instead
-     * and those two banked guards stay exactly as they were. */
+    /* 725px is derived from the larger 104px Homework ring plus readable KPI
+     * widths in the 1.6fr summary track. Chrome measured 668px of profile room at
+     * the failed 768px viewport and 760px at the next approved desktop state. */
     assert.equal((CSS.match(/max-width:667px/g) ?? []).length, 1, "Reports' threshold is still unique");
   });
 
@@ -352,7 +352,7 @@ describe("Attendance tab — the split is the stylesheet's", () => {
     for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
       assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
     }
-    assert.ok(!CSS.includes("@media (max-width:600px)"), "600 is a container query, not a media one");
+    assert.ok(!CSS.includes("@media (max-width:725px)"), "725 is a container query, not a media one");
   });
 
   it("31. no horizontal-scroll escape hatch was added", () => {
@@ -432,8 +432,8 @@ describe("Attendance tab — the summary tiles collapse on room (Gate 6)", () =>
      * count could never change on a narrow screen. It is the IDENTICAL fault
      * globals.css already records against the two Attendance screens: "hard-code
      * a desktop column count inline, so the count never changed on a phone". */
-    assert.equal([...TAB.matchAll(/className="sp-tiles"/g)].length, 2,
-      "the live row AND the skeleton, so revealing the data does not reshape the row");
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-metric-tiles"/g)].length, 2,
+      "the live row AND the skeleton share the responsive metric tile owner");
     assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template survives in this tab");
   });
 
@@ -454,14 +454,14 @@ describe("Attendance tab — the summary tiles collapse on room (Gate 6)", () =>
       "4 -> 2 on a narrow container, the .att-summary treatment");
   });
 
-  it("40. it rides the EXISTING container query and adds no threshold", () => {
+  it("40. it rides the ONE Student Profile container query at the measured content threshold", () => {
     assert.equal((CSS.match(/@container sp-page/g) ?? []).length, 1,
       "still exactly one Student Profile container query");
-    const block = CSS.slice(CSS.indexOf("@container sp-page (max-width:600px){"));
+    const block = CSS.slice(CSS.indexOf("@container sp-page (max-width:725px){"));
     const body = block.slice(0, block.indexOf("\n}"));
     assert.ok(body.includes(".sp-split{grid-template-columns:minmax(0,1fr)}"));
     assert.ok(body.includes(".sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}"),
-      "the tiles collapse in the same block, at the same number");
+      "the tiles collapse in the same shared content-width rule");
     for (const m of CSS.matchAll(/@media \(max-width:(\d+)px\)/g)) {
       assert.ok(["620", "767", "860", "1099", "1100"].includes(m[1]), `unexpected breakpoint ${m[1]}`);
     }
@@ -540,33 +540,42 @@ describe("Student Profile — one attendance answer, not two (Gate 6.3)", () => 
  * applies it to the correct screen touches neither this file nor this card.
  * ====================================================================== */
 
-describe("Attendance tab — the Gate 6.4 polish is reverted (Gate 6.5)", () => {
-  it("46. `.sp-summary` exists nowhere — not in the tab, not in the stylesheet", () => {
-    /* M1 GUARD. Reapplying the stack to this surface reintroduces the class, and
-     * this fails on the first of the three. */
-    assert.ok(!TAB.includes("sp-summary"), "the tab does not carry the class");
-    assert.ok(!TAB_RAW.includes("sp-summary"), "nor does a comment leave it behind");
-    assert.ok(!CSS.includes("sp-summary"), "and globals.css declares no such rule");
+describe("Attendance tab — wide composition survives while narrow summary stacks (Gate 6.8)", () => {
+  it("46. wide markup remains the approved horizontal flex composition", () => {
+    assert.equal([...TAB.matchAll(/className="sp-metric-summary"/g)].length, 2,
+      "loaded and skeleton summaries share the responsive owner");
+    assert.ok(TAB.includes('className="sp-metric-summary" style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}'),
+      "the base/wide composition is still the Gate 6.5 row");
+    assert.equal([...TAB.matchAll(/className="sp-metric-value"/g)].length, 2,
+      "loaded and skeleton metrics share the centred item class");
+    assert.ok(TAB.includes('minWidth: 96 }}'), "and its approved desktop width");
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-metric-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/g)].length, 2,
+      "loaded and skeleton tile rows keep the same wide flex sizing");
   });
 
-  it("47. the summary is the Gate 6.3 row, byte for byte", () => {
-    /* Pinned as the exact markup rather than as "not a column", so a stack that
-     * arrives under any other class name fails here too. */
-    assert.ok(TAB.includes('<div style={{ display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>'),
-      "the comp's horizontal composition");
-    assert.ok(TAB.includes('minWidth: 96 }}'), "the metric keeps its own column width");
-    assert.equal([...TAB.matchAll(/className="sp-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/g)].length, 2,
-      "the tile row keeps the inline sizing its ROW needs — live card and skeleton");
-    assert.ok(!/flexDirection: "column" \}\}>\s*\{\/\* The server's own figure/.test(TAB_RAW),
-      "the metric block was not quietly restacked");
+  it("47. the narrow owner centres the metric and puts the KPIs on their own row", () => {
+    const query = /@container sp-page \(max-width:725px\)\{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+    assert.ok(query.includes(".sp-metric-summary{justify-content:center}"), "the flex owner centres both metrics");
+    assert.ok(query.includes(".sp-metric-tiles{flex-basis:100% !important}"), "the four KPIs move below the metric");
+    assert.ok(query.includes(".sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}"), "and form 2x2");
   });
 
-  it("48. the revert did not disturb what Gate 6 and Gate 6.3 shipped", () => {
-    /* The three things §2 of the gate forbade touching while reverting. The
-     * `.sp-tiles` template and its 4 -> 2 collapse are already pinned by #38-#40
-     * above; this adds the two that are not. */
-    assert.ok(PROFILE.includes("attendanceKeys.student(id)"), "Gate 6.3's Overview fix stands");
-    assert.ok(!/student\.attendance/.test(PROFILE), "and the stale stored field is still not read");
-    assert.ok(/\.sp-tiles\{display:grid;/.test(CSS.replace(/\s+/g, "")), "Gate 6's tile hardening stands");
+  it("48. no fixed offset or viewport hack positions the Attendance metric", () => {
+    const summary = TAB.slice(TAB.indexOf('className="sp-metric-summary"'), TAB.indexOf("{/* ---- Monthly attendance"));
+    for (const forbidden of ["marginLeft", "translateX", "left:", "right:", "100vw", "overflowX"]) {
+      assert.ok(!summary.includes(forbidden), `${forbidden} must not position the metric`);
+    }
+    assert.ok(!CSS.includes("@media (max-width:725px)"), "the threshold reads content width, not viewport width");
+    assert.ok(!/\.sp-metric-(summary|value)[^{]*\{[^}]*?(margin-left|transform|translate)/i.test(CSS),
+      "shared metric CSS contains no offset or transform escape hatch");
+  });
+
+  it("49. data ownership and the standalone /attendance metric remain untouched", () => {
+    assert.ok(PROFILE.includes("attendanceKeys.student(id)"), "the authoritative Overview query stands");
+    assert.ok(!/student\.attendance/.test(PROFILE), "the stale stored field is still not read");
+    assert.ok(TAB.includes("rateLabel(data.rate)"), "the student rate remains server-owned");
+    assert.ok(ATT_INDEX.includes('className="att-month-metric"'), "the standalone index keeps Gate 6.7 markup");
+    assert.ok(CSS.includes("--att-month-ring-size:128px") && CSS.includes("--att-month-ring-size:104px !important"),
+      "its 128px/104px ring scale is unchanged");
   });
 });

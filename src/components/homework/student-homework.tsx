@@ -146,8 +146,8 @@ export function StudentHomework({ studentId }: { studentId: string }) {
           * text, so the svg is `aria-hidden` and the percentage is read once.
           * A `null` rate draws NO arc and the em dash — never a zero-length arc
           * labelled 0%, which would state an assessment nobody made. */}
-        <section className="sp-homework-summary" style={{ ...panel, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }} aria-label={t("Homework completion")}>
-          <div className="sp-homework-ring" style={{ position: "relative", width: 104, height: 104, flex: "none" }}>
+        <section className="sp-metric-summary" style={{ ...panel, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }} aria-label={t("Homework completion")}>
+          <div className="sp-homework-ring sp-metric-value" style={{ position: "relative", width: 104, height: 104, flex: "none" }}>
             <svg width="104" height="104" viewBox="0 0 100 100" aria-hidden="true">
               <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="9" />
               {data.completionRate !== null && (
@@ -182,7 +182,7 @@ export function StudentHomework({ studentId }: { studentId: string }) {
               <div style={{ fontSize: 10, color: "var(--muted-2)", maxWidth: 64, textAlign: "center", lineHeight: 1.2 }}>{t("completed")}</div>
             </div>
           </div>
-          <div className="sp-tiles sp-homework-tiles" style={{ flex: 1, minWidth: 220 }}>
+          <div className="sp-tiles sp-metric-tiles" style={{ flex: 1, minWidth: 220 }}>
             {TILES.map((tile) => (
               <div key={tile.key} style={{ background: tile.soft, borderRadius: 11, padding: "11px 12px" }}>
                 <div style={{ fontSize: 19, fontWeight: 600, color: tile.color }}>{data.counts[tile.key]}</div>
@@ -276,9 +276,9 @@ function SkeletonTab() {
   return (
     <div className="sp-split" aria-hidden="true">
       <div style={column}>
-        <div className="sp-homework-summary" style={{ ...panel, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
-          <div className="sp-homework-ring" style={{ width: 104, height: 104, borderRadius: "50%", flex: "none", ...bar }} />
-          <div className="sp-tiles sp-homework-tiles" style={{ flex: 1, minWidth: 220 }}>
+        <div className="sp-metric-summary" style={{ ...panel, display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}>
+          <div className="sp-homework-ring sp-metric-value" style={{ width: 104, height: 104, borderRadius: "50%", flex: "none", ...bar }} />
+          <div className="sp-tiles sp-metric-tiles" style={{ flex: 1, minWidth: 220 }}>
             {[0, 1, 2, 3].map((i) => <div key={i} style={{ height: 56, borderRadius: 11, ...bar }} />)}
           </div>
         </div>

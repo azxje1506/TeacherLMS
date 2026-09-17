@@ -1,5 +1,15 @@
 # English Tutor LMS
 
+## Sprint 13 — Gate 6.8: Student Profile tablet summary layout (2026-09-17)
+
+- Root cause: the single Student Profile container query waited until `600px`; at a `768px` viewport the measured profile container was `668px`, leaving the summary in its horizontal desktop row and compressing Homework KPI cards to about `50.8px`.
+- The existing container threshold is now `725px`, derived from the larger Homework ring plus four readable KPI cards in the summary track. Attendance and Homework share `.sp-metric-summary`, `.sp-metric-value`, and `.sp-metric-tiles`; narrow layouts center the metric on its own row and use the existing 2×2 tiles.
+- Measured Chrome QA covered 1440, 1280, 1100, 860, 768, 767, 620, 430, 390, 360 and 320px. At 768 and below both metrics are centred with 0px offset, KPI cards are 2×2, and target containers/documents have zero overflow. At 860px with a 760px profile container, the approved desktop composition remains horizontal.
+- Sidebar verification confirms container ownership: at the same 768px viewport, collapsed and expanded requests both measure the actual available profile width (`658px`) and remain stacked; desktop-only sidebar expansion is unavailable below the shell's 1024px rail rule.
+- `/attendance` remains on its Gate 6.7 128px/104px ring scale and is unchanged. Quality gates: 2801/2801 tests, lint (0 errors; 8 pre-existing warnings), TypeScript, production build and `git diff --check` pass. All five required mutations were detected and reverted.
+
+
+
 ## Sprint 13 — Gate 6.7: final visual alignment polish (2026-09-17)
 
 - `/attendance` keeps the Gate 6.6 top-down hierarchy and scales the monthly metric from 96px to 128px on wide layouts; the existing 620px responsive rule uses a proportional 104px mobile metric.
