@@ -416,8 +416,8 @@ describe("Homework tab — the summary tiles collapse on room (Gate 6)", () => {
      * and an inline declaration beats every container rule written against it.
      * This tab is the worse of the two: its longest label, "Completed", is a
      * single unbreakable word, so its four tiles have the higher floor. */
-    assert.equal([...TAB.matchAll(/className="sp-tiles"/g)].length, 2,
-      "the live row AND the skeleton, so the shape does not change on reveal");
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-homework-tiles"/g)].length, 2,
+      "the live row AND the skeleton share the responsive Homework tile class");
     assert.ok(!/gridTemplateColumns/.test(TAB), "no inline grid template survives in this tab");
   });
 
@@ -497,5 +497,57 @@ describe("Homework tab — the ring label stays inside the ring (Gate 6.3)", () 
     for (const forbidden of ["Math.round", "reduce(", ".filter(", "completed +", "+ late"]) {
       assert.ok(!TAB.includes(forbidden), `${forbidden} would recompute the measure`);
     }
+  });
+});
+
+
+/* =========================================================================
+ * 10. Gate 6.7 — mobile completion metric is centred by its container
+ * ====================================================================== */
+
+describe("Homework tab — mobile completion ring alignment (Gate 6.7)", () => {
+  it("47. the loaded summary and skeleton share one narrow-layout owner", () => {
+    assert.equal([...TAB.matchAll(/className="sp-homework-summary"/g)].length, 2,
+      "loaded and loading states use the same summary container");
+    assert.equal([...TAB.matchAll(/className="sp-homework-ring"/g)].length, 2,
+      "and the same ring item class");
+    assert.equal([...TAB.matchAll(/className="sp-tiles sp-homework-tiles"/g)].length, 2,
+      "with the tile row taking the same path after reveal");
+  });
+
+  it("48. the existing Student Profile container query centres only the narrow layout", () => {
+    const query = /@container sp-page \(max-width:600px\)\{([\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "";
+    assert.ok(query.includes(".sp-homework-summary{justify-content:center}"),
+      "the flex container, not the ring geometry, owns centering");
+    assert.ok(query.includes(".sp-homework-tiles{flex-basis:100% !important}"),
+      "tiles occupy their own row so their width cannot push the ring off centre");
+    const phone = CSS.slice(CSS.indexOf("@media (max-width:620px){"));
+    assert.ok(phone.includes(".sp-homework-summary{justify-content:center}"),
+      "the existing phone breakpoint also guarantees centering across the full mobile range");
+    assert.ok(phone.includes(".sp-homework-tiles{flex-basis:100% !important}"),
+      "and gives the mobile tiles their own row without a new breakpoint");
+    const base = CSS.slice(CSS.indexOf(".sp-tiles{"), CSS.indexOf("@container sp-page"));
+    assert.ok(!base.includes(".sp-homework-summary{") && !base.includes(".sp-homework-tiles{"),
+      "the base desktop composition receives no override and remains Gate 6.3-equivalent");
+  });
+
+  it("49. centering uses no fixed offset, transform or language branch", () => {
+    const summary = TAB.slice(TAB.indexOf('className="sp-homework-summary"'), TAB.indexOf("{/* ---- Homework timeline"));
+    for (const forbidden of ["marginLeft", "translateX", "left:", "right:", "100vw", "overflowX"]) {
+      assert.ok(!summary.includes(forbidden), `${forbidden} must not position the ring`);
+    }
+    for (const forbidden of ['lang ===', 'lang ==', '"vi"', "'vi'", "đã hoàn thành", "locale"]) {
+      assert.ok(!summary.includes(forbidden), `${forbidden} would split localization layout`);
+    }
+  });
+
+  it("50. Gate 6.3 label geometry and completion semantics survive intact", () => {
+    const label = TAB.slice(TAB.indexOf('{t("completed")}') - 400, TAB.indexOf('{t("completed")}') + 40);
+    assert.ok(/maxWidth: 64/.test(label) && /textAlign: "center"/.test(label) && /lineHeight: 1\.2/.test(label),
+      "Vietnamese wraps inside the clear ring interior");
+    assert.equal(VI["completed"], "đã hoàn thành");
+    assert.ok(TAB.includes("data.completionRate !== null &&"));
+    assert.ok(TAB.includes("ringDash(data.completionRate)"));
+    assert.ok(TAB.includes("rateLabel(data.completionRate)"));
   });
 });

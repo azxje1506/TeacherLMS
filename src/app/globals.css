@@ -1,3 +1,4 @@
+/* Global UI styles — owns shared responsive layout and visual design tokens. */
 @import "tailwindcss";
 
 /* ============================================================================
@@ -570,6 +571,13 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
      reason every rule in this block carries it: the base template is declared
      later in the file, so plain weight would lose on source order. */
   .att-month-tiles{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+  .att-month-ring{
+    --att-month-ring-size:104px !important;
+    --att-month-rate-size:22px !important;
+    --att-month-label-size:9px !important;
+  }
+  .sp-homework-summary{justify-content:center}
+  .sp-homework-tiles{flex-basis:100% !important}
   /* Five cards in two columns leave one alone on the last row. The odd card is
      the Attendance rate — the only one carrying --card-2, the design's own
      "this is the total" surface — so it spans the row rather than sitting at
@@ -2299,6 +2307,8 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
 @container sp-page (max-width:600px){
   .sp-split{grid-template-columns:minmax(0,1fr)}
   .sp-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sp-homework-summary{justify-content:center}
+  .sp-homework-tiles{flex-basis:100% !important}
 }
 
 /* ---- /attendance "This month": the rate first, the breakdown second ---------
@@ -2345,8 +2355,19 @@ input[type="date"]::-webkit-datetime-edit-year-field:focus{background:var(--acce
    `container-type` IS DECLARED FOR SCREEN ONLY, like Reports', the Student
    Profile's and Settings' — it implies layout containment, which has no business
    reaching a printed page. */
+.att-today-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:var(--gap)}
 .att-month-body{display:flex;flex-direction:column;gap:18px}
-.att-month-ring{display:flex;justify-content:center}
+.att-month-ring{
+  --att-month-ring-size:128px;
+  --att-month-rate-size:26px;
+  --att-month-label-size:10px;
+  display:flex;justify-content:center;
+}
+.att-month-metric{position:relative;flex:none;width:var(--att-month-ring-size);height:var(--att-month-ring-size)}
+.att-month-metric-svg{display:block;width:100%;height:100%}
+.att-month-metric-copy{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
+.att-month-metric-rate{font-size:var(--att-month-rate-size);font-weight:600;color:var(--fg)}
+.att-month-metric-label{font-size:var(--att-month-label-size);color:var(--muted-2)}
 .att-month-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 @media screen{
   .att-month-body{container-type:inline-size;container-name:att-month}

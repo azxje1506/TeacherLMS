@@ -1,3 +1,4 @@
+// Attendance index UI — renders server-owned attendance summaries and lesson actions.
 "use client";
 
 /* Attendance index — ported from the design comp's "ATTENDANCE INDEX" screen:
@@ -92,8 +93,8 @@ export default function AttendancePage() {
                   * container query. */}
                 <div className="att-month-body">
                   <div className="att-month-ring">
-                    <div style={{ position: "relative", flexShrink: 0, width: 96, height: 96 }}>
-                      <svg width="96" height="96" viewBox="0 0 100 100">
+                    <div className="att-month-metric">
+                      <svg className="att-month-metric-svg" viewBox="0 0 100 100">
                         <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border)" strokeWidth="9" />
                         <circle
                           cx="50" cy="50" r="40" fill="none" strokeWidth="9" strokeLinecap="round"
@@ -101,9 +102,9 @@ export default function AttendancePage() {
                           transform="rotate(-90 50 50)" style={{ stroke: "var(--green)" }}
                         />
                       </svg>
-                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", lineHeight: 1.05 }}>
-                        <span style={{ fontSize: 20, fontWeight: 600, color: "var(--fg)" }}>{summary.rate}%</span>
-                        <span style={{ fontSize: 8.5, color: "var(--muted-2)" }}>{t("attended")}</span>
+                      <div className="att-month-metric-copy">
+                        <span className="att-month-metric-rate">{summary.rate}%</span>
+                        <span className="att-month-metric-label">{t("attended")}</span>
                       </div>
                     </div>
                   </div>
@@ -151,7 +152,7 @@ export default function AttendancePage() {
               {t("Today")} · <span style={{ color: "var(--fg)" }}>{todayCell ? `${todayCell.monLabel} ${todayCell.dateNum}` : ""}</span>
             </div>
             {today.length > 0 ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "var(--gap)" }}>
+              <div className="att-today-grid">
                 {today.map((a) => (
                   <TodayCard key={a.lessonId} card={a} onOpen={() => open(a.lessonId)} />
                 ))}
@@ -263,7 +264,7 @@ function SkeletonIndex() {
         <div style={{ ...cardStyle, padding: "18px 20px" }}>
           <div style={{ fontSize: 14.5, fontWeight: 600, marginBottom: 12 }}>&nbsp;</div>
           <div className="att-month-body">
-            <div className="att-month-ring"><div style={{ width: 96, height: 96 }} /></div>
+            <div className="att-month-ring"><div className="att-month-metric" /></div>
             <div className="att-month-tiles">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} style={{ borderRadius: 9, padding: "8px 10px" }}>
@@ -276,7 +277,7 @@ function SkeletonIndex() {
         </div>
         <div style={{ ...cardStyle, height: 160 }} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "var(--gap)" }}>
+      <div className="att-today-grid">
         {[0, 1, 2].map((i) => <div key={i} style={{ ...cardStyle, height: 150 }} />)}
       </div>
     </div>

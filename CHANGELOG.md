@@ -1,3 +1,11 @@
+## Sprint 13 — Gate 6.7: final visual alignment polish (2026-09-17)
+
+- `/attendance` keeps the Gate 6.6 top-down hierarchy and scales the monthly metric from 96px to 128px on wide layouts; the existing 620px responsive rule uses a proportional 104px mobile metric.
+- Attendance status cards are always rendered from `Present`, `Late`, `Absent`, `Excused`, including zero counts; current human fixture visibility does not change that product semantic.
+- Student Profile Homework now centres its completion ring at mobile widths by giving the tile grid its own row through existing responsive owners. The desktop composition and the shared Vietnamese `đã hoàn thành` geometry remain unchanged.
+- Measured Chrome QA covered 1440, 1280, 767, 620, 430, 390, 360 and 320px with zero target-card/document overflow and mobile ring-centre offsets of 0px.
+- Quality gates: 2800/2800 tests, lint (0 errors; 8 pre-existing warnings), TypeScript, production build and `git diff --check` pass. Five required mutations were detected and reverted.
+
 # Changelog
 
 ## Unreleased — Student Profile: Attendance & Homework (Sprint 13) — **both tabs shipped, integrated QA done, human re-test pending**

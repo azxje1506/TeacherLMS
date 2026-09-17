@@ -942,7 +942,7 @@ describe("Attendance stays inside its own module", () => {
   });
 });
 /* ==========================================================================
- * Gate 6.6 — the /attendance "This month" card reads top-down
+ * Gate 6.7 — the /attendance metric keeps hierarchy and gains proportional scale
  *
  * The month's ring and the four counts that decompose it sat in ONE FLEX ROW,
  * and the tile row wrote its column count INLINE as a flat 2-up. This section
@@ -953,7 +953,7 @@ describe("Attendance stays inside its own module", () => {
  * would fail if it had quietly become anything else.
  * ====================================================================== */
 
-describe("/attendance This month — metric above, breakdown below (Gate 6.6)", () => {
+describe("/attendance This month — hierarchy and responsive metric scale (Gate 6.7)", () => {
   /* Everything between the card's title and the card that follows it. */
   const CARD = INDEX_PAGE.slice(
     INDEX_PAGE.indexOf('{t("This month")}'),
@@ -991,7 +991,12 @@ describe("/attendance This month — metric above, breakdown below (Gate 6.6)", 
     const flat = CSS_RAW.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\s+/g, "");
     assert.ok(flat.includes(".att-month-body{display:flex;flex-direction:column;gap:18px}"),
       "a column, at the gap the row already used");
-    assert.ok(flat.includes(".att-month-ring{display:flex;justify-content:center}"), "the ring is centred");
+    assert.ok(flat.includes("display:flex;justify-content:center"), "the ring is centred");
+    assert.ok(flat.includes("--att-month-ring-size:128px"), "desktop promotes the metric from 96px to 128px");
+    assert.ok(flat.includes("--att-month-rate-size:26px") && flat.includes("--att-month-label-size:10px"),
+      "the ring typography scales with its geometry");
+    assert.ok(flat.includes(".att-month-metric{position:relative;flex:none;width:var(--att-month-ring-size);height:var(--att-month-ring-size)}"),
+      "one CSS-owned component controls the proportional ring size");
     assert.ok(flat.includes(".att-month-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}"),
       "four columns wide, with the automatic minimum size removed");
     /* `minmax(0,…)`, never a bare `1fr`: a `1fr` track is `minmax(auto,1fr)` and
@@ -1013,6 +1018,8 @@ describe("/attendance This month — metric above, breakdown below (Gate 6.6)", 
     const phone = CSS_RAW.slice(CSS_RAW.indexOf("@media (max-width:620px){"));
     assert.ok(phone.includes(".att-month-tiles{grid-template-columns:repeat(2,minmax(0,1fr)) !important}"),
       "the phone case rides the Attendance module's EXISTING 620px breakpoint");
+    assert.ok(/\.att-month-ring\{\s*--att-month-ring-size:104px !important;\s*--att-month-rate-size:22px !important;\s*--att-month-label-size:9px !important;\s*\}/.test(phone),
+      "the same existing breakpoint restores a balanced mobile ring and proportional type");
   });
 
   it("NO new viewport breakpoint was introduced by any of it", () => {
@@ -1065,8 +1072,12 @@ describe("/attendance This month — metric above, breakdown below (Gate 6.6)", 
     assert.ok(CARD.includes("{summary.rate}%"), "the server's own figure, not a derived one");
     assert.ok(CARD.includes('t("attended")'), "the label is unchanged");
     assert.ok(CARD.includes('cx="50" cy="50" r="40"') && CARD.includes('strokeWidth="9"'), "ring geometry unchanged");
-    assert.ok(CARD.includes('viewBox="0 0 100 100"') && CARD.includes('width="96" height="96"'), "and its size");
+    assert.ok(CARD.includes('viewBox="0 0 100 100"') && CARD.includes('className="att-month-metric-svg"'),
+      "the SVG fills the CSS-owned component instead of carrying a fixed inline diameter");
+    assert.ok(CARD.includes('className="att-month-metric-rate"') && CARD.includes('className="att-month-metric-label"'),
+      "both internal text levels scale with the ring");
     assert.ok(CARD.includes('transform="rotate(-90 50 50)"'), "and its start angle");
+    assert.ok(!/width="(96|128)"|height="(96|128)"/.test(CARD), "no inline SVG sizing hack");
   });
 
   it("the card derives no arithmetic of its own", () => {
@@ -1094,18 +1105,34 @@ describe("/attendance This month — metric above, breakdown below (Gate 6.6)", 
   it("no horizontal-scroll escape hatch was added", () => {
     assert.ok(!CARD.includes("overflowX"), "the counts must fit, not scroll sideways");
     assert.ok(!CARD.includes("100vw"), "no viewport-width element inside the shell");
+    assert.ok(!/marginLeft|translateX|overflow-x|overflowX/.test(CARD),
+      "centering and scale use layout ownership, never offsets or overflow escapes");
   });
 
-  it("this gate touched the /attendance INDEX and nothing else", () => {
-    /* The register screen shares the module and the `.att-` prefix, and the two
-     * Student Profile tabs share the shape — none of them is this gate's. */
+  it("the Attendance lesson grid may shrink below its 320px preferred card width", () => {
+    assert.equal([...INDEX_PAGE.matchAll(/className="att-today-grid"/g)].length, 2,
+      "loaded and skeleton grids share one responsive owner");
+    const flat = CSS_RAW.replace(/\s+/g, "");
+    assert.ok(flat.includes(".att-today-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr));gap:var(--gap)}"),
+      "320px stays preferred, while 100% prevents document overflow on a 320px viewport");
+    assert.ok(!INDEX_PAGE.includes('gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))"'),
+      "the fixed inline minimum cannot return");
+  });
+
+  it("the presentation gate preserves neighbouring Attendance and Homework semantics", () => {
     assert.ok(!TAKE_PAGE.includes("att-month"), "the register screen is untouched");
     assert.ok(!SP_TAB.includes("att-month") && !SP_TAB.includes("sp-summary"),
       "the Student Profile Attendance tab keeps its Gate 6.3 composition");
     assert.ok(/className="sp-tiles" style=\{\{ flex: 1, minWidth: 220 \}\}/.test(SP_TAB),
       "including the inline sizing its own flex row needs");
-    assert.ok(!HW_TAB.includes("att-month"), "and Homework is untouched");
-    assert.ok(/display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap"/.test(HW_TAB),
-      "Homework keeps the comp's horizontal composition and its Gate 6.3 ring");
+    assert.ok(!HW_TAB.includes("att-month"), "Homework does not inherit Attendance sizing");
+    assert.ok(HW_TAB.includes("ringDash(data.completionRate)"), "Homework's completion semantics remain shared and unchanged");
+  });
+
+  it("all four Attendance status cards render even when their counts are zero", () => {
+    assert.ok(CARD.includes("ATTENDANCE_DISPLAY_ORDER.map"), "rendering iterates the fixed four-status vocabulary");
+    assert.ok(!/\.filter\(|count\s*>\s*0|count\s*&&/.test(CARD),
+      "no data-conditional branch hides a zero-count status");
+    assert.deepEqual([...ATTENDANCE_DISPLAY_ORDER], ["Present", "Late", "Absent", "Excused"]);
   });
 });
